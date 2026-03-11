@@ -1,7 +1,7 @@
 import { Router, type Router as RouterType } from 'express';
 import { z } from 'zod';
 import crypto from 'crypto';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, or } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { isValidEd25519PublicKey, getPlatformPublicKeyHex, isUrlSafe } from '../services/webhook-crypto.js';
@@ -252,6 +252,62 @@ agentsRouter.put('/:id', requireAuth, async (req, res) => {
       return;
     }
     res.status(500).json({ error: 'Failed to update agent' });
+  }
+});
+
+/**
+ * GET /agents/:id/matches - List arenas the agent has participated in.
+ * Returns finished and running arenas with the agent's final stack and profit.
+ */
+agentsRouter.get('/:id/matches', async (req, res) => {
+  try {
+    const agentId = String(req.params['id']);
+
+    // Verify agent exists
+    const [agent] = await db
+      .select({ id: schema.agents.id })
+      .from(schema.agents)
+      .where(eq(schema.agents.id, agentId))
+      .limit(1);
+
+    if (!agent) {
+      res.status(404).json({ error: 'Agent not found' });
+      return;
+    }
+
+    const rows = await db
+      .select({
+        arenaId: schema.arenas.id,
+        arenaName: schema.arenas.name,
+        mode: schema.arenas.mode,
+        status: schema.arenas.status,
+        startingStack: schema.arenas.startingStack,
+        finalStack: schema.arenaSeats.currentStack,
+        finishedAt: schema.arenas.finishedAt,
+        createdAt: schema.arenas.createdAt,
+      })
+      .from(schema.arenaSeats)
+      .innerJoin(schema.arenas, eq(schema.arenaSeats.arenaId, schema.arenas.id))
+      .where(
+        and(
+          eq(schema.arenaSeats.agentId, agentId),
+          or(
+            eq(schema.arenas.status, 'finished'),
+            eq(schema.arenas.status, 'running'),
+          ),
+        ),
+      )
+      .orderBy(desc(schema.arenas.createdAt))
+      .limit(20);
+
+    const matches = rows.map((r) => ({
+      ...r,
+      profit: r.finalStack - r.startingStack,
+    }));
+
+    res.json({ matches });
+  } catch {
+    res.status(500).json({ error: 'Failed to fetch match history' });
   }
 });
 
