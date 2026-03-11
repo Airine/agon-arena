@@ -7,6 +7,7 @@ import {
   consumeNonce,
   isTimestampValid,
   isValidEd25519PublicKey,
+  isUrlSafe,
 } from '../webhook-crypto.js';
 
 describe('webhook-crypto', () => {
@@ -148,6 +149,66 @@ describe('webhook-crypto', () => {
       const rawPub = publicKey.export({ type: 'spki', format: 'der' });
       const pubHex = rawPub.subarray(12).toString('hex').toUpperCase();
       expect(isValidEd25519PublicKey(pubHex)).toBe(true);
+    });
+  });
+
+  describe('isUrlSafe', () => {
+    it('should accept public HTTPS URLs', () => {
+      expect(isUrlSafe('https://agent.example.com/webhook')).toBe(true);
+      expect(isUrlSafe('https://8.8.8.8/action')).toBe(true);
+    });
+
+    it('should accept public HTTP URLs', () => {
+      expect(isUrlSafe('http://agent.example.com/webhook')).toBe(true);
+    });
+
+    it('should block localhost', () => {
+      expect(isUrlSafe('http://localhost/action')).toBe(false);
+      expect(isUrlSafe('http://localhost:3000/action')).toBe(false);
+      expect(isUrlSafe('http://127.0.0.1/action')).toBe(false);
+      expect(isUrlSafe('http://127.0.0.1:8080/action')).toBe(false);
+    });
+
+    it('should block private IP ranges (10.x.x.x)', () => {
+      expect(isUrlSafe('http://10.0.0.1/action')).toBe(false);
+      expect(isUrlSafe('http://10.255.255.255/action')).toBe(false);
+    });
+
+    it('should block private IP ranges (172.16-31.x.x)', () => {
+      expect(isUrlSafe('http://172.16.0.1/action')).toBe(false);
+      expect(isUrlSafe('http://172.31.255.255/action')).toBe(false);
+    });
+
+    it('should allow non-private 172.x ranges', () => {
+      expect(isUrlSafe('http://172.15.0.1/action')).toBe(true);
+      expect(isUrlSafe('http://172.32.0.1/action')).toBe(true);
+    });
+
+    it('should block private IP ranges (192.168.x.x)', () => {
+      expect(isUrlSafe('http://192.168.0.1/action')).toBe(false);
+      expect(isUrlSafe('http://192.168.1.1/action')).toBe(false);
+    });
+
+    it('should block link-local / AWS metadata (169.254.x.x)', () => {
+      expect(isUrlSafe('http://169.254.169.254/latest/meta-data')).toBe(false);
+    });
+
+    it('should block 0.0.0.0', () => {
+      expect(isUrlSafe('http://0.0.0.0/action')).toBe(false);
+    });
+
+    it('should block IPv6', () => {
+      expect(isUrlSafe('http://[::1]/action')).toBe(false);
+    });
+
+    it('should block non-http protocols', () => {
+      expect(isUrlSafe('ftp://example.com/file')).toBe(false);
+      expect(isUrlSafe('file:///etc/passwd')).toBe(false);
+    });
+
+    it('should reject invalid URLs', () => {
+      expect(isUrlSafe('not-a-url')).toBe(false);
+      expect(isUrlSafe('')).toBe(false);
     });
   });
 });

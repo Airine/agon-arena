@@ -4,7 +4,7 @@ import type { GameState, PlayerAction, ActionType, AAPActionRequest, AAPActionRe
 import { createGame, processAction, getValidActions, getWinners, isHandOver, type GameConfig } from '../game/index.js';
 import { db, schema } from '../db/index.js';
 import { getIO } from './io.js';
-import { signWebhookPayload, verifyAgentSignature, consumeNonce } from './webhook-crypto.js';
+import { signWebhookPayload, verifyAgentSignature } from './webhook-crypto.js';
 
 const ACTION_TIMEOUT_MS = 5000;
 const MAX_HANDS = 100; // Max hands per arena session
@@ -240,7 +240,7 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
 
 /**
  * Request an action from an agent via webhook (AAP protocol).
- * Signs the request with Ed25519 and optionally verifies the agent's response signature.
+ * Signs the request with Ed25519 and verifies the agent's response signature.
  */
 async function requestAgentAction(
   agentUrl: string,
@@ -251,9 +251,6 @@ async function requestAgentAction(
 
   // Sign the webhook payload with platform Ed25519 key
   const { signature, timestamp, nonce } = signWebhookPayload(bodyStr);
-
-  // Record nonce to prevent replay
-  consumeNonce(nonce);
 
   const response = await axios.post<AAPActionResponse>(
     `${agentUrl}/action`,
@@ -266,20 +263,22 @@ async function requestAgentAction(
         'X-Agon-Timestamp': timestamp,
         'X-Agon-Nonce': nonce,
       },
+      // Prevent axios from following redirects (SSRF mitigation)
+      maxRedirects: 0,
     },
   );
 
-  // Verify agent response signature if they provided a public key
+  // Verify agent response signature when agent registered a public key
   if (agentPublicKeyHex) {
     const agentSig = response.headers['x-agent-signature'] as string | undefined;
-    if (agentSig) {
-      const responseBody = JSON.stringify(response.data);
-      const valid = verifyAgentSignature(responseBody, agentSig, agentPublicKeyHex);
-      if (!valid) {
-        console.warn(`[Orchestrator] Invalid signature from agent ${request.agentId}`);
-        // Don't reject — log and continue. Agent may be misconfigured.
-        // In strict mode, this could throw to trigger auto-fold.
-      }
+    if (!agentSig) {
+      throw new Error(`Agent ${request.agentId} registered a public key but did not sign response`);
+    }
+
+    const responseBody = JSON.stringify(response.data);
+    const valid = verifyAgentSignature(responseBody, agentSig, agentPublicKeyHex);
+    if (!valid) {
+      throw new Error(`Invalid signature from agent ${request.agentId} — possible tampering`);
     }
   }
 

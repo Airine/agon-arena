@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import { eq, and, desc } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
-import { isValidEd25519PublicKey, getPlatformPublicKeyHex } from '../services/webhook-crypto.js';
+import { isValidEd25519PublicKey, getPlatformPublicKeyHex, isUrlSafe } from '../services/webhook-crypto.js';
 
 export const agentsRouter: RouterType = Router();
 
@@ -54,6 +54,12 @@ agentsRouter.post('/', requireAuth, async (req, res) => {
     // Validate the Ed25519 public key is actually usable
     if (!isValidEd25519PublicKey(body.webhookPublicKey)) {
       res.status(400).json({ error: 'Invalid Ed25519 public key' });
+      return;
+    }
+
+    // SSRF protection: block private/internal URLs
+    if (!isUrlSafe(body.apiUrl)) {
+      res.status(400).json({ error: 'apiUrl must be a public HTTP(S) URL (private/internal IPs are blocked)' });
       return;
     }
 
@@ -202,6 +208,12 @@ agentsRouter.put('/:id', requireAuth, async (req, res) => {
     // Validate Ed25519 key if being updated
     if (body.webhookPublicKey && !isValidEd25519PublicKey(body.webhookPublicKey)) {
       res.status(400).json({ error: 'Invalid Ed25519 public key' });
+      return;
+    }
+
+    // SSRF protection on URL update
+    if (body.apiUrl && !isUrlSafe(body.apiUrl)) {
+      res.status(400).json({ error: 'apiUrl must be a public HTTP(S) URL (private/internal IPs are blocked)' });
       return;
     }
 

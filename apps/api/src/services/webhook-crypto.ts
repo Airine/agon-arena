@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import { URL } from 'url';
+import net from 'net';
 
 const NONCE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const TIMESTAMP_TOLERANCE_SEC = 300; // 5 minutes
@@ -152,6 +154,51 @@ export function isValidEd25519PublicKey(hexKey: string): boolean {
       format: 'der',
       type: 'spki',
     });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Validate a webhook URL to prevent SSRF attacks.
+ * Blocks private/internal IP ranges, loopback, and link-local addresses.
+ */
+export function isUrlSafe(urlStr: string): boolean {
+  try {
+    const parsed = new URL(urlStr);
+
+    // Only allow http/https
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+
+    // Strip IPv6 brackets: new URL('http://[::1]').hostname → '[::1]'
+    const hostname = parsed.hostname.replace(/^\[|\]$/g, '');
+
+    // Block obvious loopback/private hostnames
+    if (hostname === 'localhost' || hostname === '0.0.0.0') return false;
+
+    // Check if hostname is an IP and block private ranges
+    if (net.isIP(hostname)) {
+      if (net.isIPv4(hostname)) {
+        const parts = hostname.split('.').map(Number);
+        const [a, b] = parts as [number, number];
+        // Loopback: 127.0.0.0/8
+        if (a === 127) return false;
+        // Private: 10.0.0.0/8
+        if (a === 10) return false;
+        // Private: 172.16.0.0/12
+        if (a === 172 && b >= 16 && b <= 31) return false;
+        // Private: 192.168.0.0/16
+        if (a === 192 && b === 168) return false;
+        // Link-local: 169.254.0.0/16 (AWS metadata, etc.)
+        if (a === 169 && b === 254) return false;
+        // Reserved: 0.0.0.0/8
+        if (a === 0) return false;
+      }
+      // Block all IPv6 for now (too many private ranges to enumerate safely)
+      if (net.isIPv6(hostname)) return false;
+    }
+
     return true;
   } catch {
     return false;
