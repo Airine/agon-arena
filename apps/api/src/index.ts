@@ -9,6 +9,7 @@ import { arenasRouter } from './routes/arenas.js';
 import { skillsRouter } from './routes/skills.js';
 import { githubOAuthRouter } from './routes/github-oauth.js';
 import { matchmakingRouter } from './routes/matchmaking.js';
+import { paymentsRouter } from './routes/payments.js';
 import { setupSocketHandlers } from './services/socket.js';
 import { setIO } from './services/io.js';
 import { startMatchmakingProcessor } from './services/matchmaking.js';
@@ -42,6 +43,7 @@ app.use('/agents', agentsRouter);
 app.use('/arenas', arenasRouter);
 app.use('/skills', skillsRouter);
 app.use('/matchmaking', matchmakingRouter);
+app.use('/payments', paymentsRouter);
 
 // Socket.io
 setupSocketHandlers(io);
