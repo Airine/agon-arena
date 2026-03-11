@@ -36,6 +36,20 @@ export interface ChipTxResult {
   frozenAfter: number;
 }
 
+export interface CascadeDistributionResult {
+  totalPrize: number;
+  totalDistributed: number;
+  undistributed: number;
+  distributions: Array<{
+    agentId: string;
+    agentName: string;
+    userId: string;
+    amount: number;
+    depth: number;
+    txResult: ChipTxResult;
+  }>;
+}
+
 export class InsufficientChipsError extends Error {
   constructor(required: number, available: number) {
     super(`Insufficient chips: required ${required}, available ${available}`);
@@ -683,6 +697,89 @@ export class ChipService {
 
       return { referee: refereeResult, referrer: referrerResult };
     });
+  }
+
+  /**
+   * Distribute a prize up the agent ownership chain (FR-AGT-W021).
+   *
+   * When agentId wins totalPrize CHIP from a competition:
+   *   - If agent has no ownerAgentId: all chips go to agent.ownerId user
+   *   - If agent has ownerAgentId: agent retains (100 - ownerShareRate)%, passes ownerShareRate% upward
+   *   - Continues up to chain depth 5 (MAX_OWNER_CHAIN_DEPTH from AGO-53)
+   *
+   * Each level credits atomically. Fractional chips are floored (no chip creation).
+   * referenceType='ownership_cascade', referenceId=`${originalReferenceId}:d${depth}`
+   *
+   * Returns all distribution results, bottom-up order.
+   */
+  async distributePrizeCascade(
+    agentId: string,
+    totalPrize: number,
+    referenceId: string,
+  ): Promise<CascadeDistributionResult> {
+    if (totalPrize <= 0) throw new Error('Prize must be positive');
+
+    const MAX_DEPTH = 5;
+    const distributions: CascadeDistributionResult['distributions'] = [];
+    let remaining = totalPrize;
+    let currentAgentId: string | null = agentId;
+    let depth = 0;
+
+    while (currentAgentId !== null && depth < MAX_DEPTH && remaining > 0) {
+      const [agent] = await db
+        .select({
+          id: schema.agents.id,
+          ownerId: schema.agents.ownerId,
+          ownerAgentId: schema.agents.ownerAgentId,
+          ownerShareRate: schema.agents.ownerShareRate,
+          name: schema.agents.name,
+        })
+        .from(schema.agents)
+        .where(eq(schema.agents.id, currentAgentId))
+        .limit(1);
+
+      if (!agent) break;
+
+      const hasParent = agent.ownerAgentId !== null;
+      let retainAmount: number;
+      let passUpAmount: number;
+
+      if (!hasParent) {
+        retainAmount = remaining;
+        passUpAmount = 0;
+      } else {
+        const passUpRate = Math.min(100, Math.max(0, agent.ownerShareRate));
+        passUpAmount = Math.floor(remaining * passUpRate / 100);
+        retainAmount = remaining - passUpAmount;
+      }
+
+      if (retainAmount > 0) {
+        const txResult = await this.credit(agent.ownerId, retainAmount, {
+          referenceType: 'ownership_cascade',
+          referenceId: `${referenceId}:d${depth}`,
+          note: `Prize cascade — ${agent.name} retains ${retainAmount} CHIP (depth ${depth})`,
+        });
+        distributions.push({
+          agentId: agent.id,
+          agentName: agent.name,
+          userId: agent.ownerId,
+          amount: retainAmount,
+          depth,
+          txResult,
+        });
+      }
+
+      remaining = passUpAmount;
+      currentAgentId = agent.ownerAgentId;
+      depth++;
+    }
+
+    return {
+      totalPrize,
+      totalDistributed: totalPrize - remaining,
+      undistributed: remaining,
+      distributions,
+    };
   }
 
   // ─── Internal ─────────────────────────────────────────────────────────────
