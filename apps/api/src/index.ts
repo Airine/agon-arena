@@ -6,6 +6,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { createClient } from 'redis';
 import { authRouter } from './routes/auth.js';
+import { emailAuthRouter } from './routes/email-auth.js';
 import { ipRateLimit, deviceFingerprintLimit } from './middleware/rate-limit.js';
 import { agentsRouter } from './routes/agents.js';
 import { arenasRouter } from './routes/arenas.js';
@@ -71,6 +72,7 @@ app.use('/auth/siwe/verify', deviceFingerprintLimit(86400, 3));
 
 // Routes
 app.use('/auth', authRouter);
+app.use('/auth/email', emailAuthRouter);
 app.use('/auth/github', githubOAuthRouter);
 app.use('/auth/google', googleOAuthRouter);
 app.use('/auth/twitter', twitterOAuthRouter);
