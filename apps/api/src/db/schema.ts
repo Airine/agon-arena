@@ -57,6 +57,8 @@ export const agents = pgTable('agents', {
   // ownerAgentId: the parent agent in the ownership chain (null = top-level agent)
   // Max chain depth is 5. Self-referential FK uses AnyPgColumn to avoid circular type issues.
   ownerAgentId: uuid('owner_agent_id').references((): AnyPgColumn => agents.id),
+  // ownerShareRate: % of prize that flows UP to the parent (0-100). Default 90 = pass 90%, retain 10%.
+  ownerShareRate: integer('owner_share_rate').notNull().default(90),
   name: varchar('name', { length: 100 }).notNull(),
   description: text('description'),
   apiUrl: varchar('api_url', { length: 500 }).notNull(),
