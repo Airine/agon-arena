@@ -7,6 +7,7 @@ import { authRouter } from './routes/auth.js';
 import { agentsRouter } from './routes/agents.js';
 import { arenasRouter } from './routes/arenas.js';
 import { setupSocketHandlers } from './services/socket.js';
+import { setIO } from './services/io.js';
 
 const app = express();
 const httpServer = createServer(app);
@@ -17,6 +18,9 @@ const io = new SocketIOServer(httpServer, {
     methods: ['GET', 'POST'],
   },
 });
+
+// Register IO instance for orchestrator access
+setIO(io);
 
 // Middleware
 app.use(cors({ origin: process.env['CORS_ORIGIN'] ?? 'http://localhost:3000' }));
