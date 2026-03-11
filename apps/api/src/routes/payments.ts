@@ -35,7 +35,7 @@ export const paymentsRouter: RouterType = Router();
 // ─── Constants ─────────────────────────────────────────────────────────────
 
 /** Payment network — set X402_NETWORK=base for mainnet, default: base-sepolia */
-const NETWORK = (process.env['X402_NETWORK'] ?? 'base-sepolia') as string;
+const NETWORK = (process.env['X402_NETWORK'] ?? 'base-sepolia') as PaymentRequirements['network'];
 
 /** USDC contract address — set X402_USDC_ADDRESS for mainnet:
  *   Base Mainnet: 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
