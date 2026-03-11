@@ -1,0 +1,31 @@
+# AWS
+aws_region  = "us-east-1"
+environment = "production"
+
+# VPC
+vpc_cidr           = "10.0.0.0/16"
+availability_zones = ["us-east-1a", "us-east-1b"]
+
+# ECS Fargate
+api_cpu           = 512
+api_memory        = 1024
+api_desired_count = 2
+api_image_tag     = "latest"
+
+# RDS PostgreSQL
+db_instance_class        = "db.t4g.medium"
+db_name                  = "agon_arena"
+db_username              = "agon"
+db_allocated_storage     = 20
+db_max_allocated_storage = 100
+
+# ElastiCache Redis
+redis_node_type       = "cache.t4g.micro"
+redis_num_cache_nodes = 1
+
+# Domain
+domain_name = "agon.win"
+api_subdomain = "api"
+
+# TLS (create with: aws acm request-certificate --domain-name api.agon.win --validation-method DNS)
+acm_certificate_arn = ""
