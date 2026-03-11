@@ -1,5 +1,5 @@
 /**
- * AGO-60: x402 payment endpoint integration (Base testnet, 1 USDC = 100 CHIP)
+ * AGO-60: x402 payment endpoint integration (1 USDC = 100 CHIP)
  *
  * Flow:
  *   POST /payments/chip-purchase { chipAmount: number }
@@ -12,10 +12,12 @@
  *  - chipAmount must be a positive integer, multiple of 100 (min 100)
  *  - Idempotent: settlement tx hash used as referenceId (prevents double-credit)
  *  - Verify before settle: no on-chain settlement if verification fails
- *  - Network: base-sepolia (testnet only in this integration)
+ *  - Network: configured via X402_NETWORK env var (default: base-sepolia)
  *
  * Rate: 1 USDC = 100 CHIP
- * USDC on Base Sepolia: 0x036CbD53842c5426634e7929541eC2318f3dCF7e
+ * USDC address: configured via X402_USDC_ADDRESS env var
+ *   Testnet (Base Sepolia): 0x036CbD53842c5426634e7929541eC2318f3dCF7e
+ *   Mainnet (Base):         0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
  */
 
 import { Router, type Router as RouterType } from 'express';
@@ -32,11 +34,14 @@ export const paymentsRouter: RouterType = Router();
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
-/** Base Sepolia testnet — safe for AGO-60 */
-const NETWORK = 'base-sepolia' as const;
+/** Payment network — set X402_NETWORK=base for mainnet, default: base-sepolia */
+const NETWORK = (process.env['X402_NETWORK'] ?? 'base-sepolia') as string;
 
-/** USDC contract on Base Sepolia */
-const USDC_BASE_SEPOLIA = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
+/** USDC contract address — set X402_USDC_ADDRESS for mainnet:
+ *   Base Mainnet: 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
+ *   Default (Base Sepolia): 0x036CbD53842c5426634e7929541eC2318f3dCF7e
+ */
+const USDC_BASE_SEPOLIA = process.env['X402_USDC_ADDRESS'] ?? '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
 
 /** Exchange rate: 1 USDC = 100 CHIP */
 const CHIP_PER_USDC = 100;
