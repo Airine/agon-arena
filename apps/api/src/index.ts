@@ -6,6 +6,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { createClient } from 'redis';
 import { authRouter } from './routes/auth.js';
+import { ipRateLimit, deviceFingerprintLimit } from './middleware/rate-limit.js';
 import { agentsRouter } from './routes/agents.js';
 import { arenasRouter } from './routes/arenas.js';
 import { skillsRouter } from './routes/skills.js';
@@ -58,6 +59,14 @@ app.use(express.json({ limit: '1mb' }));
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// Anti-fraud: IP rate limits on auth endpoints (applied before route handlers)
+app.use('/auth/siwe', ipRateLimit(60, 10, 'rl:siwe'));            // 10 SIWE requests per min per IP
+app.use('/auth/github/callback', ipRateLimit(60, 5, 'rl:gh'));    // 5 GitHub callbacks per min per IP
+app.use('/auth/google/callback', ipRateLimit(60, 5, 'rl:gg'));    // 5 Google callbacks per min per IP
+app.use('/auth/twitter/callback', ipRateLimit(60, 5, 'rl:tw'));   // 5 Twitter callbacks per min per IP
+// Device fingerprint: max 3 new accounts per 24h per device
+app.use('/auth/siwe/verify', deviceFingerprintLimit(86400, 3));
 
 // Routes
 app.use('/auth', authRouter);

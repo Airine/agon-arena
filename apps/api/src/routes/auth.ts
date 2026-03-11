@@ -9,6 +9,7 @@ import { signToken, requireAuth } from '../middleware/auth.js';
 import { issueTokenPair, rotateRefreshToken, revokeAccessToken } from '../services/jwt.js';
 import { getPlatformPublicKeyHex } from '../services/webhook-crypto.js';
 import { storeSiweNonce, consumeSiweNonce, storeAgentNonce, consumeAgentNonce, storeBindNonce, consumeBindNonce } from '../services/redis.js';
+import { incrementFingerprintAccountCount } from '../middleware/rate-limit.js';
 import { verifyMessage } from 'viem';
 import { chipService } from '../services/chip.js';
 
@@ -159,6 +160,12 @@ authRouter.post('/siwe/verify', async (req, res) => {
       // AGO-68: redeem invite code for new SIWE users (best-effort)
       if (inviteCode) {
         await redeemInviteCode(user!.id, inviteCode);
+      }
+      // AGO-69: increment device fingerprint account counter (best-effort)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((req as any).deviceFingerprint) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await incrementFingerprintAccountCount((req as any).deviceFingerprint as string);
       }
     }
 
