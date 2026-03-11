@@ -129,9 +129,14 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
 
       try {
         const agentUrl = agentUrls.get(actor.agentId)!;
-        const publicKey = agentPublicKeys.get(actor.agentId) ?? null;
-        const response = await requestAgentAction(agentUrl, aapRequest, publicKey);
-        action = validateAction(response, validActions, currentState);
+        if (agentUrl.startsWith('bot://')) {
+          // Bot agent: resolve action locally (no HTTP)
+          action = resolveBotAction(agentUrl, validActions, currentState);
+        } else {
+          const publicKey = agentPublicKeys.get(actor.agentId) ?? null;
+          const response = await requestAgentAction(agentUrl, aapRequest, publicKey);
+          action = validateAction(response, validActions, currentState);
+        }
       } catch {
         // Timeout or error: auto-fold
         action = { type: 'fold' };
@@ -362,4 +367,42 @@ function createSpectatorView(state: GameState): GameState {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Resolve a bot action locally without HTTP.
+ * Strategy variants (encoded in URL):
+ *   bot://random  — random valid action
+ *   bot://call    — always call/check (passive)
+ *   bot://fold    — always fold (foldbots, for testing)
+ * This is the AGO-33 fill-in bot implementation (minimal version).
+ */
+function resolveBotAction(
+  botUrl: string,
+  validActions: ActionType[],
+  state: GameState,
+): PlayerAction {
+  const strategy = botUrl.replace('bot://', '').toLowerCase();
+
+  if (strategy === 'fold' && validActions.includes('fold')) {
+    return { type: 'fold' };
+  }
+
+  if (strategy === 'call' || strategy === 'passive') {
+    if (validActions.includes('check')) return { type: 'check' };
+    if (validActions.includes('call')) return { type: 'call' };
+    return { type: 'fold' };
+  }
+
+  // Default: random (weighted: call 60%, check 20%, fold 15%, raise 5%)
+  const r = Math.random();
+  if (r < 0.15 && validActions.includes('fold')) {
+    return { type: 'fold' };
+  }
+  if (r < 0.20 && validActions.includes('raise')) {
+    return { type: 'raise', amount: state.minRaise };
+  }
+  if (validActions.includes('check')) return { type: 'check' };
+  if (validActions.includes('call')) return { type: 'call' };
+  return { type: 'fold' };
 }

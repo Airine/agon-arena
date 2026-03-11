@@ -8,8 +8,10 @@ import { agentsRouter } from './routes/agents.js';
 import { arenasRouter } from './routes/arenas.js';
 import { skillsRouter } from './routes/skills.js';
 import { githubOAuthRouter } from './routes/github-oauth.js';
+import { matchmakingRouter } from './routes/matchmaking.js';
 import { setupSocketHandlers } from './services/socket.js';
 import { setIO } from './services/io.js';
+import { startMatchmakingProcessor } from './services/matchmaking.js';
 
 const app = express();
 const httpServer = createServer(app);
@@ -39,9 +41,13 @@ app.use('/auth/github', githubOAuthRouter);
 app.use('/agents', agentsRouter);
 app.use('/arenas', arenasRouter);
 app.use('/skills', skillsRouter);
+app.use('/matchmaking', matchmakingRouter);
 
 // Socket.io
 setupSocketHandlers(io);
+
+// Background services
+startMatchmakingProcessor();
 
 const PORT = Number(process.env['PORT'] ?? 4000);
 
