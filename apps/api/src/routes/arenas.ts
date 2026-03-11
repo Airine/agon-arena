@@ -7,23 +7,60 @@ import { getGameSnapshot } from '../services/redis.js';
 
 export const arenasRouter: RouterType = Router();
 
+// Mode-specific defaults and constraints
+const MODE_DEFAULTS = {
+  practice:   { maxHands: 100, buyInAmount: 0, startingStack: 1000, minPlayers: 2 },
+  cash:       { maxHands: 0,   buyInAmount: 0, startingStack: 1000, minPlayers: 2 },
+  tournament: { maxHands: 0,   buyInAmount: 1000, startingStack: 5000, minPlayers: 3 },
+} as const;
+
 const createArenaSchema = z.object({
   name: z.string().min(3).max(100),
-  maxPlayers: z.number().int().min(2).max(10).default(6),
-  smallBlind: z.number().int().min(1).default(10),
-  bigBlind: z.number().int().min(2).default(20),
-  startingStack: z.number().int().min(100).default(1000),
+  mode: z.enum(['practice', 'cash', 'tournament']).default('practice'),
+  maxPlayers: z.number().int().min(2).max(10).optional(),
+  smallBlind: z.number().int().min(1).optional(),
+  bigBlind: z.number().int().min(2).optional(),
+  startingStack: z.number().int().min(100).optional(),
+  // maxHands: 0 = unlimited, >0 = fixed hand count
+  maxHands: z.number().int().min(0).max(10000).optional(),
+  // buyInAmount: CHIP cost to join; must be 0 for practice
+  buyInAmount: z.number().int().min(0).optional(),
 });
 
 /**
  * POST /arenas - Create a new arena. Requires auth.
+ *
+ * Modes:
+ *   practice   - Free virtual chips (no CHIP buy-in), limited to maxHands (default 100)
+ *   cash       - Standard cash game; buyInAmount CHIP to join, unlimited hands
+ *   tournament - Fixed buy-in elimination format; minPlayers=3, prize pool at end
  */
 arenasRouter.post('/', requireAuth, async (req, res) => {
   try {
     const body = createArenaSchema.parse(req.body);
+    const defaults = MODE_DEFAULTS[body.mode];
 
-    if (body.bigBlind <= body.smallBlind) {
+    const maxPlayers = body.maxPlayers ?? 6;
+    const smallBlind = body.smallBlind ?? 10;
+    const bigBlind = body.bigBlind ?? 20;
+    const startingStack = body.startingStack ?? defaults.startingStack;
+    const maxHands = body.maxHands ?? defaults.maxHands;
+    const buyInAmount = body.buyInAmount ?? defaults.buyInAmount;
+
+    if (bigBlind <= smallBlind) {
       res.status(400).json({ error: 'Big blind must be greater than small blind' });
+      return;
+    }
+    if (body.mode === 'practice' && buyInAmount > 0) {
+      res.status(400).json({ error: 'Practice arenas cannot have a buy-in amount' });
+      return;
+    }
+    if (body.mode === 'tournament' && maxPlayers < 3) {
+      res.status(400).json({ error: 'Tournament arenas require at least 3 players' });
+      return;
+    }
+    if (body.mode === 'tournament' && buyInAmount < 100) {
+      res.status(400).json({ error: 'Tournament buy-in must be at least 100 CHIP' });
       return;
     }
 
@@ -31,10 +68,13 @@ arenasRouter.post('/', requireAuth, async (req, res) => {
       .insert(schema.arenas)
       .values({
         name: body.name,
-        maxPlayers: body.maxPlayers,
-        smallBlind: body.smallBlind,
-        bigBlind: body.bigBlind,
-        startingStack: body.startingStack,
+        mode: body.mode,
+        maxPlayers,
+        smallBlind,
+        bigBlind,
+        startingStack,
+        maxHands,
+        buyInAmount,
         createdByUserId: req.user!.userId,
       })
       .returning();
@@ -50,11 +90,12 @@ arenasRouter.post('/', requireAuth, async (req, res) => {
 });
 
 /**
- * GET /arenas - List arenas. Optional ?status= filter.
+ * GET /arenas - List arenas. Optional ?status= and ?mode= filters.
  */
 arenasRouter.get('/', async (req, res) => {
   try {
     const status = req.query['status'] as string | undefined;
+    const mode = req.query['mode'] as string | undefined;
 
     // Subquery for player count
     const playerCountSq = db
@@ -72,11 +113,14 @@ arenasRouter.get('/', async (req, res) => {
         id: schema.arenas.id,
         name: schema.arenas.name,
         gameType: schema.arenas.gameType,
+        mode: schema.arenas.mode,
         status: schema.arenas.status,
         maxPlayers: schema.arenas.maxPlayers,
         smallBlind: schema.arenas.smallBlind,
         bigBlind: schema.arenas.bigBlind,
         startingStack: schema.arenas.startingStack,
+        maxHands: schema.arenas.maxHands,
+        buyInAmount: schema.arenas.buyInAmount,
         spectatorCount: schema.arenas.spectatorCount,
         playerCount: sql<number>`COALESCE(${playerCountSq.playerCount}, 0)`.as('player_count'),
         createdAt: schema.arenas.createdAt,
@@ -85,8 +129,15 @@ arenasRouter.get('/', async (req, res) => {
       .leftJoin(playerCountSq, eq(schema.arenas.id, playerCountSq.arenaId))
       .$dynamic();
 
+    const conditions = [];
     if (status && ['waiting', 'running', 'finished', 'cancelled'].includes(status)) {
-      query = query.where(eq(schema.arenas.status, status as 'waiting' | 'running' | 'finished' | 'cancelled'));
+      conditions.push(eq(schema.arenas.status, status as 'waiting' | 'running' | 'finished' | 'cancelled'));
+    }
+    if (mode && ['practice', 'cash', 'tournament'].includes(mode)) {
+      conditions.push(eq(schema.arenas.mode, mode as 'practice' | 'cash' | 'tournament'));
+    }
+    if (conditions.length > 0) {
+      query = query.where(conditions.length === 1 ? conditions[0]! : and(...conditions));
     }
 
     const arenas = await query.limit(50);
@@ -316,5 +367,47 @@ arenasRouter.get('/:id/snapshot', async (req, res) => {
     res.json({ snapshot, arenaStatus: arena.status });
   } catch {
     res.status(500).json({ error: 'Failed to fetch snapshot' });
+  }
+});
+
+/**
+ * DELETE /arenas/:id - Cancel a waiting arena. Creator only.
+ * Running arenas cannot be cancelled (must finish naturally).
+ */
+arenasRouter.delete('/:id', requireAuth, async (req, res) => {
+  try {
+    const arenaId = String(req.params['id']);
+
+    const [arena] = await db
+      .select({ id: schema.arenas.id, status: schema.arenas.status, createdByUserId: schema.arenas.createdByUserId })
+      .from(schema.arenas)
+      .where(eq(schema.arenas.id, arenaId))
+      .limit(1);
+
+    if (!arena) {
+      res.status(404).json({ error: 'Arena not found' });
+      return;
+    }
+    if (arena.createdByUserId !== req.user!.userId) {
+      res.status(403).json({ error: 'Only the arena creator can cancel it' });
+      return;
+    }
+    if (arena.status === 'running') {
+      res.status(400).json({ error: 'Cannot cancel a running arena' });
+      return;
+    }
+    if (arena.status === 'finished' || arena.status === 'cancelled') {
+      res.status(400).json({ error: `Arena is already ${arena.status}` });
+      return;
+    }
+
+    await db
+      .update(schema.arenas)
+      .set({ status: 'cancelled', finishedAt: new Date() })
+      .where(eq(schema.arenas.id, arenaId));
+
+    res.json({ message: 'Arena cancelled', arenaId });
+  } catch {
+    res.status(500).json({ error: 'Failed to cancel arena' });
   }
 });

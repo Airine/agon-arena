@@ -17,6 +17,8 @@ import {
 // Enums
 export const arenaStatusEnum = pgEnum('arena_status', ['waiting', 'running', 'finished', 'cancelled']);
 export const gameTypeEnum = pgEnum('game_type', ['texas_holdem']);
+// Arena mode: practice (free virtual chips), cash (CHIP buy-in, unlimited), tournament (CHIP buy-in, elimination)
+export const arenaModeEnum = pgEnum('arena_mode', ['practice', 'cash', 'tournament']);
 export const gameStageEnum = pgEnum('game_stage', [
   'waiting', 'pre_flop', 'flop', 'turn', 'river', 'showdown', 'finished'
 ]);
@@ -74,11 +76,16 @@ export const arenas = pgTable('arenas', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: varchar('name', { length: 100 }).notNull(),
   gameType: gameTypeEnum('game_type').notNull().default('texas_holdem'),
+  mode: arenaModeEnum('mode').notNull().default('practice'),
   status: arenaStatusEnum('status').notNull().default('waiting'),
   maxPlayers: integer('max_players').notNull().default(6),
   smallBlind: integer('small_blind').notNull().default(10),
   bigBlind: integer('big_blind').notNull().default(20),
   startingStack: integer('starting_stack').notNull().default(1000),
+  // maxHands: 0 = unlimited (cash), >0 = fixed (practice/tournament)
+  maxHands: integer('max_hands').notNull().default(0),
+  // buyInAmount: CHIP cost to join (0 = free, used for practice mode)
+  buyInAmount: integer('buy_in_amount').notNull().default(0),
   currentHandNumber: integer('current_hand_number').notNull().default(0),
   spectatorCount: integer('spectator_count').notNull().default(0),
   createdByUserId: uuid('created_by_user_id').references(() => users.id),
@@ -87,6 +94,7 @@ export const arenas = pgTable('arenas', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
 }, (t) => [
   index('arenas_status_idx').on(t.status),
+  index('arenas_mode_idx').on(t.mode),
 ]);
 
 // Arena seats (which agents are seated)
