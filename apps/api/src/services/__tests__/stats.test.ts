@@ -30,7 +30,7 @@ const {
   const mockSelectImpl = vi.fn((...args: unknown[]) => {
     const next = selectQueue.shift();
     if (!next) throw new Error('Unexpected extra db.select() call');
-    return next(...args);
+    return (next as (...a: unknown[]) => unknown)(...args);
   });
 
   // Expose the queue so tests can push chains before each call

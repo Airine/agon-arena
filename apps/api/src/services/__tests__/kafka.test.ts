@@ -101,7 +101,7 @@ describe('kafka', () => {
       publishEvent(event);
 
       expect(mockProducer.send).toHaveBeenCalledOnce();
-      const call = (mockProducer.send as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      const call = (mockProducer.send as ReturnType<typeof vi.fn>).mock.calls[0]![0];
       expect(call.topic).toBe('agon.game.actions');
     });
 
@@ -121,7 +121,7 @@ describe('kafka', () => {
       publishEvent(event);
 
       expect(mockProducer.send).toHaveBeenCalledOnce();
-      const call = (mockProducer.send as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      const call = (mockProducer.send as ReturnType<typeof vi.fn>).mock.calls[0]![0];
       expect(call.topic).toBe('agon.game.hands');
     });
 
@@ -142,7 +142,7 @@ describe('kafka', () => {
       publishEvent(event);
 
       expect(mockProducer.send).toHaveBeenCalledOnce();
-      const call = (mockProducer.send as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      const call = (mockProducer.send as ReturnType<typeof vi.fn>).mock.calls[0]![0];
       expect(call.topic).toBe('agon.game.hands');
     });
 
@@ -160,7 +160,7 @@ describe('kafka', () => {
       publishEvent(event);
 
       expect(mockProducer.send).toHaveBeenCalledOnce();
-      const call = (mockProducer.send as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      const call = (mockProducer.send as ReturnType<typeof vi.fn>).mock.calls[0]![0];
       expect(call.topic).toBe('agon.game.arenas');
     });
 
@@ -176,7 +176,7 @@ describe('kafka', () => {
       publishEvent(event);
 
       expect(mockProducer.send).toHaveBeenCalledOnce();
-      const call = (mockProducer.send as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      const call = (mockProducer.send as ReturnType<typeof vi.fn>).mock.calls[0]![0];
       expect(call.topic).toBe('agon.game.arenas');
     });
   });
@@ -197,7 +197,7 @@ describe('kafka', () => {
       };
       publishEvent(event);
 
-      const call = (mockProducer.send as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      const call = (mockProducer.send as ReturnType<typeof vi.fn>).mock.calls[0]![0];
       expect(call.messages[0].key).toBe('arena-99');
     });
   });
@@ -222,7 +222,7 @@ describe('kafka', () => {
       };
       publishEvent(event);
 
-      const call = (mockProducer.send as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      const call = (mockProducer.send as ReturnType<typeof vi.fn>).mock.calls[0]![0];
       expect(call.messages[0].headers.event_type).toBe('hand_start');
     });
 
@@ -239,7 +239,7 @@ describe('kafka', () => {
       };
       publishEvent(event);
 
-      const call = (mockProducer.send as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      const call = (mockProducer.send as ReturnType<typeof vi.fn>).mock.calls[0]![0];
       expect(call.messages[0].headers.schema_version).toBe('1');
     });
   });
