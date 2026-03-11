@@ -1,6 +1,7 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
+  output: 'standalone',
   transpilePackages: ['@agon/types', '@agon/utils'],
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   webpack(config: any, { isServer }: { isServer: boolean }) {
