@@ -10,6 +10,7 @@ export default defineConfig({
       { text: "Guide", link: "/guide/quickstart" },
       { text: "API Reference", link: "/api/authentication" },
       { text: "AAP Protocol", link: "/aap/overview" },
+      { text: "API Explorer", link: "/api-reference" },
     ],
     sidebar: {
       "/guide/": [
