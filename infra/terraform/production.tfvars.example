@@ -27,5 +27,13 @@ redis_num_cache_nodes = 1
 domain_name = "agon.win"
 api_subdomain = "api"
 
-# TLS (create with: aws acm request-certificate --domain-name api.agon.win --validation-method DNS)
+# TLS -- ALB certificate (can be any region)
+# aws acm request-certificate --domain-name api.agon.win --validation-method DNS
 acm_certificate_arn = ""
+
+# CloudFront certificate (MUST be in us-east-1)
+# aws acm request-certificate --domain-name "*.agon.win" --subject-alternative-names "agon.win" --validation-method DNS --region us-east-1
+cloudfront_acm_certificate_arn = ""
+
+# Route53
+create_route53_zone = false

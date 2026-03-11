@@ -16,14 +16,29 @@ on:
         required: false
         default: 'latest'
         type: string
+      deploy_web:
+        description: 'Deploy web frontend to S3 + CloudFront'
+        required: false
+        default: true
+        type: boolean
+      deploy_api:
+        description: 'Deploy API to ECS'
+        required: false
+        default: true
+        type: boolean
 
 concurrency:
   group: deploy-${{ inputs.environment }}
   cancel-in-progress: false
 
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ENV_PREFIX: agon-arena-${{ inputs.environment }}
+
 jobs:
-  deploy:
-    name: Deploy to ${{ inputs.environment }}
+  deploy-api:
+    name: Deploy API to ECS
+    if: inputs.deploy_api
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
 
@@ -38,7 +53,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: ecr-login
@@ -46,8 +61,8 @@ jobs:
 
       - name: Deploy to ECS
         run: |
-          CLUSTER="agon-arena-${{ inputs.environment }}-cluster"
-          SERVICE="agon-arena-${{ inputs.environment }}-api"
+          CLUSTER="${ENV_PREFIX}-cluster"
+          SERVICE="${ENV_PREFIX}-api"
 
           aws ecs update-service \
             --cluster "$CLUSTER" \
@@ -59,4 +74,84 @@ jobs:
             --cluster "$CLUSTER" \
             --services "$SERVICE"
 
-          echo "Deployment complete!"
+          echo "ECS deployment complete!"
+
+      - name: Invalidate API CloudFront cache
+        run: |
+          DIST_ID=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Comment=='${ENV_PREFIX} API CDN'].Id" \
+            --output text)
+
+          if [ -n "$DIST_ID" ] && [ "$DIST_ID" != "None" ]; then
+            aws cloudfront create-invalidation \
+              --distribution-id "$DIST_ID" \
+              --paths "/*"
+            echo "CloudFront API cache invalidated (distribution: $DIST_ID)"
+          else
+            echo "No API CloudFront distribution found, skipping invalidation"
+          fi
+
+  deploy-web:
+    name: Deploy Web to S3 + CloudFront
+    if: inputs.deploy_web
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build web
+        run: pnpm --filter @agon/web build
+        env:
+          NEXT_PUBLIC_API_URL: https://api.agon.win
+          NEXT_PUBLIC_WS_URL: wss://api.agon.win
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Sync to S3
+        run: |
+          S3_BUCKET="${ENV_PREFIX}-web"
+
+          # Sync static assets with long cache
+          aws s3 sync apps/web/out/_next/static/ "s3://${S3_BUCKET}/_next/static/" \
+            --cache-control "public, max-age=31536000, immutable"
+
+          # Sync everything else with short cache
+          aws s3 sync apps/web/out/ "s3://${S3_BUCKET}/" \
+            --exclude "_next/static/*" \
+            --cache-control "public, max-age=0, must-revalidate"
+
+          echo "S3 sync complete!"
+
+      - name: Invalidate Web CloudFront cache
+        run: |
+          DIST_ID=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Comment=='${ENV_PREFIX} Web CDN'].Id" \
+            --output text)
+
+          if [ -n "$DIST_ID" ] && [ "$DIST_ID" != "None" ]; then
+            aws cloudfront create-invalidation \
+              --distribution-id "$DIST_ID" \
+              --paths "/*"
+            echo "CloudFront Web cache invalidated (distribution: $DIST_ID)"
+          else
+            echo "No Web CloudFront distribution found, skipping invalidation"
+          fi

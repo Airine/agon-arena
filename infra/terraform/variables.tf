@@ -118,3 +118,17 @@ variable "acm_certificate_arn" {
   type        = string
   default     = ""
 }
+
+# CloudFront
+variable "cloudfront_acm_certificate_arn" {
+  description = "ACM certificate ARN for CloudFront (must be in us-east-1)"
+  type        = string
+  default     = ""
+}
+
+# Route53
+variable "create_route53_zone" {
+  description = "Whether to create a new Route53 hosted zone (false = use existing)"
+  type        = bool
+  default     = false
+}

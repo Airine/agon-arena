@@ -93,3 +93,68 @@ resource "aws_secretsmanager_secret_version" "jwt_secret" {
     ignore_changes = [secret_string]
   }
 }
+
+# --- WAF (must be us-east-1 for CloudFront) ---
+module "waf" {
+  source = "./modules/waf"
+
+  name_prefix = local.name_prefix
+}
+
+# --- S3 for Web Static Assets ---
+module "s3_web" {
+  source = "./modules/s3_web"
+
+  name_prefix = local.name_prefix
+}
+
+# --- CloudFront CDN ---
+module "cloudfront" {
+  source = "./modules/cloudfront"
+
+  name_prefix                   = local.name_prefix
+  alb_dns_name                  = module.alb.dns_name
+  web_s3_bucket_regional_domain = module.s3_web.bucket_regional_domain_name
+
+  api_domain              = var.api_subdomain != "" ? "${var.api_subdomain}.${var.domain_name}" : ""
+  web_domain              = var.domain_name
+  api_acm_certificate_arn = var.cloudfront_acm_certificate_arn
+  web_acm_certificate_arn = var.cloudfront_acm_certificate_arn
+  waf_acl_arn             = module.waf.acl_arn
+}
+
+# --- S3 Bucket Policy (CloudFront OAC access) ---
+resource "aws_s3_bucket_policy" "web_cloudfront" {
+  bucket = module.s3_web.bucket_id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "AllowCloudFrontOAC"
+      Effect    = "Allow"
+      Principal = { Service = "cloudfront.amazonaws.com" }
+      Action    = "s3:GetObject"
+      Resource  = "${module.s3_web.bucket_arn}/*"
+      Condition = {
+        StringEquals = {
+          "AWS:SourceArn" = module.cloudfront.web_distribution_arn
+        }
+      }
+    }]
+  })
+}
+
+# --- Route53 DNS ---
+module "route53" {
+  source = "./modules/route53"
+
+  name_prefix   = local.name_prefix
+  domain_name   = var.domain_name
+  api_subdomain = var.api_subdomain
+  create_zone   = var.create_route53_zone
+
+  web_cloudfront_domain         = module.cloudfront.web_distribution_domain
+  web_cloudfront_hosted_zone_id = module.cloudfront.web_distribution_hosted_zone_id
+  api_cloudfront_domain         = module.cloudfront.api_distribution_domain
+  api_cloudfront_hosted_zone_id = module.cloudfront.api_distribution_hosted_zone_id
+}
