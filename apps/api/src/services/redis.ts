@@ -1,4 +1,5 @@
 import { createClient, type RedisClientType } from 'redis';
+import type { GameState } from '@agon/types';
 
 type RedisClient = RedisClientType;
 
@@ -161,6 +162,46 @@ export async function consumeOAuthExchange(code: string): Promise<OAuthExchangeP
   if (!val) return null;
   try {
     return JSON.parse(val) as OAuthExchangePayload;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Game state snapshot cache (for spectator reconnect)
+// ---------------------------------------------------------------------------
+
+const GAME_SNAPSHOT_PREFIX = 'arena:snapshot:';
+const GAME_SNAPSHOT_TTL_SECONDS = 3600; // 1 hour (covers game duration)
+
+export interface ArenaSnapshot {
+  arenaId: string;
+  gameState: GameState;
+  handNumber: number;
+  updatedAt: number; // Unix ms
+}
+
+/**
+ * Write the current game state snapshot to Redis.
+ * Called after every game:action and hand:end broadcast.
+ */
+export async function setGameSnapshot(arenaId: string, snapshot: ArenaSnapshot): Promise<void> {
+  const redis = await getRedisClient();
+  await redis.set(`${GAME_SNAPSHOT_PREFIX}${arenaId}`, JSON.stringify(snapshot), {
+    EX: GAME_SNAPSHOT_TTL_SECONDS,
+  });
+}
+
+/**
+ * Read the current game state snapshot from Redis.
+ * Returns null if arena not found or not yet started.
+ */
+export async function getGameSnapshot(arenaId: string): Promise<ArenaSnapshot | null> {
+  const redis = await getRedisClient();
+  const val = await redis.get(`${GAME_SNAPSHOT_PREFIX}${arenaId}`);
+  if (!val) return null;
+  try {
+    return JSON.parse(val) as ArenaSnapshot;
   } catch {
     return null;
   }

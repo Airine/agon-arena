@@ -5,6 +5,7 @@ import { createGame, processAction, getValidActions, getWinners, isHandOver, typ
 import { db, schema } from '../db/index.js';
 import { getIO } from './io.js';
 import { signWebhookPayload, verifyAgentSignature } from './webhook-crypto.js';
+import { setGameSnapshot } from './redis.js';
 
 const ACTION_TIMEOUT_MS = 5000;
 const MAX_HANDS = 100; // Max hands per arena session
@@ -154,13 +155,22 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
       });
 
       // Broadcast action to spectators (hide hole cards)
+      const spectatorState = createSpectatorView(currentState);
       getIO().to(`arena:${arenaId}`).emit('game:action', {
         arenaId,
         handId: handRecord!.id,
         agentId: actor.agentId,
         action,
-        resultingState: createSpectatorView(currentState),
+        resultingState: spectatorState,
       });
+
+      // Cache snapshot for reconnecting spectators (fire-and-forget)
+      setGameSnapshot(arenaId, {
+        arenaId,
+        gameState: spectatorState,
+        handNumber: currentState.handNumber,
+        updatedAt: Date.now(),
+      }).catch(() => {});
     }
 
     // Hand is over - determine winners
@@ -218,12 +228,21 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
     }
 
     // Broadcast hand end
+    const finalSpectatorState = createSpectatorView(currentState);
     getIO().to(`arena:${arenaId}`).emit('hand:end', {
       arenaId,
       handNumber,
       winners,
-      finalState: createSpectatorView(currentState),
+      finalState: finalSpectatorState,
     });
+
+    // Cache snapshot for reconnecting spectators (fire-and-forget)
+    setGameSnapshot(arenaId, {
+      arenaId,
+      gameState: finalSpectatorState,
+      handNumber,
+      updatedAt: Date.now(),
+    }).catch(() => {});
 
     // Brief pause between hands
     await sleep(1000);

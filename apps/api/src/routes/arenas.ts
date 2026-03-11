@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { eq, and, count, sql } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
+import { getGameSnapshot } from '../services/redis.js';
 
 export const arenasRouter: RouterType = Router();
 
@@ -284,5 +285,36 @@ arenasRouter.post('/:id/start', requireAuth, async (req, res) => {
     res.json({ message: 'Game started', arenaId, playerCount: seats.length });
   } catch {
     res.status(500).json({ error: 'Failed to start game' });
+  }
+});
+
+/**
+ * GET /arenas/:id/snapshot - Get current game state snapshot for reconnecting spectators.
+ * Reads from Redis cache for < 200ms response time.
+ */
+arenasRouter.get('/:id/snapshot', async (req, res) => {
+  try {
+    const arenaId = String(req.params['id']);
+
+    const [arena] = await db
+      .select({ id: schema.arenas.id, status: schema.arenas.status })
+      .from(schema.arenas)
+      .where(eq(schema.arenas.id, arenaId))
+      .limit(1);
+
+    if (!arena) {
+      res.status(404).json({ error: 'Arena not found' });
+      return;
+    }
+
+    if (arena.status === 'waiting') {
+      res.json({ snapshot: null, arenaStatus: 'waiting' });
+      return;
+    }
+
+    const snapshot = await getGameSnapshot(arenaId);
+    res.json({ snapshot, arenaStatus: arena.status });
+  } catch {
+    res.status(500).json({ error: 'Failed to fetch snapshot' });
   }
 });

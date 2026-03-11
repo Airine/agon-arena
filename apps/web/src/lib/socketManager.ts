@@ -17,6 +17,7 @@
 import { io, Socket } from 'socket.io-client';
 
 type RoomListener = (event: string, data: unknown) => void;
+type ReconnectCallback = () => void;
 
 interface RoomEntry {
   refCount: number;
@@ -28,6 +29,8 @@ class SocketManager {
   private url: string = '';
   private rooms = new Map<string, RoomEntry>();
   private globalListeners = new Set<RoomListener>();
+  private reconnectCallbacks = new Set<ReconnectCallback>();
+  private hasConnectedOnce = false;
 
   connect(url: string): Socket {
     if (this.socket && this.url === url && this.socket.connected) {
@@ -38,6 +41,7 @@ class SocketManager {
       this.socket.disconnect();
       this.socket = null;
       this.rooms.clear();
+      this.hasConnectedOnce = false;
     }
     if (!this.socket) {
       this.url = url;
@@ -53,6 +57,14 @@ class SocketManager {
         // Rejoin all tracked rooms after reconnection
         for (const arenaId of this.rooms.keys()) {
           this.socket!.emit('join:arena', arenaId);
+        }
+        // Fire reconnect callbacks only on reconnection (not initial connect)
+        if (this.hasConnectedOnce) {
+          for (const cb of this.reconnectCallbacks) {
+            cb();
+          }
+        } else {
+          this.hasConnectedOnce = true;
         }
       });
 
@@ -98,6 +110,15 @@ class SocketManager {
       this.socket.disconnect();
       this.socket = null;
     }
+  }
+
+  /**
+   * Register a callback to be called on reconnection (not initial connection).
+   * Returns an unsubscribe function.
+   */
+  onReconnect(cb: ReconnectCallback): () => void {
+    this.reconnectCallbacks.add(cb);
+    return () => this.reconnectCallbacks.delete(cb);
   }
 
   getSocket(): Socket | null {
