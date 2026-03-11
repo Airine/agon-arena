@@ -211,6 +211,23 @@ export const chipTransactions = pgTable('chip_transactions', {
   index('chip_tx_reference_idx').on(t.referenceType, t.referenceId),
 ]);
 
+// Invite codes table — each verified user gets up to 5 invite codes
+export const inviteCodes = pgTable('invite_codes', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  // e.g. "AGON-A1B2-C3D4" — uppercase alphanumeric, hyphen-separated
+  code: varchar('code', { length: 20 }).notNull().unique(),
+  createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id),
+  // Set when a registrant redeems this code during signup
+  usedByUserId: uuid('used_by_user_id').references(() => users.id),
+  usedAt: timestamp('used_at'),
+  // Whether the referrer's CHIP reward has been distributed
+  referrerRewarded: boolean('referrer_rewarded').notNull().default(false),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (t) => [
+  index('invite_codes_creator_idx').on(t.createdByUserId),
+  uniqueIndex('invite_codes_code_idx').on(t.code),
+]);
+
 // Social OAuth binding providers
 export const socialProviderEnum = pgEnum('social_provider', ['github', 'google', 'twitter', 'ens']);
 
