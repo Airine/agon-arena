@@ -18,6 +18,7 @@ function getJwtSecret(): string {
 export interface AuthPayload {
   userId: string;
   username: string;
+  walletAddress?: string; // EVM address (lowercase 0x...) — present for SIWE users
 }
 
 declare global {

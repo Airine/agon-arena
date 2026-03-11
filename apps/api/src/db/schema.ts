@@ -26,14 +26,19 @@ export const skillVisibilityEnum = pgEnum('skill_visibility', ['public', 'privat
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
   username: varchar('username', { length: 50 }).notNull().unique(),
-  email: varchar('email', { length: 255 }).notNull().unique(),
-  passwordHash: varchar('password_hash', { length: 255 }).notNull(),
-  chipBalance: bigint('chip_balance', { mode: 'number' }).notNull().default(10000),
+  // walletAddress: EVM address (0x...) — primary Web3 identity; null for email-only users
+  walletAddress: varchar('wallet_address', { length: 42 }).unique(),
+  // email/passwordHash are optional — SIWE users may not have them
+  email: varchar('email', { length: 255 }).unique(),
+  passwordHash: varchar('password_hash', { length: 255 }),
+  chipBalance: bigint('chip_balance', { mode: 'number' }).notNull().default(0),
+  frozenAmount: bigint('frozen_amount', { mode: 'number' }).notNull().default(0),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 }, (t) => [
   uniqueIndex('users_username_idx').on(t.username),
   uniqueIndex('users_email_idx').on(t.email),
+  uniqueIndex('users_wallet_idx').on(t.walletAddress),
 ]);
 
 // Agents table
