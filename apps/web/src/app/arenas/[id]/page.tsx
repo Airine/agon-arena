@@ -6,6 +6,12 @@ import dynamic from 'next/dynamic';
 import ActionLog from '../../../components/ActionLog';
 import { useArenaSocket } from '../../../hooks/useArenaSocket';
 
+// Dynamic import to avoid SSR issues with ECharts
+const ChipEquityChart = dynamic(() => import('../../../components/ChipEquityChart'), {
+  ssr: false,
+  loading: () => null,
+});
+
 // Dynamic import to avoid SSR issues with Konva
 const PokerTable = dynamic(() => import('../../../components/PokerTable'), {
   ssr: false,
@@ -52,7 +58,7 @@ export default function SpectatorPage({
   params: Promise<{ id: string }>;
 }) {
   const { id: arenaId } = use(params);
-  const { gameState, actions, connected, arenaFinished } = useArenaSocket(arenaId);
+  const { gameState, actions, chipSnapshots, connected, arenaFinished } = useArenaSocket(arenaId);
   const [arena, setArena] = useState<ArenaDetail | null>(null);
 
   useEffect(() => {
@@ -174,6 +180,31 @@ export default function SpectatorPage({
               <span>{gameState.players.filter((p) => p.isActive).length} players active</span>
             </div>
           )}
+
+          {/* Chip equity curve */}
+          <div
+            style={{
+              marginTop: '16px',
+              background: 'var(--card)',
+              border: '1px solid var(--border)',
+              borderRadius: '8px',
+              padding: '12px',
+            }}
+          >
+            <div
+              style={{
+                fontSize: '11px',
+                color: 'var(--muted)',
+                marginBottom: '6px',
+                fontWeight: 600,
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase',
+              }}
+            >
+              Chip Equity
+            </div>
+            <ChipEquityChart snapshots={chipSnapshots} height={180} />
+          </div>
         </div>
 
         {/* Action log */}
