@@ -148,7 +148,7 @@ describe('joinQueue', () => {
     await joinQueue('practice', entry);
 
     expect(mockZAdd).toHaveBeenCalledOnce();
-    const [key, scoreValue, options] = mockZAdd.mock.calls[0];
+    const [key, scoreValue, options] = mockZAdd.mock.calls[0]!;
     expect(key).toBe('matchmaking:queue:practice');
     expect(scoreValue.score).toBe(1_000_000);
     expect(JSON.parse(scoreValue.value)).toMatchObject({ agentId: 'agent-aaa' });
@@ -160,7 +160,7 @@ describe('joinQueue', () => {
     const entry = makeEntry({ joinedAt: now });
     await joinQueue('cash', entry);
 
-    const [, scoreValue] = mockZAdd.mock.calls[0];
+    const [, scoreValue] = mockZAdd.mock.calls[0]!;
     expect(scoreValue.score).toBe(now);
   });
 
@@ -175,7 +175,7 @@ describe('joinQueue', () => {
     };
     await joinQueue('tournament', entry);
 
-    const [, scoreValue] = mockZAdd.mock.calls[0];
+    const [, scoreValue] = mockZAdd.mock.calls[0]!;
     const parsed = JSON.parse(scoreValue.value) as QueueEntry;
     expect(parsed).toEqual(entry);
   });

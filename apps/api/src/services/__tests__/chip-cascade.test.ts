@@ -231,13 +231,13 @@ describe('ChipService.distributePrizeCascade()', () => {
     expect(result.undistributed).toBe(0);
     expect(result.distributions).toHaveLength(2);
 
-    const child = result.distributions[0];
+    const child = result.distributions[0]!;
     expect(child.agentId).toBe('agent-1');
     expect(child.userId).toBe('owner-1');
     expect(child.amount).toBe(100); // 1000 * (100-90)% = 100
     expect(child.depth).toBe(0);
 
-    const parent = result.distributions[1];
+    const parent = result.distributions[1]!;
     expect(parent.agentId).toBe('agent-2');
     expect(parent.userId).toBe('owner-2');
     expect(parent.amount).toBe(900); // passes up 900, retains all at top
@@ -256,9 +256,9 @@ describe('ChipService.distributePrizeCascade()', () => {
 
     await svc.distributePrizeCascade('agent-1', 1000, 'ref-abc');
 
-    const calls = mockTxInsertValues.mock.calls;
-    expect(calls[0][0]).toMatchObject({ referenceId: 'ref-abc:d0' });
-    expect(calls[1][0]).toMatchObject({ referenceId: 'ref-abc:d1' });
+    const calls = mockTxInsertValues.mock.calls as unknown[][];
+    expect(calls[0]![0]).toMatchObject({ referenceId: 'ref-abc:d0' });
+    expect(calls[1]![0]).toMatchObject({ referenceId: 'ref-abc:d1' });
   });
 
   // ── Three-level chain ───────────────────────────────────────────────────────
@@ -284,9 +284,9 @@ describe('ChipService.distributePrizeCascade()', () => {
     const result = await svc.distributePrizeCascade('agent-1', 1000, 'hand-3');
 
     expect(result.distributions).toHaveLength(3);
-    expect(result.distributions[0].amount).toBe(500);
-    expect(result.distributions[1].amount).toBe(250);
-    expect(result.distributions[2].amount).toBe(250);
+    expect(result.distributions[0]!.amount).toBe(500);
+    expect(result.distributions[1]!.amount).toBe(250);
+    expect(result.distributions[2]!.amount).toBe(250);
     expect(result.totalDistributed).toBe(1000);
     expect(result.undistributed).toBe(0);
   });
@@ -302,7 +302,7 @@ describe('ChipService.distributePrizeCascade()', () => {
 
     // passUpAmount = floor(1000 * 0 / 100) = 0, retainAmount = 1000
     expect(result.distributions).toHaveLength(1);
-    expect(result.distributions[0].amount).toBe(1000);
+    expect(result.distributions[0]!.amount).toBe(1000);
     expect(result.totalDistributed).toBe(1000);
     expect(result.undistributed).toBe(0);
     // agent-2 should never be queried because remaining becomes 0
@@ -326,8 +326,8 @@ describe('ChipService.distributePrizeCascade()', () => {
 
     // Only parent gets credited
     expect(result.distributions).toHaveLength(1);
-    expect(result.distributions[0].agentId).toBe('agent-2');
-    expect(result.distributions[0].amount).toBe(1000);
+    expect(result.distributions[0]!.agentId).toBe('agent-2');
+    expect(result.distributions[0]!.amount).toBe(1000);
     expect(result.totalDistributed).toBe(1000);
     expect(result.undistributed).toBe(0);
   });
@@ -348,8 +348,8 @@ describe('ChipService.distributePrizeCascade()', () => {
 
     const result = await svc.distributePrizeCascade('agent-1', 100, 'hand-floor');
 
-    expect(result.distributions[0].amount).toBe(67); // retain = 100 - 33
-    expect(result.distributions[1].amount).toBe(33); // pass-up gets the floored 33
+    expect(result.distributions[0]!.amount).toBe(67); // retain = 100 - 33
+    expect(result.distributions[1]!.amount).toBe(33); // pass-up gets the floored 33
     // Total should be 100 (67 + 33)
     expect(result.totalDistributed).toBe(100);
     expect(result.undistributed).toBe(0);
@@ -403,7 +403,7 @@ describe('ChipService.distributePrizeCascade()', () => {
 
     // Verify depths
     for (let i = 0; i < 5; i++) {
-      expect(result.distributions[i].depth).toBe(i);
+      expect(result.distributions[i]!.depth).toBe(i);
     }
 
     // After 5 levels at 50%, remaining = 1000 * (0.5^5) = floor-cascaded
