@@ -6,6 +6,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { createClient } from 'redis';
 import { authRouter } from './routes/auth.js';
+import { emailAuthRouter } from './routes/email-auth.js';
 import { agentsRouter } from './routes/agents.js';
 import { arenasRouter } from './routes/arenas.js';
 import { skillsRouter } from './routes/skills.js';
@@ -61,6 +62,7 @@ app.get('/health', (_req, res) => {
 
 // Routes
 app.use('/auth', authRouter);
+app.use('/auth/email', emailAuthRouter);
 app.use('/auth/github', githubOAuthRouter);
 app.use('/auth/google', googleOAuthRouter);
 app.use('/auth/social', socialBindingsRouter);
