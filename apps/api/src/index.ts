@@ -11,6 +11,7 @@ import { arenasRouter } from './routes/arenas.js';
 import { skillsRouter } from './routes/skills.js';
 import { githubOAuthRouter } from './routes/github-oauth.js';
 import { googleOAuthRouter } from './routes/google-oauth.js';
+import { socialBindingsRouter } from './routes/social-bindings.js';
 import { matchmakingRouter } from './routes/matchmaking.js';
 import { paymentsRouter } from './routes/payments.js';
 import { setupSocketHandlers } from './services/socket.js';
@@ -60,6 +61,7 @@ app.get('/health', (_req, res) => {
 app.use('/auth', authRouter);
 app.use('/auth/github', githubOAuthRouter);
 app.use('/auth/google', googleOAuthRouter);
+app.use('/auth/social', socialBindingsRouter);
 app.use('/agents', agentsRouter);
 app.use('/arenas', arenasRouter);
 app.use('/skills', skillsRouter);
