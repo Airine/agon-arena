@@ -88,10 +88,11 @@ invitesRouter.post('/generate', async (req, res) => {
     }
 
     // Count existing codes for this user
-    const [{ total }] = await db
+    const [row] = await db
       .select({ total: count() })
       .from(schema.inviteCodes)
       .where(eq(schema.inviteCodes.createdByUserId, userId));
+    const total = row?.total ?? 0;
 
     const existing = Number(total);
     const canGenerate = MAX_CODES_PER_USER - existing;

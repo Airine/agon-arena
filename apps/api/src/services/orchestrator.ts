@@ -202,8 +202,8 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
         responseTimeMs,
       });
 
-      // AGO-68: trigger first-bet invite rewards for non-fold, non-timeout actions
-      if (action.type !== 'fold' && action.type !== 'timeout') {
+      // AGO-68: trigger first-bet invite rewards for non-fold actions
+      if (action.type !== 'fold') {
         triggerFirstBetRewards(actor.agentId).catch((err) => {
           console.error('[InviteReward] First-bet trigger error:', err);
         });

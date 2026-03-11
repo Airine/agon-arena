@@ -14,7 +14,7 @@
  *   value: JSON-serialized event payload
  *   headers: { event_type, schema_version: '1' }
  */
-import { Kafka, type Producer, type ProducerRecord, CompressionTypes } from 'kafkajs';
+import { Kafka, type Producer, type ProducerRecord } from 'kafkajs';
 
 const TOPIC_ACTIONS = 'agon.game.actions';
 const TOPIC_HANDS   = 'agon.game.hands';
@@ -103,7 +103,6 @@ export async function initKafka(): Promise<void> {
 
   producer = kafka.producer({
     allowAutoTopicCreation: true,
-    compression: CompressionTypes.GZIP,
   });
 
   await producer.connect();
