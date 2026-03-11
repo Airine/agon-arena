@@ -68,3 +68,28 @@ output "waf_acl_arn" {
   description = "WAF Web ACL ARN"
   value       = module.waf.acl_arn
 }
+
+output "kms_key_arn" {
+  description = "KMS key ARN used for secrets encryption"
+  value       = module.kms.key_arn
+}
+
+output "kms_key_id" {
+  description = "KMS key ID"
+  value       = module.kms.key_id
+}
+
+output "cloudwatch_dashboard_arn" {
+  description = "CloudWatch dashboard ARN"
+  value       = module.monitoring.dashboard_arn
+}
+
+output "secrets_rotation_lambda_arn" {
+  description = "Secrets rotation Lambda function ARN"
+  value       = module.secrets_rotation.lambda_function_arn
+}
+
+output "ed25519_key_secret_arn" {
+  description = "Secrets Manager ARN for the Ed25519 webhook signing key"
+  value       = aws_secretsmanager_secret.ed25519_key.arn
+}

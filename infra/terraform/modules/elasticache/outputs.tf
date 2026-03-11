@@ -10,3 +10,7 @@ output "connection_url" {
 output "security_group_id" {
   value = aws_security_group.redis.id
 }
+
+output "cluster_id" {
+  value = aws_elasticache_cluster.main.cluster_id
+}

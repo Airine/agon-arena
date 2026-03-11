@@ -17,3 +17,7 @@ output "service_security_group_id" {
 output "task_execution_role_arn" {
   value = aws_iam_role.task_execution.arn
 }
+
+output "log_group_name" {
+  value = aws_cloudwatch_log_group.api.name
+}

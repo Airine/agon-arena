@@ -132,3 +132,10 @@ variable "create_route53_zone" {
   type        = bool
   default     = false
 }
+
+# Monitoring
+variable "alarm_sns_topic_arn" {
+  description = "SNS topic ARN for CloudWatch alarm notifications (empty = alarms fire silently)"
+  type        = string
+  default     = ""
+}

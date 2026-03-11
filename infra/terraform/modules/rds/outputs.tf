@@ -16,3 +16,11 @@ output "security_group_id" {
 output "password_secret_arn" {
   value = aws_secretsmanager_secret.db_password.arn
 }
+
+output "instance_id" {
+  value = aws_db_instance.main.identifier
+}
+
+output "instance_arn" {
+  value = aws_db_instance.main.arn
+}

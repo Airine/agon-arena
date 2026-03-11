@@ -77,6 +77,14 @@ module "ecs" {
   alb_security_group_id = module.alb.security_group_id
 }
 
+# --- KMS (secrets encryption key) ---
+module "kms" {
+  source = "./modules/kms"
+
+  name_prefix                 = local.name_prefix
+  ecs_task_execution_role_arn = module.ecs.task_execution_role_arn
+}
+
 # --- Secrets Manager ---
 resource "aws_secretsmanager_secret" "jwt_secret" {
   name                    = "${local.name_prefix}-jwt-secret"
@@ -87,6 +95,25 @@ resource "aws_secretsmanager_secret_version" "jwt_secret" {
   secret_id = aws_secretsmanager_secret.jwt_secret.id
   secret_string = jsonencode({
     JWT_SECRET = "CHANGE_ME_ON_FIRST_DEPLOY"
+  })
+
+  lifecycle {
+    ignore_changes = [secret_string]
+  }
+}
+
+# --- Ed25519 Webhook Signing Key ---
+resource "aws_secretsmanager_secret" "ed25519_key" {
+  name                    = "${local.name_prefix}-ed25519-key"
+  recovery_window_in_days = 7
+  kms_master_key_id       = module.kms.key_arn
+}
+
+resource "aws_secretsmanager_secret_version" "ed25519_key" {
+  secret_id = aws_secretsmanager_secret.ed25519_key.id
+  secret_string = jsonencode({
+    PRIVATE_KEY = "GENERATE_ON_FIRST_DEPLOY"
+    PUBLIC_KEY  = "GENERATE_ON_FIRST_DEPLOY"
   })
 
   lifecycle {
@@ -142,6 +169,53 @@ resource "aws_s3_bucket_policy" "web_cloudfront" {
       }
     }]
   })
+}
+
+# --- Monitoring (CloudWatch Dashboard + 10 Alarms) ---
+module "monitoring" {
+  source = "./modules/monitoring"
+
+  name_prefix             = local.name_prefix
+  ecs_cluster_name        = module.ecs.cluster_name
+  ecs_service_name        = module.ecs.service_name
+  rds_instance_id         = module.rds.instance_id
+  elasticache_cluster_id  = module.elasticache.cluster_id
+  alb_arn_suffix          = module.alb.arn_suffix
+  target_group_arn_suffix = module.alb.target_group_arn_suffix
+  api_log_group_name      = module.ecs.log_group_name
+  alarm_sns_topic_arn     = var.alarm_sns_topic_arn
+
+  api_cloudfront_distribution_id = module.cloudfront.api_distribution_id
+  web_cloudfront_distribution_id = module.cloudfront.web_distribution_id
+}
+
+# --- Secrets Rotation (Lambda: JWT / DB password / Ed25519 key) ---
+module "secrets_rotation" {
+  source = "./modules/secrets_rotation"
+
+  name_prefix = local.name_prefix
+
+  secret_arns = [
+    aws_secretsmanager_secret.jwt_secret.arn,
+    module.rds.password_secret_arn,
+    aws_secretsmanager_secret.ed25519_key.arn,
+  ]
+
+  jwt_secret_id         = aws_secretsmanager_secret.jwt_secret.id
+  db_password_secret_id = module.rds.password_secret_arn
+  ed25519_key_secret_id = aws_secretsmanager_secret.ed25519_key.id
+
+  db_instance_id  = module.rds.instance_id
+  db_instance_arn = module.rds.instance_arn
+  kms_key_arn     = module.kms.key_arn
+
+  ecs_cluster_name = module.ecs.cluster_name
+  ecs_service_name = module.ecs.service_name
+
+  vpc_config = {
+    subnet_ids         = module.vpc.private_subnet_ids
+    security_group_ids = [module.ecs.service_security_group_id]
+  }
 }
 
 # --- Route53 DNS ---
