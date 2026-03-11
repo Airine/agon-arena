@@ -10,6 +10,7 @@ import { setGameSnapshot } from './redis.js';
 import { dispatchToAll, type AgentEndpoint } from './webhook-dispatcher.js';
 import { publishEvent } from './kafka.js';
 import { chipService } from './chip.js';
+import { resolveBotAction } from './bot.js';
 
 const ACTION_TIMEOUT_MS = 5000;
 const MAX_HANDS = 100; // Max hands per arena session
@@ -481,44 +482,6 @@ function createSpectatorView(state: GameState): GameState {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Resolve a bot action locally without HTTP.
- * Strategy variants (encoded in URL):
- *   bot://random  — random valid action
- *   bot://call    — always call/check (passive)
- *   bot://fold    — always fold (foldbots, for testing)
- * This is the AGO-33 fill-in bot implementation (minimal version).
- */
-function resolveBotAction(
-  botUrl: string,
-  validActions: ActionType[],
-  state: GameState,
-): PlayerAction {
-  const strategy = botUrl.replace('bot://', '').toLowerCase();
-
-  if (strategy === 'fold' && validActions.includes('fold')) {
-    return { type: 'fold' };
-  }
-
-  if (strategy === 'call' || strategy === 'passive') {
-    if (validActions.includes('check')) return { type: 'check' };
-    if (validActions.includes('call')) return { type: 'call' };
-    return { type: 'fold' };
-  }
-
-  // Default: random (weighted: call 60%, check 20%, fold 15%, raise 5%)
-  const r = Math.random();
-  if (r < 0.15 && validActions.includes('fold')) {
-    return { type: 'fold' };
-  }
-  if (r < 0.20 && validActions.includes('raise')) {
-    return { type: 'raise', amount: state.minRaise };
-  }
-  if (validActions.includes('check')) return { type: 'check' };
-  if (validActions.includes('call')) return { type: 'call' };
-  return { type: 'fold' };
 }
 
 // ---------------------------------------------------------------------------

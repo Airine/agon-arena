@@ -14,6 +14,7 @@ import { getRedisClient } from './redis.js';
 import { startGame } from './orchestrator.js';
 import { getIO } from './io.js';
 import { publishEvent } from './kafka.js';
+import { BOT_PROFILES } from './bot.js';
 
 const QUEUE_KEY_PREFIX = 'matchmaking:queue:';
 const POLL_INTERVAL_MS = 5_000;    // check queues every 5 seconds
@@ -238,16 +239,16 @@ async function getOrCreateBotAgent(botName: string): Promise<string> {
 
 /**
  * Create a bot entry for queue filling.
- * Bot agents use the sentinel apiUrl "bot://random" which the orchestrator handles locally.
+ * Cycles through BOT_PROFILES so each seat gets a distinct personality.
  */
 async function createBotEntry(index: number): Promise<QueueEntry> {
-  const botName = `Bot-${String.fromCharCode(65 + index)}`; // Bot-A, Bot-B, ...
-  const agentId = await getOrCreateBotAgent(botName);
+  const profile = BOT_PROFILES[index % BOT_PROFILES.length]!;
+  const agentId = await getOrCreateBotAgent(profile.name);
   return {
     agentId,
     userId: BOT_OWNER_ID,
-    agentName: botName,
-    apiUrl: 'bot://random',
+    agentName: profile.name,
+    apiUrl: profile.url,
     webhookPublicKey: null,
     joinedAt: Date.now(),
   };
