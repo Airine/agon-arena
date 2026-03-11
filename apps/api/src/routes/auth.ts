@@ -7,7 +7,8 @@ import { eq } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import { signToken, requireAuth } from '../middleware/auth.js';
 import { getPlatformPublicKeyHex } from '../services/webhook-crypto.js';
-import { storeSiweNonce, consumeSiweNonce } from '../services/redis.js';
+import { storeSiweNonce, consumeSiweNonce, storeAgentNonce, consumeAgentNonce } from '../services/redis.js';
+import { verifyMessage } from 'viem';
 
 export const authRouter: RouterType = Router();
 
@@ -174,6 +175,148 @@ authRouter.post('/login', async (req, res) => {
       return;
     }
     res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Agent auto-registration (EIP-191 wallet signature)
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /auth/agent/nonce
+ * Returns a fresh random nonce for agent registration. Single-use, TTL=5min.
+ */
+authRouter.get('/agent/nonce', async (_req, res) => {
+  try {
+    const nonce = randomBytes(16).toString('hex');
+    await storeAgentNonce(nonce);
+    res.json({ nonce });
+  } catch {
+    res.status(500).json({ error: 'Failed to generate nonce' });
+  }
+});
+
+const agentCardSchema = z.object({
+  name: z.string().min(1).max(100),
+  description: z.string().max(500).optional(),
+  apiUrl: z.string().url(),
+  webhookPublicKey: z.string().length(64).optional(), // Ed25519 public key hex
+  version: z.string().default('1.0'),
+  capabilities: z.array(z.string()).default([]),
+  metadata: z.record(z.unknown()).optional(),
+});
+
+const agentRegisterSchema = z.object({
+  walletAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'Invalid EVM address'),
+  nonce: z.string().min(1),
+  signature: z.string().startsWith('0x'),
+  agentCard: agentCardSchema,
+});
+
+/**
+ * POST /auth/agent/register
+ * Agent self-registers using an EIP-191 personal_sign wallet signature.
+ * Creates a user account + agent record on first call; idempotent on subsequent calls.
+ *
+ * Message format (agent must sign exactly):
+ *   "Register Agon Agent\nNonce: {nonce}"
+ *
+ * Security guarantees:
+ *  - Wallet ownership proven before any account creation
+ *  - Nonce is single-use (consumed from Redis atomically)
+ *  - Wallet address normalized to lowercase
+ */
+authRouter.post('/agent/register', async (req, res) => {
+  try {
+    const { walletAddress: rawAddress, nonce, signature, agentCard } = agentRegisterSchema.parse(req.body);
+
+    const message = `Register Agon Agent\nNonce: ${nonce}` as const;
+
+    // Verify EIP-191 personal_sign — recover signer address
+    let signerAddress: string;
+    try {
+      const valid = await verifyMessage({
+        address: rawAddress as `0x${string}`,
+        message,
+        signature: signature as `0x${string}`,
+      });
+      if (!valid) {
+        res.status(400).json({ error: 'Invalid signature' });
+        return;
+      }
+      signerAddress = rawAddress.toLowerCase();
+    } catch {
+      res.status(400).json({ error: 'Invalid signature' });
+      return;
+    }
+
+    // Consume nonce — single-use enforcement
+    const nonceValid = await consumeAgentNonce(nonce);
+    if (!nonceValid) {
+      res.status(401).json({ error: 'Nonce already used or expired' });
+      return;
+    }
+
+    const walletAddress = signerAddress;
+
+    // Find or create user for this wallet
+    let [user] = await db
+      .select({ id: schema.users.id, username: schema.users.username, walletAddress: schema.users.walletAddress })
+      .from(schema.users)
+      .where(eq(schema.users.walletAddress, walletAddress))
+      .limit(1);
+
+    if (!user) {
+      const shortAddr = walletAddress.slice(2, 6) + walletAddress.slice(-4);
+      const username = `agent_${shortAddr}${randomBytes(2).toString('hex')}`;
+      [user] = await db
+        .insert(schema.users)
+        .values({ username, walletAddress })
+        .returning({ id: schema.users.id, username: schema.users.username, walletAddress: schema.users.walletAddress });
+    }
+
+    // Find or create agent record for this owner
+    let [agent] = await db
+      .select({ id: schema.agents.id, name: schema.agents.name, apiUrl: schema.agents.apiUrl })
+      .from(schema.agents)
+      .where(eq(schema.agents.ownerId, user!.id))
+      .limit(1);
+
+    if (!agent) {
+      const { capabilities, metadata: extraMeta, ...cardRest } = agentCard;
+      [agent] = await db
+        .insert(schema.agents)
+        .values({
+          ownerId: user!.id,
+          name: cardRest.name,
+          description: cardRest.description,
+          apiUrl: cardRest.apiUrl,
+          webhookPublicKey: cardRest.webhookPublicKey,
+          version: cardRest.version,
+          metadata: { capabilities, ...extraMeta },
+        })
+        .returning({ id: schema.agents.id, name: schema.agents.name, apiUrl: schema.agents.apiUrl });
+    }
+
+    const token = signToken({
+      userId: user!.id,
+      username: user!.username,
+      walletAddress: user!.walletAddress ?? undefined,
+      agentId: agent!.id,
+    });
+
+    res.status(201).json({
+      token,
+      user: { id: user!.id, username: user!.username, walletAddress: user!.walletAddress },
+      agent: { id: agent!.id, name: agent!.name, apiUrl: agent!.apiUrl },
+    });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'Validation failed', details: err.errors });
+      return;
+    }
+    console.error('[Agent] Register error:', err);
+    res.status(500).json({ error: 'Agent registration failed' });
   }
 });
 

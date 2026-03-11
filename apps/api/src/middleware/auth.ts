@@ -19,6 +19,7 @@ export interface AuthPayload {
   userId: string;
   username: string;
   walletAddress?: string; // EVM address (lowercase 0x...) — present for SIWE users
+  agentId?: string; // Present for agent JWTs (auto-registered agents)
 }
 
 declare global {
