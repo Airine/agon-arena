@@ -7,6 +7,7 @@ import { getIO } from './io.js';
 import { signWebhookPayload, verifyAgentSignature } from './webhook-crypto.js';
 import { generateCommit, verifyVRFCommit } from './vrf.js';
 import { setGameSnapshot } from './redis.js';
+import { dispatchToAll, type AgentEndpoint } from './webhook-dispatcher.js';
 
 const ACTION_TIMEOUT_MS = 5000;
 const MAX_HANDS = 100; // Max hands per arena session
@@ -45,6 +46,12 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
   let dealerIndex = 0;
   const agentUrls = new Map(seats.map((s) => [s.agentId, s.apiUrl]));
   const agentPublicKeys = new Map(seats.map((s) => [s.agentId, s.webhookPublicKey]));
+
+  const agentEndpoints: AgentEndpoint[] = seats.map((s) => ({
+    agentId: s.agentId,
+    apiUrl: s.apiUrl,
+    webhookPublicKey: s.webhookPublicKey,
+  }));
 
   // Track stacks across hands
   const stacks = new Map(seats.map((s) => [s.agentId, arena.startingStack]));
@@ -104,6 +111,15 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
         stack: stacks.get(s.agentId) ?? 0,
       })),
     });
+
+    // Dispatch hand:start to all agents (fire-and-forget)
+    dispatchToAll(agentEndpoints, (agentId) => ({
+      event: 'hand:start',
+      arenaId,
+      handNumber,
+      vrfCommit: vrf.commit,
+      state: createPrivateView(currentState, agentId),
+    }));
 
     // Broadcast VRF commitment — players can verify dealing was committed before cards were known
     getIO().to(`arena:${arenaId}`).emit('hand:vrf_commit', {
@@ -182,6 +198,16 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
         action,
         resultingState: spectatorState,
       });
+
+      // Dispatch hand:action to all agents (fire-and-forget)
+      dispatchToAll(agentEndpoints, (agentId) => ({
+        event: 'hand:action',
+        arenaId,
+        handNumber,
+        actorAgentId: actor.agentId,
+        action,
+        state: createPrivateView(currentState, agentId),
+      }));
 
       // Cache snapshot for reconnecting spectators (fire-and-forget)
       setGameSnapshot(arenaId, {
@@ -269,6 +295,16 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
       winners,
       finalState: finalSpectatorState,
     });
+
+    // Dispatch hand:end to all agents (fire-and-forget)
+    dispatchToAll(agentEndpoints, (agentId) => ({
+      event: 'hand:end',
+      arenaId,
+      handNumber,
+      winners,
+      vrfSeed: vrf.seed,
+      state: createSpectatorView(currentState),
+    }));
 
     // Cache snapshot for reconnecting spectators (fire-and-forget)
     setGameSnapshot(arenaId, {
