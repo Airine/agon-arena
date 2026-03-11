@@ -9,6 +9,7 @@ import { generateCommit, verifyVRFCommit } from './vrf.js';
 import { setGameSnapshot } from './redis.js';
 import { dispatchToAll, type AgentEndpoint } from './webhook-dispatcher.js';
 import { publishEvent } from './kafka.js';
+import { chipService } from './chip.js';
 
 const ACTION_TIMEOUT_MS = 5000;
 const MAX_HANDS = 100; // Max hands per arena session
@@ -199,6 +200,13 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
         sequenceNumber,
         responseTimeMs,
       });
+
+      // AGO-68: trigger first-bet invite rewards for non-fold, non-timeout actions
+      if (action.type !== 'fold' && action.type !== 'timeout') {
+        triggerFirstBetRewards(actor.agentId).catch((err) => {
+          console.error('[InviteReward] First-bet trigger error:', err);
+        });
+      }
 
       // Broadcast action to spectators (hide hole cards)
       const spectatorState = createSpectatorView(currentState);
@@ -511,4 +519,27 @@ function resolveBotAction(
   if (validActions.includes('check')) return { type: 'check' };
   if (validActions.includes('call')) return { type: 'call' };
   return { type: 'fold' };
+}
+
+// ---------------------------------------------------------------------------
+// AGO-68: First-bet invite reward trigger
+// ---------------------------------------------------------------------------
+
+/**
+ * Check if the agent's owner user has pending first-bet invite rewards and distribute them.
+ * No-op if the agent is a bot (bot:// URL) or has no owner with a pending invite.
+ * Called fire-and-forget after recording a non-fold/non-timeout game action.
+ */
+async function triggerFirstBetRewards(agentId: string): Promise<void> {
+  // Look up the agent's owner user
+  const [agentRow] = await db
+    .select({ ownerId: schema.agents.ownerId })
+    .from(schema.agents)
+    .where(eq(schema.agents.id, agentId))
+    .limit(1);
+
+  if (!agentRow) return;
+
+  // allocateFirstBetRewards is idempotent — it checks firstBetRewardedAt internally
+  await chipService.allocateFirstBetRewards(agentRow.ownerId);
 }
