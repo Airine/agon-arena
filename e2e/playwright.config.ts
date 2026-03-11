@@ -19,7 +19,7 @@ export default defineConfig({
     {
       // API integration tests — use Playwright request fixture (no browser)
       name: 'api-e2e',
-      testMatch: /0[1-4]-.*\.spec\.ts$/,
+      testMatch: /0[1-467]-.*\.spec\.ts$/,
     },
     {
       // Frontend browser tests — complete user journey through the Next.js UI
