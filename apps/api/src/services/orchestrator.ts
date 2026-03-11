@@ -8,6 +8,7 @@ import { signWebhookPayload, verifyAgentSignature } from './webhook-crypto.js';
 import { generateCommit, verifyVRFCommit } from './vrf.js';
 import { setGameSnapshot } from './redis.js';
 import { dispatchToAll, type AgentEndpoint } from './webhook-dispatcher.js';
+import { publishEvent } from './kafka.js';
 
 const ACTION_TIMEOUT_MS = 5000;
 const MAX_HANDS = 100; // Max hands per arena session
@@ -112,6 +113,16 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
       })),
     });
 
+    publishEvent({
+      eventType: 'hand_start',
+      arenaId,
+      handId: handRecord!.id,
+      handNumber,
+      playerCount: activePlayers.length,
+      vrfCommit: vrf.commit,
+      ts: Date.now(),
+    });
+
     // Dispatch hand:start to all agents (fire-and-forget)
     dispatchToAll(agentEndpoints, (agentId) => ({
       event: 'hand:start',
@@ -197,6 +208,19 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
         agentId: actor.agentId,
         action,
         resultingState: spectatorState,
+      });
+
+      publishEvent({
+        eventType: 'game_action',
+        arenaId,
+        handId: handRecord!.id,
+        handNumber,
+        agentId: actor.agentId,
+        action,
+        stage: currentState.stage,
+        sequenceNumber,
+        responseTimeMs,
+        ts: Date.now(),
       });
 
       // Dispatch hand:action to all agents (fire-and-forget)
@@ -296,6 +320,17 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
       finalState: finalSpectatorState,
     });
 
+    publishEvent({
+      eventType: 'hand_end',
+      arenaId,
+      handId: handRecord!.id,
+      handNumber,
+      winners: winners.map((w) => ({ agentId: w.agentId, amount: w.amount })),
+      potAmount: currentState.pots.reduce((sum, p) => sum + p.amount, 0),
+      vrfSeed: vrf.seed,
+      ts: Date.now(),
+    });
+
     // Dispatch hand:end to all agents (fire-and-forget)
     dispatchToAll(agentEndpoints, (agentId) => ({
       event: 'hand:end',
@@ -325,6 +360,12 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
     .where(eq(schema.arenas.id, arenaId));
 
   getIO().to(`arena:${arenaId}`).emit('arena:finished', { arenaId });
+
+  publishEvent({
+    eventType: 'arena_finished',
+    arenaId,
+    ts: Date.now(),
+  });
 }
 
 /**

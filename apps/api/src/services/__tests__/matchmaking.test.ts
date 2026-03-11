@@ -106,6 +106,10 @@ vi.mock('../io.js', () => ({
   })),
 }));
 
+vi.mock('../kafka.js', () => ({
+  publishEvent: vi.fn(),
+}));
+
 import {
   joinQueue,
   leaveQueue,

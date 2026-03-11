@@ -16,6 +16,7 @@ import { paymentsRouter } from './routes/payments.js';
 import { setupSocketHandlers } from './services/socket.js';
 import { setIO } from './services/io.js';
 import { startMatchmakingProcessor } from './services/matchmaking.js';
+import { initKafka, shutdownKafka } from './services/kafka.js';
 
 const app = express();
 const httpServer = createServer(app);
@@ -71,6 +72,12 @@ setupSocketHandlers(io);
 
 // Background services
 startMatchmakingProcessor();
+initKafka().catch(console.error);
+
+process.on('SIGTERM', async () => {
+  await shutdownKafka();
+  process.exit(0);
+});
 
 const PORT = Number(process.env['PORT'] ?? 4000);
 

@@ -13,6 +13,7 @@ import { db, schema } from '../db/index.js';
 import { getRedisClient } from './redis.js';
 import { startGame } from './orchestrator.js';
 import { getIO } from './io.js';
+import { publishEvent } from './kafka.js';
 
 const QUEUE_KEY_PREFIX = 'matchmaking:queue:';
 const POLL_INTERVAL_MS = 5_000;    // check queues every 5 seconds
@@ -296,6 +297,14 @@ async function createMatchedGame(
     arenaId: arena.id,
     mode,
     players: players.map((p) => ({ agentId: p.agentId, agentName: p.agentName })),
+  });
+
+  publishEvent({
+    eventType: 'arena_matched',
+    arenaId: arena.id,
+    mode,
+    playerCount: players.length,
+    ts: Date.now(),
   });
 
   console.log(`[Matchmaking] Created ${mode} match: arena=${arena.id}, players=${players.length}`);
