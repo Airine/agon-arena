@@ -23,6 +23,7 @@ import { eq, and } from 'drizzle-orm';
 import axios from 'axios';
 import { db, schema } from '../db/index.js';
 import { issueTokenPair } from '../services/jwt.js';
+import { chipService } from '../services/chip.js';
 import {
   storeOAuthState,
   consumeOAuthState,
@@ -49,8 +50,6 @@ function getFrontendUrl(): string {
   return process.env['FRONTEND_URL'] ?? 'http://localhost:3000';
 }
 
-// CHIP reward for first GitHub binding (per SOUL.md social binding rewards)
-const GITHUB_CHIP_REWARD = 500;
 
 // ---------------------------------------------------------------------------
 // GET /auth/github
@@ -168,7 +167,7 @@ githubOAuthRouter.get('/callback', async (req, res) => {
 
     // Find existing binding for this GitHub account
     const [existingBinding] = await db
-      .select({ userId: schema.socialBindings.userId, chipRewarded: schema.socialBindings.chipRewarded })
+      .select({ userId: schema.socialBindings.userId })
       .from(schema.socialBindings)
       .where(
         and(
@@ -181,7 +180,6 @@ githubOAuthRouter.get('/callback', async (req, res) => {
     let userId: string;
     let username: string;
     let walletAddress: string | null = null;
-    let chipRewarded = false;
 
     if (existingBinding) {
       if (statePayload.userId && statePayload.userId !== existingBinding.userId) {
@@ -191,7 +189,6 @@ githubOAuthRouter.get('/callback', async (req, res) => {
 
       // Existing GitHub user — log them in (fresh login or same user re-linking)
       userId = existingBinding.userId;
-      chipRewarded = existingBinding.chipRewarded;
 
       const [user] = await db
         .select({ username: schema.users.username, walletAddress: schema.users.walletAddress })
@@ -233,7 +230,6 @@ githubOAuthRouter.get('/callback', async (req, res) => {
       });
     } else {
       // New user — create account + binding
-      const shortId = providerUserId.slice(-6);
       const baseUsername = `gh_${githubUser.login}`.slice(0, 44);
       // Append random suffix to avoid collisions
       const candidateUsername = `${baseUsername}_${randomBytes(2).toString('hex')}`;
@@ -262,54 +258,12 @@ githubOAuthRouter.get('/callback', async (req, res) => {
         chipRewarded: false,
       });
 
-      void shortId; // used for context only
+      // Award registration bonus for brand-new users
+      await chipService.allocateRegistrationBonus(userId);
     }
 
-    // Award CHIP for first GitHub binding (idempotent — check chipRewarded flag)
-    if (!chipRewarded) {
-      await db.transaction(async (tx) => {
-        // Read current balance
-        const [userRow] = await tx
-          .select({ chipBalance: schema.users.chipBalance })
-          .from(schema.users)
-          .where(eq(schema.users.id, userId))
-          .limit(1);
-
-        const balanceBefore = userRow?.chipBalance ?? 0;
-        const balanceAfter = balanceBefore + GITHUB_CHIP_REWARD;
-
-        // Credit CHIP
-        await tx
-          .update(schema.users)
-          .set({ chipBalance: balanceAfter })
-          .where(eq(schema.users.id, userId));
-
-        // Audit log
-        await tx.insert(schema.chipTransactions).values({
-          userId,
-          type: 'credit',
-          amount: GITHUB_CHIP_REWARD,
-          balanceBefore,
-          balanceAfter,
-          frozenBefore: 0,
-          frozenAfter: 0,
-          referenceType: 'social_bind',
-          referenceId: `github:${providerUserId}`,
-          note: `GitHub OAuth first-bind reward (+${GITHUB_CHIP_REWARD} CHIP)`,
-        });
-
-        // Mark reward as distributed
-        await tx
-          .update(schema.socialBindings)
-          .set({ chipRewarded: true })
-          .where(
-            and(
-              eq(schema.socialBindings.userId, userId),
-              eq(schema.socialBindings.provider, 'github'),
-            ),
-          );
-      });
-    }
+    // Award CHIP for first GitHub binding (idempotent — guarded by chipRewarded flag)
+    await chipService.allocateSocialBindingReward(userId, 'github', providerUserId);
 
     // Issue JWT token pair
     const tokens = await issueTokenPair({

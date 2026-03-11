@@ -10,6 +10,7 @@ import { issueTokenPair, rotateRefreshToken, revokeAccessToken } from '../servic
 import { getPlatformPublicKeyHex } from '../services/webhook-crypto.js';
 import { storeSiweNonce, consumeSiweNonce, storeAgentNonce, consumeAgentNonce, storeBindNonce, consumeBindNonce } from '../services/redis.js';
 import { verifyMessage } from 'viem';
+import { chipService } from '../services/chip.js';
 
 export const authRouter: RouterType = Router();
 
@@ -89,6 +90,7 @@ authRouter.post('/siwe/verify', async (req, res) => {
       .where(eq(schema.users.walletAddress, walletAddress))
       .limit(1);
 
+    let isNewUser = false;
     if (!user) {
       // Auto-register: username derived from wallet (0x1234...abcd → w1234abcd)
       const shortAddr = walletAddress.slice(2, 6) + walletAddress.slice(-4);
@@ -97,6 +99,11 @@ authRouter.post('/siwe/verify', async (req, res) => {
         .insert(schema.users)
         .values({ username, walletAddress })
         .returning({ id: schema.users.id, username: schema.users.username, walletAddress: schema.users.walletAddress });
+      isNewUser = true;
+    }
+
+    if (isNewUser) {
+      await chipService.allocateRegistrationBonus(user!.id);
     }
 
     const tokens = await issueTokenPair({ userId: user!.id, username: user!.username, walletAddress: user!.walletAddress ?? undefined });
@@ -134,6 +141,8 @@ authRouter.post('/register', async (req, res) => {
         passwordHash,
       })
       .returning({ id: schema.users.id, username: schema.users.username });
+
+    await chipService.allocateRegistrationBonus(user!.id);
 
     const tokens = await issueTokenPair({ userId: user!.id, username: user!.username });
     res.status(201).json({ ...tokens, user: { id: user!.id, username: user!.username } });
@@ -267,6 +276,7 @@ authRouter.post('/agent/register', async (req, res) => {
       .where(eq(schema.users.walletAddress, walletAddress))
       .limit(1);
 
+    let isNewAgentUser = false;
     if (!user) {
       const shortAddr = walletAddress.slice(2, 6) + walletAddress.slice(-4);
       const username = `agent_${shortAddr}${randomBytes(2).toString('hex')}`;
@@ -274,6 +284,11 @@ authRouter.post('/agent/register', async (req, res) => {
         .insert(schema.users)
         .values({ username, walletAddress })
         .returning({ id: schema.users.id, username: schema.users.username, walletAddress: schema.users.walletAddress });
+      isNewAgentUser = true;
+    }
+
+    if (isNewAgentUser) {
+      await chipService.allocateRegistrationBonus(user!.id);
     }
 
     // Find or create agent record for this owner

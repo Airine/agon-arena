@@ -1,5 +1,16 @@
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, and } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
+
+// ─── Reward amounts ────────────────────────────────────────────────────────
+
+export const REGISTRATION_BONUS = 1000;
+
+export const SOCIAL_BINDING_REWARDS: Record<string, number> = {
+  github: 500,
+  google: 200,
+  twitter: 300,
+  ens: 500,
+};
 
 export type ChipTxType = 'credit' | 'debit' | 'freeze' | 'unfreeze' | 'transfer';
 
@@ -294,6 +305,159 @@ export class ChipService {
       frozenAmount: user.frozenAmount,
       available: user.chipBalance - user.frozenAmount,
     };
+  }
+
+  // ─── Allocation helpers ────────────────────────────────────────────────────
+
+  /**
+   * Award the one-time 1000 CHIP registration bonus to a new user.
+   * Idempotent: no-op if a 'registration' credit already exists for this user.
+   * Returns the transaction result, or null if bonus was already awarded.
+   */
+  async allocateRegistrationBonus(userId: string): Promise<ChipTxResult | null> {
+    return db.transaction(async (tx) => {
+      // Idempotency check: look for an existing registration bonus transaction
+      const [existing] = await tx
+        .select({ id: schema.chipTransactions.id })
+        .from(schema.chipTransactions)
+        .where(
+          and(
+            eq(schema.chipTransactions.userId, userId),
+            eq(schema.chipTransactions.referenceType, 'registration'),
+          ),
+        )
+        .limit(1);
+
+      if (existing) return null; // already awarded
+
+      const user = await this.lockUser(tx, userId);
+
+      const balanceBefore = user.chipBalance;
+      const frozenBefore = user.frozenAmount;
+      const balanceAfter = balanceBefore + REGISTRATION_BONUS;
+
+      await tx
+        .update(schema.users)
+        .set({
+          chipBalance: sql`${schema.users.chipBalance} + ${REGISTRATION_BONUS}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.users.id, userId));
+
+      const [row] = await tx
+        .insert(schema.chipTransactions)
+        .values({
+          userId,
+          type: 'credit',
+          amount: REGISTRATION_BONUS,
+          balanceBefore,
+          balanceAfter,
+          frozenBefore,
+          frozenAfter: frozenBefore,
+          referenceType: 'registration',
+          referenceId: userId,
+          note: `Registration bonus (+${REGISTRATION_BONUS} CHIP)`,
+        })
+        .returning({ id: schema.chipTransactions.id });
+
+      return {
+        txId: row!.id,
+        userId,
+        type: 'credit',
+        amount: REGISTRATION_BONUS,
+        balanceBefore,
+        balanceAfter,
+        frozenBefore,
+        frozenAfter: frozenBefore,
+      };
+    });
+  }
+
+  /**
+   * Award the first-bind CHIP reward for a social provider.
+   * Idempotent: guarded by the `chipRewarded` flag on social_bindings.
+   * Returns the transaction result, or null if reward was already distributed.
+   *
+   * Caller must have already inserted the social_bindings row.
+   */
+  async allocateSocialBindingReward(
+    userId: string,
+    provider: string,
+    providerUserId: string,
+  ): Promise<ChipTxResult | null> {
+    const amount = SOCIAL_BINDING_REWARDS[provider];
+    if (!amount) return null; // unknown provider — no reward defined
+
+    const providerTyped = provider as typeof schema.socialBindings.$inferSelect.provider;
+
+    return db.transaction(async (tx) => {
+      // Read binding and lock it
+      const [binding] = await tx
+        .select({ chipRewarded: schema.socialBindings.chipRewarded })
+        .from(schema.socialBindings)
+        .where(
+          and(
+            eq(schema.socialBindings.userId, userId),
+            eq(schema.socialBindings.provider, providerTyped),
+            eq(schema.socialBindings.providerUserId, providerUserId),
+          ),
+        )
+        .limit(1);
+
+      if (!binding || binding.chipRewarded) return null; // already rewarded or binding not found
+
+      const user = await this.lockUser(tx, userId);
+
+      const balanceBefore = user.chipBalance;
+      const frozenBefore = user.frozenAmount;
+      const balanceAfter = balanceBefore + amount;
+
+      await tx
+        .update(schema.users)
+        .set({
+          chipBalance: sql`${schema.users.chipBalance} + ${amount}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.users.id, userId));
+
+      const [row] = await tx
+        .insert(schema.chipTransactions)
+        .values({
+          userId,
+          type: 'credit',
+          amount,
+          balanceBefore,
+          balanceAfter,
+          frozenBefore,
+          frozenAfter: frozenBefore,
+          referenceType: 'social_bind',
+          referenceId: `${provider}:${providerUserId}`,
+          note: `${provider} OAuth first-bind reward (+${amount} CHIP)`,
+        })
+        .returning({ id: schema.chipTransactions.id });
+
+      // Mark reward as distributed
+      await tx
+        .update(schema.socialBindings)
+        .set({ chipRewarded: true, updatedAt: new Date() })
+        .where(
+          and(
+            eq(schema.socialBindings.userId, userId),
+            eq(schema.socialBindings.provider, providerTyped),
+          ),
+        );
+
+      return {
+        txId: row!.id,
+        userId,
+        type: 'credit',
+        amount,
+        balanceBefore,
+        balanceAfter,
+        frozenBefore,
+        frozenAfter: frozenBefore,
+      };
+    });
   }
 
   // ─── Internal ─────────────────────────────────────────────────────────────

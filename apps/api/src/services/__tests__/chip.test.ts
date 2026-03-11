@@ -71,12 +71,21 @@ vi.mock('../../db/index.js', () => ({
     },
     chipTransactions: {
       id: 'chip_transactions.id',
+      userId: 'chip_transactions.user_id',
+      referenceType: 'chip_transactions.reference_type',
+    },
+    socialBindings: {
+      userId: 'social_bindings.user_id',
+      provider: 'social_bindings.provider',
+      providerUserId: 'social_bindings.provider_user_id',
+      chipRewarded: 'social_bindings.chip_rewarded',
     },
   },
 }));
 
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((col: unknown, val: unknown) => ({ col, val })),
+  and: vi.fn((...conditions: unknown[]) => ({ and: conditions })),
   sql: new Proxy(() => 'sql-expr', { get: () => () => 'sql-expr' }),
 }));
 
@@ -294,6 +303,191 @@ describe('ChipService', () => {
       expect(err.message).toContain('500');
       expect(err.message).toContain('300');
       expect(err instanceof Error).toBe(true);
+    });
+  });
+
+  // ── allocateRegistrationBonus ───────────────────────────────────────────────
+
+  describe('allocateRegistrationBonus()', () => {
+    function setupRegistrationTxMock(
+      existingTx: object | null,
+      userFixture: { chipBalance: number; frozenAmount: number },
+    ) {
+      // First select: idempotency check on chipTransactions
+      mockTxSelectFromWhereLimitFn.mockResolvedValueOnce(existingTx ? [existingTx] : []);
+      if (!existingTx) {
+        // Second select: lockUser
+        mockTxSelectFromWhereLimitFn.mockResolvedValueOnce([userFixture]);
+        mockTxUpdateSetWhere.mockResolvedValueOnce(undefined);
+        mockTxInsertReturning.mockResolvedValueOnce([{ id: TX_ID }]);
+      }
+      mockTransaction.mockImplementationOnce(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({ select: mockTxSelect, update: mockTxUpdate, insert: mockTxInsert }),
+      );
+    }
+
+    it('credits 1000 CHIP to a brand-new user', async () => {
+      setupRegistrationTxMock(null, { chipBalance: 0, frozenAmount: 0 });
+
+      const result = await svc.allocateRegistrationBonus(USER_ID);
+
+      expect(result).not.toBeNull();
+      expect(result!.type).toBe('credit');
+      expect(result!.amount).toBe(1000);
+      expect(result!.balanceBefore).toBe(0);
+      expect(result!.balanceAfter).toBe(1000);
+      expect(result!.txId).toBe(TX_ID);
+    });
+
+    it('records correct referenceType=registration in the insert', async () => {
+      setupRegistrationTxMock(null, { chipBalance: 0, frozenAmount: 0 });
+
+      await svc.allocateRegistrationBonus(USER_ID);
+
+      expect(mockTxInsertValues).toHaveBeenCalledWith(
+        expect.objectContaining({
+          referenceType: 'registration',
+          referenceId: USER_ID,
+          amount: 1000,
+        }),
+      );
+    });
+
+    it('returns null when bonus was already awarded (idempotent)', async () => {
+      setupRegistrationTxMock({ id: 'existing-tx' }, { chipBalance: 1000, frozenAmount: 0 });
+
+      const result = await svc.allocateRegistrationBonus(USER_ID);
+
+      expect(result).toBeNull();
+      // No update or insert should have been called
+      expect(mockTxUpdateSetWhere).not.toHaveBeenCalled();
+      expect(mockTxInsertValues).not.toHaveBeenCalled();
+    });
+
+    it('preserves frozenAmount in the transaction record', async () => {
+      setupRegistrationTxMock(null, { chipBalance: 0, frozenAmount: 0 });
+
+      const result = await svc.allocateRegistrationBonus(USER_ID);
+
+      expect(result!.frozenBefore).toBe(0);
+      expect(result!.frozenAfter).toBe(0);
+    });
+
+    it('throws UserNotFoundError if user does not exist', async () => {
+      // idempotency check returns empty
+      mockTxSelectFromWhereLimitFn.mockResolvedValueOnce([]);
+      // lockUser returns empty
+      mockTxSelectFromWhereLimitFn.mockResolvedValueOnce([]);
+      mockTransaction.mockImplementationOnce(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({ select: mockTxSelect, update: mockTxUpdate, insert: mockTxInsert }),
+      );
+
+      await expect(svc.allocateRegistrationBonus(USER_ID)).rejects.toThrow(UserNotFoundError);
+    });
+  });
+
+  // ── allocateSocialBindingReward ─────────────────────────────────────────────
+
+  describe('allocateSocialBindingReward()', () => {
+    const PROVIDER_USER_ID = 'gh-12345';
+
+    function setupSocialTxMock(
+      binding: { chipRewarded: boolean } | null,
+      userFixture: { chipBalance: number; frozenAmount: number },
+    ) {
+      // First select: socialBindings (chipRewarded check)
+      mockTxSelectFromWhereLimitFn.mockResolvedValueOnce(binding ? [binding] : []);
+      if (binding && !binding.chipRewarded) {
+        // Second select: lockUser
+        mockTxSelectFromWhereLimitFn.mockResolvedValueOnce([userFixture]);
+        mockTxUpdateSetWhere.mockResolvedValueOnce(undefined); // users update
+        mockTxInsertReturning.mockResolvedValueOnce([{ id: TX_ID }]); // chipTransactions insert
+        mockTxUpdateSetWhere.mockResolvedValueOnce(undefined); // socialBindings update
+      }
+      mockTransaction.mockImplementationOnce(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({ select: mockTxSelect, update: mockTxUpdate, insert: mockTxInsert }),
+      );
+    }
+
+    it('credits correct amount for github (+500)', async () => {
+      setupSocialTxMock({ chipRewarded: false }, { chipBalance: 1000, frozenAmount: 0 });
+
+      const result = await svc.allocateSocialBindingReward(USER_ID, 'github', PROVIDER_USER_ID);
+
+      expect(result).not.toBeNull();
+      expect(result!.amount).toBe(500);
+      expect(result!.balanceBefore).toBe(1000);
+      expect(result!.balanceAfter).toBe(1500);
+    });
+
+    it('credits correct amount for google (+200)', async () => {
+      setupSocialTxMock({ chipRewarded: false }, { chipBalance: 1000, frozenAmount: 0 });
+
+      const result = await svc.allocateSocialBindingReward(USER_ID, 'google', PROVIDER_USER_ID);
+
+      expect(result!.amount).toBe(200);
+    });
+
+    it('credits correct amount for twitter (+300)', async () => {
+      setupSocialTxMock({ chipRewarded: false }, { chipBalance: 1000, frozenAmount: 0 });
+
+      const result = await svc.allocateSocialBindingReward(USER_ID, 'twitter', PROVIDER_USER_ID);
+
+      expect(result!.amount).toBe(300);
+    });
+
+    it('credits correct amount for ens (+500)', async () => {
+      setupSocialTxMock({ chipRewarded: false }, { chipBalance: 1000, frozenAmount: 0 });
+
+      const result = await svc.allocateSocialBindingReward(USER_ID, 'ens', PROVIDER_USER_ID);
+
+      expect(result!.amount).toBe(500);
+    });
+
+    it('returns null when already rewarded (idempotent)', async () => {
+      setupSocialTxMock({ chipRewarded: true }, { chipBalance: 1500, frozenAmount: 0 });
+
+      const result = await svc.allocateSocialBindingReward(USER_ID, 'github', PROVIDER_USER_ID);
+
+      expect(result).toBeNull();
+      expect(mockTxInsertValues).not.toHaveBeenCalled();
+    });
+
+    it('returns null when binding does not exist', async () => {
+      setupSocialTxMock(null, { chipBalance: 1000, frozenAmount: 0 });
+
+      const result = await svc.allocateSocialBindingReward(USER_ID, 'github', PROVIDER_USER_ID);
+
+      expect(result).toBeNull();
+    });
+
+    it('returns null for unknown provider', async () => {
+      const result = await svc.allocateSocialBindingReward(USER_ID, 'discord', PROVIDER_USER_ID);
+      expect(result).toBeNull();
+    });
+
+    it('records correct referenceId in the insert', async () => {
+      setupSocialTxMock({ chipRewarded: false }, { chipBalance: 1000, frozenAmount: 0 });
+
+      await svc.allocateSocialBindingReward(USER_ID, 'github', PROVIDER_USER_ID);
+
+      expect(mockTxInsertValues).toHaveBeenCalledWith(
+        expect.objectContaining({
+          referenceType: 'social_bind',
+          referenceId: `github:${PROVIDER_USER_ID}`,
+        }),
+      );
+    });
+
+    it('marks socialBindings.chipRewarded = true after award', async () => {
+      setupSocialTxMock({ chipRewarded: false }, { chipBalance: 1000, frozenAmount: 0 });
+
+      await svc.allocateSocialBindingReward(USER_ID, 'github', PROVIDER_USER_ID);
+
+      // The second update call (index 1) should set chipRewarded: true
+      expect(mockTxUpdateSet).toHaveBeenCalledWith(
+        expect.objectContaining({ chipRewarded: true }),
+      );
     });
   });
 });
