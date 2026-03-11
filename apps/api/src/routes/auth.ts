@@ -6,6 +6,7 @@ import { SiweMessage } from 'siwe';
 import { eq } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import { signToken, requireAuth } from '../middleware/auth.js';
+import { issueTokenPair, rotateRefreshToken, revokeAccessToken } from '../services/jwt.js';
 import { getPlatformPublicKeyHex } from '../services/webhook-crypto.js';
 import { storeSiweNonce, consumeSiweNonce, storeAgentNonce, consumeAgentNonce } from '../services/redis.js';
 import { verifyMessage } from 'viem';
@@ -98,8 +99,8 @@ authRouter.post('/siwe/verify', async (req, res) => {
         .returning({ id: schema.users.id, username: schema.users.username, walletAddress: schema.users.walletAddress });
     }
 
-    const token = signToken({ userId: user!.id, username: user!.username, walletAddress: user!.walletAddress ?? undefined });
-    res.json({ token, user: { id: user!.id, username: user!.username, walletAddress: user!.walletAddress } });
+    const tokens = await issueTokenPair({ userId: user!.id, username: user!.username, walletAddress: user!.walletAddress ?? undefined });
+    res.json({ ...tokens, user: { id: user!.id, username: user!.username, walletAddress: user!.walletAddress } });
   } catch (err) {
     if (err instanceof z.ZodError) {
       res.status(400).json({ error: 'Validation failed', details: err.errors });
@@ -134,8 +135,8 @@ authRouter.post('/register', async (req, res) => {
       })
       .returning({ id: schema.users.id, username: schema.users.username });
 
-    const token = signToken({ userId: user!.id, username: user!.username });
-    res.status(201).json({ token, user: { id: user!.id, username: user!.username } });
+    const tokens = await issueTokenPair({ userId: user!.id, username: user!.username });
+    res.status(201).json({ ...tokens, user: { id: user!.id, username: user!.username } });
   } catch (err) {
     if (err instanceof z.ZodError) {
       res.status(400).json({ error: 'Validation failed', details: err.errors });
@@ -167,8 +168,8 @@ authRouter.post('/login', async (req, res) => {
       return;
     }
 
-    const token = signToken({ userId: user.id, username: user.username });
-    res.json({ token, user: { id: user.id, username: user.username } });
+    const tokens = await issueTokenPair({ userId: user.id, username: user.username });
+    res.json({ ...tokens, user: { id: user.id, username: user.username } });
   } catch (err) {
     if (err instanceof z.ZodError) {
       res.status(400).json({ error: 'Validation failed', details: err.errors });
@@ -298,15 +299,16 @@ authRouter.post('/agent/register', async (req, res) => {
         .returning({ id: schema.agents.id, name: schema.agents.name, apiUrl: schema.agents.apiUrl });
     }
 
-    const token = signToken({
+    const tokens = await issueTokenPair({
       userId: user!.id,
       username: user!.username,
       walletAddress: user!.walletAddress ?? undefined,
       agentId: agent!.id,
+      type: 'agent',
     });
 
     res.status(201).json({
-      token,
+      ...tokens,
       user: { id: user!.id, username: user!.username, walletAddress: user!.walletAddress },
       agent: { id: agent!.id, name: agent!.name, apiUrl: agent!.apiUrl },
     });
@@ -317,6 +319,62 @@ authRouter.post('/agent/register', async (req, res) => {
     }
     console.error('[Agent] Register error:', err);
     res.status(500).json({ error: 'Agent registration failed' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Token management: refresh + revoke
+// ---------------------------------------------------------------------------
+
+const refreshSchema = z.object({
+  refreshToken: z.string().min(1),
+});
+
+/**
+ * POST /auth/token/refresh
+ * Exchange a valid refresh token for a new token pair.
+ * The old refresh token is consumed (rotation — cannot be reused).
+ */
+authRouter.post('/token/refresh', async (req, res) => {
+  try {
+    const { refreshToken } = refreshSchema.parse(req.body);
+    const pair = await rotateRefreshToken(refreshToken);
+
+    if (!pair) {
+      res.status(401).json({ error: 'Invalid or expired refresh token' });
+      return;
+    }
+
+    res.json(pair);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'Validation failed', details: err.errors });
+      return;
+    }
+    res.status(500).json({ error: 'Token refresh failed' });
+  }
+});
+
+const revokeSchema = z.object({
+  token: z.string().min(1),
+});
+
+/**
+ * POST /auth/token/revoke
+ * Revoke an access token by adding its jti to the Redis blacklist.
+ * Idempotent: revoking an already-expired or already-revoked token succeeds silently.
+ */
+authRouter.post('/token/revoke', requireAuth, async (req, res) => {
+  try {
+    const { token } = revokeSchema.parse(req.body);
+    await revokeAccessToken(token);
+    res.json({ revoked: true });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'Validation failed', details: err.errors });
+      return;
+    }
+    res.status(500).json({ error: 'Token revocation failed' });
   }
 });
 
