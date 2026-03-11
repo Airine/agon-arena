@@ -36,12 +36,18 @@ export const users = pgTable('users', {
   passwordHash: varchar('password_hash', { length: 255 }),
   chipBalance: bigint('chip_balance', { mode: 'number' }).notNull().default(0),
   frozenAmount: bigint('frozen_amount', { mode: 'number' }).notNull().default(0),
+  // AGO-68: invite tracking
+  // invitedByCodeId: the invite code redeemed at registration (null = no invite)
+  invitedByCodeId: uuid('invited_by_code_id').references((): AnyPgColumn => inviteCodes.id),
+  // firstBetRewardedAt: set once referee's first-bet rewards are distributed (idempotency guard)
+  firstBetRewardedAt: timestamp('first_bet_rewarded_at'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 }, (t) => [
   uniqueIndex('users_username_idx').on(t.username),
   uniqueIndex('users_email_idx').on(t.email),
   uniqueIndex('users_wallet_idx').on(t.walletAddress),
+  index('users_invited_by_code_idx').on(t.invitedByCodeId),
 ]);
 
 // Agents table

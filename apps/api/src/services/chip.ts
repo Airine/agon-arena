@@ -5,6 +5,11 @@ import { db, schema } from '../db/index.js';
 
 export const REGISTRATION_BONUS = 1000;
 
+// AGO-68: Invite reward tiers
+export const INVITE_REFEREE_REWARD = 500;   // referee receives on registration with invite code
+export const INVITE_FIRST_BET_REWARD = 100; // referee receives on first non-fold game action
+export const INVITE_REFERRER_REWARD = 200;  // referrer receives when referee places first bet
+
 export const SOCIAL_BINDING_REWARDS: Record<string, number> = {
   github: 500,
   google: 200,
@@ -457,6 +462,226 @@ export class ChipService {
         frozenBefore,
         frozenAfter: frozenBefore,
       };
+    });
+  }
+
+  // ─── Invite rewards ───────────────────────────────────────────────────────
+
+  /**
+   * Award the referee's +500 CHIP invite reward at registration.
+   *
+   * Idempotent: guarded by referenceType='invite_referee' + referenceId=inviteCodeId.
+   * Caller must have already:
+   *   1. Set users.invitedByCodeId = inviteCodeId
+   *   2. Marked invite_codes.usedByUserId + usedAt
+   *
+   * Returns the transaction result, or null if already awarded.
+   */
+  async allocateInviteRefereeReward(
+    refereeUserId: string,
+    inviteCodeId: string,
+  ): Promise<ChipTxResult | null> {
+    return db.transaction(async (tx) => {
+      // Idempotency: check for existing referee reward for this code
+      const [existing] = await tx
+        .select({ id: schema.chipTransactions.id })
+        .from(schema.chipTransactions)
+        .where(
+          and(
+            eq(schema.chipTransactions.userId, refereeUserId),
+            eq(schema.chipTransactions.referenceType, 'invite_referee'),
+            eq(schema.chipTransactions.referenceId, inviteCodeId),
+          ),
+        )
+        .limit(1);
+
+      if (existing) return null;
+
+      const user = await this.lockUser(tx, refereeUserId);
+
+      const balanceBefore = user.chipBalance;
+      const frozenBefore = user.frozenAmount;
+      const balanceAfter = balanceBefore + INVITE_REFEREE_REWARD;
+
+      await tx
+        .update(schema.users)
+        .set({
+          chipBalance: sql`${schema.users.chipBalance} + ${INVITE_REFEREE_REWARD}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.users.id, refereeUserId));
+
+      const [row] = await tx
+        .insert(schema.chipTransactions)
+        .values({
+          userId: refereeUserId,
+          type: 'credit',
+          amount: INVITE_REFEREE_REWARD,
+          balanceBefore,
+          balanceAfter,
+          frozenBefore,
+          frozenAfter: frozenBefore,
+          referenceType: 'invite_referee',
+          referenceId: inviteCodeId,
+          note: `Invite code referee reward (+${INVITE_REFEREE_REWARD} CHIP)`,
+        })
+        .returning({ id: schema.chipTransactions.id });
+
+      return {
+        txId: row!.id,
+        userId: refereeUserId,
+        type: 'credit',
+        amount: INVITE_REFEREE_REWARD,
+        balanceBefore,
+        balanceAfter,
+        frozenBefore,
+        frozenAfter: frozenBefore,
+      };
+    });
+  }
+
+  /**
+   * Distribute first-bet rewards: referee +100 CHIP, referrer +200 CHIP.
+   *
+   * Called once when a referee (a user with invitedByCodeId set) places their first
+   * non-fold game action. Sets users.firstBetRewardedAt and invite_codes.referrerRewarded.
+   *
+   * Idempotent: guarded by users.firstBetRewardedAt (checked inside transaction).
+   * Returns { referee, referrer } transaction results, or null if already distributed.
+   */
+  async allocateFirstBetRewards(refereeUserId: string): Promise<{
+    referee: ChipTxResult;
+    referrer: ChipTxResult | null;
+  } | null> {
+    return db.transaction(async (tx) => {
+      // Load referee user with FOR UPDATE semantics
+      const [refereeUser] = await tx
+        .select({
+          chipBalance: schema.users.chipBalance,
+          frozenAmount: schema.users.frozenAmount,
+          invitedByCodeId: schema.users.invitedByCodeId,
+          firstBetRewardedAt: schema.users.firstBetRewardedAt,
+        })
+        .from(schema.users)
+        .where(eq(schema.users.id, refereeUserId))
+        .limit(1);
+
+      if (!refereeUser) throw new UserNotFoundError(refereeUserId);
+
+      // Idempotency guard: already distributed
+      if (refereeUser.firstBetRewardedAt !== null) return null;
+
+      // No invite code: nothing to award
+      if (!refereeUser.invitedByCodeId) return null;
+
+      const inviteCodeId = refereeUser.invitedByCodeId;
+      const now = new Date();
+
+      // ── Referee +100 CHIP ──────────────────────────────────────────────────
+      const refereeBefore = refereeUser.chipBalance;
+      const refereeFrozen = refereeUser.frozenAmount;
+      const refereeAfter = refereeBefore + INVITE_FIRST_BET_REWARD;
+
+      await tx
+        .update(schema.users)
+        .set({
+          chipBalance: sql`${schema.users.chipBalance} + ${INVITE_FIRST_BET_REWARD}`,
+          firstBetRewardedAt: now,
+          updatedAt: now,
+        })
+        .where(eq(schema.users.id, refereeUserId));
+
+      const [refereeTx] = await tx
+        .insert(schema.chipTransactions)
+        .values({
+          userId: refereeUserId,
+          type: 'credit',
+          amount: INVITE_FIRST_BET_REWARD,
+          balanceBefore: refereeBefore,
+          balanceAfter: refereeAfter,
+          frozenBefore: refereeFrozen,
+          frozenAfter: refereeFrozen,
+          referenceType: 'invite_first_bet',
+          referenceId: inviteCodeId,
+          note: `First-bet invite bonus (+${INVITE_FIRST_BET_REWARD} CHIP)`,
+        })
+        .returning({ id: schema.chipTransactions.id });
+
+      const refereeResult: ChipTxResult = {
+        txId: refereeTx!.id,
+        userId: refereeUserId,
+        type: 'credit',
+        amount: INVITE_FIRST_BET_REWARD,
+        balanceBefore: refereeBefore,
+        balanceAfter: refereeAfter,
+        frozenBefore: refereeFrozen,
+        frozenAfter: refereeFrozen,
+      };
+
+      // ── Referrer +200 CHIP ─────────────────────────────────────────────────
+      // Load invite code to find referrer
+      const [codeRow] = await tx
+        .select({
+          createdByUserId: schema.inviteCodes.createdByUserId,
+          referrerRewarded: schema.inviteCodes.referrerRewarded,
+        })
+        .from(schema.inviteCodes)
+        .where(eq(schema.inviteCodes.id, inviteCodeId))
+        .limit(1);
+
+      let referrerResult: ChipTxResult | null = null;
+
+      if (codeRow && !codeRow.referrerRewarded) {
+        const referrerUserId = codeRow.createdByUserId;
+        const referrer = await this.lockUser(tx, referrerUserId);
+
+        const referrerBefore = referrer.chipBalance;
+        const referrerFrozen = referrer.frozenAmount;
+        const referrerAfter = referrerBefore + INVITE_REFERRER_REWARD;
+
+        await tx
+          .update(schema.users)
+          .set({
+            chipBalance: sql`${schema.users.chipBalance} + ${INVITE_REFERRER_REWARD}`,
+            updatedAt: now,
+          })
+          .where(eq(schema.users.id, referrerUserId));
+
+        const [referrerTx] = await tx
+          .insert(schema.chipTransactions)
+          .values({
+            userId: referrerUserId,
+            type: 'credit',
+            amount: INVITE_REFERRER_REWARD,
+            balanceBefore: referrerBefore,
+            balanceAfter: referrerAfter,
+            frozenBefore: referrerFrozen,
+            frozenAfter: referrerFrozen,
+            referenceType: 'invite_referrer',
+            referenceId: inviteCodeId,
+            note: `Referral reward — referee's first bet (+${INVITE_REFERRER_REWARD} CHIP)`,
+          })
+          .returning({ id: schema.chipTransactions.id });
+
+        // Mark invite code referrer as rewarded
+        await tx
+          .update(schema.inviteCodes)
+          .set({ referrerRewarded: true })
+          .where(eq(schema.inviteCodes.id, inviteCodeId));
+
+        referrerResult = {
+          txId: referrerTx!.id,
+          userId: referrerUserId,
+          type: 'credit',
+          amount: INVITE_REFERRER_REWARD,
+          balanceBefore: referrerBefore,
+          balanceAfter: referrerAfter,
+          frozenBefore: referrerFrozen,
+          frozenAfter: referrerFrozen,
+        };
+      }
+
+      return { referee: refereeResult, referrer: referrerResult };
     });
   }
 
