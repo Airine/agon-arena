@@ -68,6 +68,7 @@ app.use('/auth/siwe', ipRateLimit(60, 10, 'rl:siwe'));            // 10 SIWE req
 app.use('/auth/github/callback', ipRateLimit(60, 5, 'rl:gh'));    // 5 GitHub callbacks per min per IP
 app.use('/auth/google/callback', ipRateLimit(60, 5, 'rl:gg'));    // 5 Google callbacks per min per IP
 app.use('/auth/twitter/callback', ipRateLimit(60, 5, 'rl:tw'));   // 5 Twitter callbacks per min per IP
+app.use('/auth/ens/verify', ipRateLimit(60, 5, 'rl:ens'));         // 5 ENS verifications per min per IP (prevents resolver spam)
 // Device fingerprint: max 3 new accounts per 24h per device
 app.use('/auth/siwe/verify', deviceFingerprintLimit(86400, 3));
 
