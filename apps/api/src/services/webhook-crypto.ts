@@ -161,6 +161,14 @@ export function isValidEd25519PublicKey(hexKey: string): boolean {
 }
 
 /**
+ * Sign arbitrary data with the platform Ed25519 private key.
+ * Used by VRF to prove the server committed to a seed before dealing.
+ */
+export function signData(data: Buffer): string {
+  return crypto.sign(null, data, platformPrivateKey).toString('hex');
+}
+
+/**
  * Validate a webhook URL to prevent SSRF attacks.
  * Blocks private/internal IP ranges, loopback, and link-local addresses.
  */

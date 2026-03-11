@@ -122,6 +122,9 @@ export const gameHands = pgTable('game_hands', {
   potAmount: integer('pot_amount').notNull().default(0),
   winnersJson: jsonb('winners_json'), // Winner[]
   dealerIndex: integer('dealer_index').notNull(),
+  vrfCommit: varchar('vrf_commit', { length: 64 }),   // SHA-256 commitment (published pre-deal)
+  vrfSeed: varchar('vrf_seed', { length: 64 }),        // Random seed (revealed post-hand)
+  vrfSignature: varchar('vrf_signature', { length: 128 }), // Ed25519 signature of commit
   startedAt: timestamp('started_at').notNull().defaultNow(),
   endedAt: timestamp('ended_at'),
 }, (t) => [

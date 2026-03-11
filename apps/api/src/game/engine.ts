@@ -8,6 +8,7 @@ import type {
   Winner,
 } from '@agon/types';
 import { createDeck, shuffleDeck } from './deck.js';
+import { seededShuffle } from '../services/vrf.js';
 import { evaluateHand, compareHands } from './evaluator.js';
 import { calculatePots } from './pot.js';
 
@@ -22,14 +23,14 @@ export interface GameConfig {
 /**
  * Create a new game hand with blinds posted.
  */
-export function createGame(config: GameConfig): { state: GameState; deck: Card[] } {
+export function createGame(config: GameConfig, vrfSeed?: string): { state: GameState; deck: Card[] } {
   const { arenaId, players: playerConfigs, smallBlind, bigBlind, dealerIndex } = config;
 
   if (playerConfigs.length < 2) throw new Error('Need at least 2 players');
   if (playerConfigs.length > 10) throw new Error('Maximum 10 players');
 
   const n = playerConfigs.length;
-  const deck = shuffleDeck(createDeck());
+  const deck = vrfSeed ? seededShuffle(createDeck(), vrfSeed) : shuffleDeck(createDeck());
 
   // Heads-up: dealer is SB, other is BB
   // Multi-way: SB is dealer+1, BB is dealer+2

@@ -5,6 +5,7 @@ import { createGame, processAction, getValidActions, getWinners, isHandOver, typ
 import { db, schema } from '../db/index.js';
 import { getIO } from './io.js';
 import { signWebhookPayload, verifyAgentSignature } from './webhook-crypto.js';
+import { generateCommit, verifyVRFCommit } from './vrf.js';
 import { setGameSnapshot } from './redis.js';
 
 const ACTION_TIMEOUT_MS = 5000;
@@ -67,7 +68,8 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
       dealerIndex,
     };
 
-    const { state: initialState, deck } = createGame(config);
+    const vrf = generateCommit();
+    const { state: initialState, deck } = createGame(config, vrf.seed);
     const gameState = { ...initialState, handNumber };
 
     // Create hand record in DB
@@ -80,6 +82,9 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
         dealerIndex,
         communityCards: [],
         potAmount: gameState.pots.reduce((sum, p) => sum + p.amount, 0),
+        vrfCommit: vrf.commit,
+        vrfSignature: vrf.signature,
+        // vrfSeed is null until revealed after hand
       })
       .returning();
 
@@ -98,6 +103,15 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
         agentName: s.agentName,
         stack: stacks.get(s.agentId) ?? 0,
       })),
+    });
+
+    // Broadcast VRF commitment — players can verify dealing was committed before cards were known
+    getIO().to(`arena:${arenaId}`).emit('hand:vrf_commit', {
+      arenaId,
+      handNumber,
+      vrfCommit: vrf.commit,
+      vrfSignature: vrf.signature,
+      vrfPublicKey: vrf.publicKey,
     });
 
     // Play the hand
@@ -202,6 +216,21 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
         endedAt: new Date(),
       })
       .where(eq(schema.gameHands.id, handRecord!.id));
+
+    // Reveal VRF seed after hand ends — anyone can now verify the commitment
+    await db
+      .update(schema.gameHands)
+      .set({ vrfSeed: vrf.seed })
+      .where(eq(schema.gameHands.id, handRecord!.id));
+
+    // Broadcast seed reveal
+    getIO().to(`arena:${arenaId}`).emit('hand:vrf_reveal', {
+      arenaId,
+      handNumber,
+      vrfSeed: vrf.seed,
+      vrfCommit: vrf.commit,
+      verified: verifyVRFCommit(vrf.seed, vrf.commit),
+    });
 
     // Update agent stats
     for (const player of currentState.players) {
