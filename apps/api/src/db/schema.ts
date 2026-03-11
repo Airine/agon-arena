@@ -165,3 +165,33 @@ export const gameActions = pgTable('game_actions', {
   index('game_actions_arena_idx').on(t.arenaId),
   index('game_actions_agent_idx').on(t.agentId),
 ]);
+
+// CHIP transaction types
+export const chipTxTypeEnum = pgEnum('chip_tx_type', [
+  'credit',    // add chips (purchase, prize, bonus)
+  'debit',     // remove chips (fee, penalty)
+  'freeze',    // lock chips for game entry
+  'unfreeze',  // release locked chips back
+  'transfer',  // user-to-user transfer
+]);
+
+// CHIP audit log — every balance mutation writes a row here
+export const chipTransactions = pgTable('chip_transactions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id),
+  type: chipTxTypeEnum('type').notNull(),
+  amount: bigint('amount', { mode: 'number' }).notNull(), // always positive
+  balanceBefore: bigint('balance_before', { mode: 'number' }).notNull(),
+  balanceAfter: bigint('balance_after', { mode: 'number' }).notNull(),
+  frozenBefore: bigint('frozen_before', { mode: 'number' }).notNull(),
+  frozenAfter: bigint('frozen_after', { mode: 'number' }).notNull(),
+  // Link the tx to the entity that caused it (arena entry, hand prize, x402 purchase, etc.)
+  referenceId: varchar('reference_id', { length: 255 }),
+  referenceType: varchar('reference_type', { length: 50 }), // 'arena' | 'hand' | 'x402' | 'admin'
+  note: text('note'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (t) => [
+  index('chip_tx_user_idx').on(t.userId),
+  index('chip_tx_created_idx').on(t.createdAt),
+  index('chip_tx_reference_idx').on(t.referenceType, t.referenceId),
+]);
