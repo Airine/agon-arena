@@ -1,6 +1,6 @@
 import { Router, type Router as RouterType } from 'express';
 import { z } from 'zod';
-import { eq, and, count, sql } from 'drizzle-orm';
+import { eq, and, count, sql, desc } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { getGameSnapshot } from '../services/redis.js';
@@ -367,6 +367,49 @@ arenasRouter.get('/:id/snapshot', async (req, res) => {
     res.json({ snapshot, arenaStatus: arena.status });
   } catch {
     res.status(500).json({ error: 'Failed to fetch snapshot' });
+  }
+});
+
+/**
+ * GET /arenas/:id/hands - List hands played in an arena with VRF commit-reveal data.
+ * Returns up to 100 most recent hands. vrfSeed is revealed after each hand completes.
+ */
+arenasRouter.get('/:id/hands', async (req, res) => {
+  try {
+    const arenaId = String(req.params['id']);
+
+    const [arena] = await db
+      .select({ id: schema.arenas.id })
+      .from(schema.arenas)
+      .where(eq(schema.arenas.id, arenaId))
+      .limit(1);
+
+    if (!arena) {
+      res.status(404).json({ error: 'Arena not found' });
+      return;
+    }
+
+    const hands = await db
+      .select({
+        id: schema.gameHands.id,
+        handNumber: schema.gameHands.handNumber,
+        stage: schema.gameHands.stage,
+        potAmount: schema.gameHands.potAmount,
+        winnersJson: schema.gameHands.winnersJson,
+        vrfCommit: schema.gameHands.vrfCommit,
+        vrfSeed: schema.gameHands.vrfSeed,
+        vrfSignature: schema.gameHands.vrfSignature,
+        startedAt: schema.gameHands.startedAt,
+        endedAt: schema.gameHands.endedAt,
+      })
+      .from(schema.gameHands)
+      .where(eq(schema.gameHands.arenaId, arenaId))
+      .orderBy(desc(schema.gameHands.handNumber))
+      .limit(100);
+
+    res.json({ arenaId, hands, count: hands.length });
+  } catch {
+    res.status(500).json({ error: 'Failed to fetch hands' });
   }
 });
 
