@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Router as RouterType } from 'express';
 import { z } from 'zod';
 import crypto from 'crypto';
 import { eq, and, desc, or } from 'drizzle-orm';
@@ -7,7 +7,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { isValidEd25519PublicKey, getPlatformPublicKeyHex, isUrlSafe } from '../services/webhook-crypto.js';
 import { chipService } from '../services/chip.js';
 
-const router = Router();
+const router: RouterType = Router();
 
 /**
  * 7-field agent registration schema:
