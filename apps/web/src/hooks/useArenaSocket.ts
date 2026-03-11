@@ -22,9 +22,15 @@ export interface ActionEntry {
   latencyMs?: number;
 }
 
+export interface ChipSnapshot {
+  handNumber: number;
+  stacks: { agentId: string; agentName: string; stack: number }[];
+}
+
 export interface UseArenaSocketResult {
   gameState: GameState | null;
   actions: ActionEntry[];
+  chipSnapshots: ChipSnapshot[];
   connected: boolean;
   arenaFinished: boolean;
 }
@@ -58,6 +64,7 @@ interface ArenaFinishedPayload {
 export function useArenaSocket(arenaId: string): UseArenaSocketResult {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [actions, setActions] = useState<ActionEntry[]>([]);
+  const [chipSnapshots, setChipSnapshots] = useState<ChipSnapshot[]>([]);
   const [connected, setConnected] = useState(false);
   const [arenaFinished, setArenaFinished] = useState(false);
 
@@ -148,6 +155,18 @@ export function useArenaSocket(arenaId: string): UseArenaSocketResult {
           timestamp: now,
           latencyMs,
         });
+        // Record chip snapshot for equity curve chart
+        const snapshot: ChipSnapshot = {
+          handNumber: payload.handNumber,
+          stacks: payload.finalState.players.map((p) => ({
+            agentId: p.agentId,
+            agentName: p.agentName,
+            stack: p.stack,
+          })),
+        };
+        startTransition(() =>
+          setChipSnapshots((prev) => [...prev, snapshot]),
+        );
       } else if (event === 'arena:finished') {
         const payload = data as ArenaFinishedPayload;
         if (payload.arenaId !== arenaId) return;
@@ -179,5 +198,5 @@ export function useArenaSocket(arenaId: string): UseArenaSocketResult {
     };
   }, [arenaId, enqueue]);
 
-  return { gameState, actions, connected, arenaFinished };
+  return { gameState, actions, chipSnapshots, connected, arenaFinished };
 }
