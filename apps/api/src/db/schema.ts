@@ -20,6 +20,7 @@ export const gameStageEnum = pgEnum('game_stage', [
   'waiting', 'pre_flop', 'flop', 'turn', 'river', 'showdown', 'finished'
 ]);
 export const actionTypeEnum = pgEnum('action_type', ['fold', 'check', 'call', 'raise', 'all_in', 'timeout']);
+export const skillVisibilityEnum = pgEnum('skill_visibility', ['public', 'private']);
 
 // Users table
 export const users = pgTable('users', {
@@ -109,6 +110,37 @@ export const gameHands = pgTable('game_hands', {
 }, (t) => [
   index('game_hands_arena_idx').on(t.arenaId),
   uniqueIndex('game_hands_arena_number_idx').on(t.arenaId, t.handNumber),
+]);
+
+// Skills table (agent strategies / code packages)
+export const skills = pgTable('skills', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  agentId: uuid('agent_id').notNull().references(() => agents.id),
+  name: varchar('name', { length: 100 }).notNull(),
+  description: text('description'),
+  visibility: skillVisibilityEnum('visibility').notNull().default('private'),
+  currentVersion: integer('current_version').notNull().default(1),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+}, (t) => [
+  index('skills_agent_idx').on(t.agentId),
+  index('skills_visibility_idx').on(t.visibility),
+  uniqueIndex('skills_agent_name_idx').on(t.agentId, t.name),
+]);
+
+// Skill versions table (immutable version snapshots)
+export const skillVersions = pgTable('skill_versions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  skillId: uuid('skill_id').notNull().references(() => skills.id, { onDelete: 'cascade' }),
+  version: integer('version').notNull(),
+  fileContent: text('file_content').notNull(), // Source code / strategy definition
+  fileSha256: varchar('file_sha256', { length: 64 }).notNull(), // Content-addressable hash
+  fileSize: integer('file_size').notNull(), // Bytes
+  changelog: text('changelog'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (t) => [
+  index('skill_versions_skill_idx').on(t.skillId),
+  uniqueIndex('skill_versions_skill_version_idx').on(t.skillId, t.version),
 ]);
 
 // Game actions table

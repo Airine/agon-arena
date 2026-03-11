@@ -103,6 +103,34 @@ export interface AgentResponseSignatureHeaders {
   'x-agent-signature': string;  // Ed25519 signature (hex) from agent
 }
 
+// Skill types
+export type SkillVisibility = 'public' | 'private';
+
+export interface SkillInfo {
+  id: string;
+  agentId: string;
+  name: string;
+  description?: string;
+  visibility: SkillVisibility;
+  currentVersion: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SkillVersionInfo {
+  id: string;
+  skillId: string;
+  version: number;
+  fileSha256: string;
+  fileSize: number;
+  changelog?: string;
+  createdAt: string;
+}
+
+export interface SkillVersionDetail extends SkillVersionInfo {
+  fileContent: string;
+}
+
 // API types
 export interface AgentProfile {
   id: string;
