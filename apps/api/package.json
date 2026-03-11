@@ -26,11 +26,14 @@
     "drizzle-orm": "^0.39.3",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
+    "kafkajs": "^2.2.4",
     "pg": "^8.13.3",
+    "@socket.io/redis-adapter": "^8.3.0",
     "redis": "^4.7.0",
     "siwe": "^3.0.0",
     "socket.io": "^4.8.1",
     "viem": "^2.47.1",
+    "x402": "^1.1.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {

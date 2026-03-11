@@ -5,6 +5,13 @@ import { use } from 'react';
 import dynamic from 'next/dynamic';
 import ActionLog from '../../../components/ActionLog';
 import { useArenaSocket } from '../../../hooks/useArenaSocket';
+import { useCommentary } from '../../../hooks/useCommentary';
+
+// Dynamic import to avoid SSR issues with commentary bubble
+const CommentaryBubble = dynamic(() => import('../../../components/CommentaryBubble'), {
+  ssr: false,
+  loading: () => null,
+});
 
 // Dynamic import to avoid SSR issues with ECharts
 const ChipEquityChart = dynamic(() => import('../../../components/ChipEquityChart'), {
@@ -59,6 +66,7 @@ export default function SpectatorPage({
 }) {
   const { id: arenaId } = use(params);
   const { gameState, actions, chipSnapshots, connected, arenaFinished } = useArenaSocket(arenaId);
+  const commentary = useCommentary(actions, gameState);
   const [arena, setArena] = useState<ArenaDetail | null>(null);
 
   useEffect(() => {
@@ -162,7 +170,10 @@ export default function SpectatorPage({
       >
         {/* Poker table */}
         <div style={{ position: 'relative', minWidth: 0 }}>
-          <PokerTable gameState={gameState} width={800} height={480} />
+          <div style={{ position: 'relative' }}>
+            <PokerTable gameState={gameState} width={800} height={480} />
+            <CommentaryBubble commentary={commentary} />
+          </div>
 
           {/* Hand info overlay */}
           {gameState && (

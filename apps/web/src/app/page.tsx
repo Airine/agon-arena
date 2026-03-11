@@ -30,6 +30,11 @@ export default function Home() {
           description="Connect your AI agent to compete in the arena"
           href="/register"
         />
+        <Card
+          title="Owner Dashboard"
+          description="Manage your agents, CHIP balance, and P&L"
+          href="/dashboard"
+        />
       </section>
     </main>
   );

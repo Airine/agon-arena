@@ -9,8 +9,59 @@ import { signToken, requireAuth } from '../middleware/auth.js';
 import { issueTokenPair, rotateRefreshToken, revokeAccessToken } from '../services/jwt.js';
 import { getPlatformPublicKeyHex } from '../services/webhook-crypto.js';
 import { storeSiweNonce, consumeSiweNonce, storeAgentNonce, consumeAgentNonce, storeBindNonce, consumeBindNonce } from '../services/redis.js';
+import { incrementFingerprintAccountCount } from '../middleware/rate-limit.js';
 import { verifyMessage } from 'viem';
 import { chipService } from '../services/chip.js';
+
+// ---------------------------------------------------------------------------
+// Invite code redemption helper (AGO-68)
+// ---------------------------------------------------------------------------
+
+/**
+ * Redeem an invite code for a newly registered user.
+ * Marks the code as used and credits the referee's +500 CHIP reward.
+ * Fire-and-forget safe — errors are logged but do not fail registration.
+ *
+ * @param newUserId - The just-created user's ID
+ * @param inviteCode - The raw code string (e.g. "AGON-A1B2-C3D4")
+ */
+async function redeemInviteCode(newUserId: string, inviteCode: string): Promise<void> {
+  try {
+    // Load and validate the invite code
+    const [codeRow] = await db
+      .select({
+        id: schema.inviteCodes.id,
+        createdByUserId: schema.inviteCodes.createdByUserId,
+        usedAt: schema.inviteCodes.usedAt,
+      })
+      .from(schema.inviteCodes)
+      .where(eq(schema.inviteCodes.code, inviteCode.toUpperCase()))
+      .limit(1);
+
+    if (!codeRow) return; // code doesn't exist — ignore silently
+    if (codeRow.usedAt !== null) return; // already used
+    if (codeRow.createdByUserId === newUserId) return; // cannot invite yourself
+
+    // Mark code as used and link to user (atomic)
+    await db.transaction(async (tx) => {
+      await tx
+        .update(schema.inviteCodes)
+        .set({ usedByUserId: newUserId, usedAt: new Date() })
+        .where(eq(schema.inviteCodes.id, codeRow.id));
+
+      await tx
+        .update(schema.users)
+        .set({ invitedByCodeId: codeRow.id, updatedAt: new Date() })
+        .where(eq(schema.users.id, newUserId));
+    });
+
+    // Award referee +500 CHIP
+    await chipService.allocateInviteRefereeReward(newUserId, codeRow.id);
+  } catch (err) {
+    // Invite redemption is best-effort — log but do not break registration
+    console.error('[InviteRedeem] Error:', err);
+  }
+}
 
 export const authRouter: RouterType = Router();
 
@@ -35,6 +86,8 @@ authRouter.get('/siwe/nonce', async (_req, res) => {
 const siweVerifySchema = z.object({
   message: z.string(),   // Serialized EIP-4361 SIWE message
   signature: z.string(), // 0x-prefixed hex signature
+  // AGO-68: optional invite code for new wallet registrations
+  inviteCode: z.string().max(20).optional(),
 });
 
 /**
@@ -49,7 +102,7 @@ const siweVerifySchema = z.object({
  */
 authRouter.post('/siwe/verify', async (req, res) => {
   try {
-    const { message, signature } = siweVerifySchema.parse(req.body);
+    const { message, signature, inviteCode } = siweVerifySchema.parse(req.body);
 
     const siweMessage = new SiweMessage(message);
 
@@ -104,6 +157,16 @@ authRouter.post('/siwe/verify', async (req, res) => {
 
     if (isNewUser) {
       await chipService.allocateRegistrationBonus(user!.id);
+      // AGO-68: redeem invite code for new SIWE users (best-effort)
+      if (inviteCode) {
+        await redeemInviteCode(user!.id, inviteCode);
+      }
+      // AGO-69: increment device fingerprint account counter (best-effort)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((req as any).deviceFingerprint) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await incrementFingerprintAccountCount((req as any).deviceFingerprint as string);
+      }
     }
 
     const tokens = await issueTokenPair({ userId: user!.id, username: user!.username, walletAddress: user!.walletAddress ?? undefined });
@@ -126,6 +189,8 @@ const registerSchema = z.object({
   username: z.string().min(3).max(50),
   email: z.string().email(),
   password: z.string().min(6),
+  // AGO-68: optional invite code (format: "AGON-XXXX-XXXX")
+  inviteCode: z.string().max(20).optional(),
 });
 
 authRouter.post('/register', async (req, res) => {
@@ -143,6 +208,11 @@ authRouter.post('/register', async (req, res) => {
       .returning({ id: schema.users.id, username: schema.users.username });
 
     await chipService.allocateRegistrationBonus(user!.id);
+
+    // AGO-68: redeem invite code if provided (best-effort, does not fail registration)
+    if (body.inviteCode) {
+      await redeemInviteCode(user!.id, body.inviteCode);
+    }
 
     const tokens = await issueTokenPair({ userId: user!.id, username: user!.username });
     res.status(201).json({ ...tokens, user: { id: user!.id, username: user!.username } });

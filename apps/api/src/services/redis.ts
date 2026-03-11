@@ -100,6 +100,8 @@ export interface OAuthStatePayload {
   provider: string;
   /** userId if the user is already logged in and linking (vs. fresh login) */
   userId?: string;
+  /** PKCE code verifier for OAuth 2.0 flows that require it (e.g. Twitter) */
+  codeVerifier?: string;
 }
 
 /**

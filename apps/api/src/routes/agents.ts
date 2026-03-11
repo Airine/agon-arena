@@ -1,12 +1,13 @@
-import { Router, type Router as RouterType } from 'express';
+import { Router } from 'express';
 import { z } from 'zod';
 import crypto from 'crypto';
 import { eq, and, desc, or } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { isValidEd25519PublicKey, getPlatformPublicKeyHex, isUrlSafe } from '../services/webhook-crypto.js';
+import { chipService } from '../services/chip.js';
 
-export const agentsRouter: RouterType = Router();
+const router = Router();
 
 /**
  * 7-field agent registration schema:
@@ -43,11 +44,16 @@ const updateAgentSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
+const distributePrizeSchema = z.object({
+  amount: z.number().int().positive(),
+  referenceId: z.string().min(1).max(100),
+});
+
 /**
  * POST /agents - Register a new agent.
  * Requires all 7 fields (some optional). Returns the agent record and a raw API key (shown once).
  */
-agentsRouter.post('/', requireAuth, async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   try {
     const body = createAgentSchema.parse(req.body);
 
@@ -111,7 +117,7 @@ agentsRouter.post('/', requireAuth, async (req, res) => {
 /**
  * GET /agents - List agents. Optional ?ownerId= filter.
  */
-agentsRouter.get('/', async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const ownerId = req.query['ownerId'] as string | undefined;
 
@@ -148,7 +154,7 @@ agentsRouter.get('/', async (req, res) => {
 /**
  * GET /agents/:id - Get agent details with stats.
  */
-agentsRouter.get('/:id', async (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
     const [agent] = await db
       .select({
@@ -182,9 +188,50 @@ agentsRouter.get('/:id', async (req, res) => {
 });
 
 /**
+ * POST /agents/:agentId/distribute-prize
+ * Distribute a competition prize up the agent ownership chain (FR-AGT-W021).
+ * Only the root owner (JWT userId == agent.ownerId at the top of the chain) may call this.
+ * In production, the game engine calls this automatically after hand resolution.
+ */
+router.post('/:agentId/distribute-prize', requireAuth, async (req, res) => {
+  try {
+    const { agentId } = req.params as { agentId: string };
+    const parsed = distributePrizeSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Invalid request', details: parsed.error.flatten() });
+      return;
+    }
+    const { amount, referenceId } = parsed.data;
+
+    const [agent] = await db
+      .select({ ownerId: schema.agents.ownerId })
+      .from(schema.agents)
+      .where(eq(schema.agents.id, agentId))
+      .limit(1);
+
+    if (!agent) {
+      res.status(404).json({ error: 'Agent not found' });
+      return;
+    }
+
+    // Only the immediate owner of the agent may trigger distribution
+    if (agent.ownerId !== (req as any).user.userId) {
+      res.status(403).json({ error: 'Forbidden: not the agent owner' });
+      return;
+    }
+
+    const result = await chipService.distributePrizeCascade(agentId, amount, referenceId);
+    res.json(result);
+  } catch (err: unknown) {
+    console.error('distribute-prize error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
  * PUT /agents/:id - Update agent. Owner only.
  */
-agentsRouter.put('/:id', requireAuth, async (req, res) => {
+router.put('/:id', requireAuth, async (req, res) => {
   try {
     const body = updateAgentSchema.parse(req.body);
     const agentId = String(req.params['id']);
@@ -259,7 +306,7 @@ agentsRouter.put('/:id', requireAuth, async (req, res) => {
  * GET /agents/:id/matches - List arenas the agent has participated in.
  * Returns finished and running arenas with the agent's final stack and profit.
  */
-agentsRouter.get('/:id/matches', async (req, res) => {
+router.get('/:id/matches', async (req, res) => {
   try {
     const agentId = String(req.params['id']);
 
@@ -314,7 +361,7 @@ agentsRouter.get('/:id/matches', async (req, res) => {
 /**
  * DELETE /agents/:id - Soft-delete (deactivate). Owner only.
  */
-agentsRouter.delete('/:id', requireAuth, async (req, res) => {
+router.delete('/:id', requireAuth, async (req, res) => {
   try {
     const agentId = String(req.params['id']);
 
@@ -343,3 +390,5 @@ agentsRouter.delete('/:id', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Failed to delete agent' });
   }
 });
+
+export { router as agentsRouter };

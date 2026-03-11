@@ -5,7 +5,12 @@ import { createGame, processAction, getValidActions, getWinners, isHandOver, typ
 import { db, schema } from '../db/index.js';
 import { getIO } from './io.js';
 import { signWebhookPayload, verifyAgentSignature } from './webhook-crypto.js';
+import { generateCommit, verifyVRFCommit } from './vrf.js';
 import { setGameSnapshot } from './redis.js';
+import { dispatchToAll, type AgentEndpoint } from './webhook-dispatcher.js';
+import { publishEvent } from './kafka.js';
+import { chipService } from './chip.js';
+import { resolveBotAction } from './bot.js';
 
 const ACTION_TIMEOUT_MS = 5000;
 const MAX_HANDS = 100; // Max hands per arena session
@@ -45,6 +50,12 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
   const agentUrls = new Map(seats.map((s) => [s.agentId, s.apiUrl]));
   const agentPublicKeys = new Map(seats.map((s) => [s.agentId, s.webhookPublicKey]));
 
+  const agentEndpoints: AgentEndpoint[] = seats.map((s) => ({
+    agentId: s.agentId,
+    apiUrl: s.apiUrl,
+    webhookPublicKey: s.webhookPublicKey,
+  }));
+
   // Track stacks across hands
   const stacks = new Map(seats.map((s) => [s.agentId, arena.startingStack]));
 
@@ -67,7 +78,8 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
       dealerIndex,
     };
 
-    const { state: initialState, deck } = createGame(config);
+    const vrf = generateCommit();
+    const { state: initialState, deck } = createGame(config, vrf.seed);
     const gameState = { ...initialState, handNumber };
 
     // Create hand record in DB
@@ -80,6 +92,9 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
         dealerIndex,
         communityCards: [],
         potAmount: gameState.pots.reduce((sum, p) => sum + p.amount, 0),
+        vrfCommit: vrf.commit,
+        vrfSignature: vrf.signature,
+        // vrfSeed is null until revealed after hand
       })
       .returning();
 
@@ -98,6 +113,34 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
         agentName: s.agentName,
         stack: stacks.get(s.agentId) ?? 0,
       })),
+    });
+
+    publishEvent({
+      eventType: 'hand_start',
+      arenaId,
+      handId: handRecord!.id,
+      handNumber,
+      playerCount: activePlayers.length,
+      vrfCommit: vrf.commit,
+      ts: Date.now(),
+    });
+
+    // Dispatch hand:start to all agents (fire-and-forget)
+    dispatchToAll(agentEndpoints, (agentId) => ({
+      event: 'hand:start',
+      arenaId,
+      handNumber,
+      vrfCommit: vrf.commit,
+      state: createPrivateView(currentState, agentId),
+    }));
+
+    // Broadcast VRF commitment — players can verify dealing was committed before cards were known
+    getIO().to(`arena:${arenaId}`).emit('hand:vrf_commit', {
+      arenaId,
+      handNumber,
+      vrfCommit: vrf.commit,
+      vrfSignature: vrf.signature,
+      vrfPublicKey: vrf.publicKey,
     });
 
     // Play the hand
@@ -129,9 +172,14 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
 
       try {
         const agentUrl = agentUrls.get(actor.agentId)!;
-        const publicKey = agentPublicKeys.get(actor.agentId) ?? null;
-        const response = await requestAgentAction(agentUrl, aapRequest, publicKey);
-        action = validateAction(response, validActions, currentState);
+        if (agentUrl.startsWith('bot://')) {
+          // Bot agent: resolve action locally (no HTTP)
+          action = resolveBotAction(agentUrl, validActions, currentState);
+        } else {
+          const publicKey = agentPublicKeys.get(actor.agentId) ?? null;
+          const response = await requestAgentAction(agentUrl, aapRequest, publicKey);
+          action = validateAction(response, validActions, currentState);
+        }
       } catch {
         // Timeout or error: auto-fold
         action = { type: 'fold' };
@@ -154,6 +202,13 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
         responseTimeMs,
       });
 
+      // AGO-68: trigger first-bet invite rewards for non-fold actions
+      if (action.type !== 'fold') {
+        triggerFirstBetRewards(actor.agentId).catch((err) => {
+          console.error('[InviteReward] First-bet trigger error:', err);
+        });
+      }
+
       // Broadcast action to spectators (hide hole cards)
       const spectatorState = createSpectatorView(currentState);
       getIO().to(`arena:${arenaId}`).emit('game:action', {
@@ -163,6 +218,29 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
         action,
         resultingState: spectatorState,
       });
+
+      publishEvent({
+        eventType: 'game_action',
+        arenaId,
+        handId: handRecord!.id,
+        handNumber,
+        agentId: actor.agentId,
+        action,
+        stage: currentState.stage,
+        sequenceNumber,
+        responseTimeMs,
+        ts: Date.now(),
+      });
+
+      // Dispatch hand:action to all agents (fire-and-forget)
+      dispatchToAll(agentEndpoints, (agentId) => ({
+        event: 'hand:action',
+        arenaId,
+        handNumber,
+        actorAgentId: actor.agentId,
+        action,
+        state: createPrivateView(currentState, agentId),
+      }));
 
       // Cache snapshot for reconnecting spectators (fire-and-forget)
       setGameSnapshot(arenaId, {
@@ -197,6 +275,21 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
         endedAt: new Date(),
       })
       .where(eq(schema.gameHands.id, handRecord!.id));
+
+    // Reveal VRF seed after hand ends — anyone can now verify the commitment
+    await db
+      .update(schema.gameHands)
+      .set({ vrfSeed: vrf.seed })
+      .where(eq(schema.gameHands.id, handRecord!.id));
+
+    // Broadcast seed reveal
+    getIO().to(`arena:${arenaId}`).emit('hand:vrf_reveal', {
+      arenaId,
+      handNumber,
+      vrfSeed: vrf.seed,
+      vrfCommit: vrf.commit,
+      verified: verifyVRFCommit(vrf.seed, vrf.commit),
+    });
 
     // Update agent stats
     for (const player of currentState.players) {
@@ -236,6 +329,27 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
       finalState: finalSpectatorState,
     });
 
+    publishEvent({
+      eventType: 'hand_end',
+      arenaId,
+      handId: handRecord!.id,
+      handNumber,
+      winners: winners.map((w) => ({ agentId: w.agentId, amount: w.amount })),
+      potAmount: currentState.pots.reduce((sum, p) => sum + p.amount, 0),
+      vrfSeed: vrf.seed,
+      ts: Date.now(),
+    });
+
+    // Dispatch hand:end to all agents (fire-and-forget)
+    dispatchToAll(agentEndpoints, (agentId) => ({
+      event: 'hand:end',
+      arenaId,
+      handNumber,
+      winners,
+      vrfSeed: vrf.seed,
+      state: createSpectatorView(currentState),
+    }));
+
     // Cache snapshot for reconnecting spectators (fire-and-forget)
     setGameSnapshot(arenaId, {
       arenaId,
@@ -255,6 +369,12 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
     .where(eq(schema.arenas.id, arenaId));
 
   getIO().to(`arena:${arenaId}`).emit('arena:finished', { arenaId });
+
+  publishEvent({
+    eventType: 'arena_finished',
+    arenaId,
+    ts: Date.now(),
+  });
 }
 
 /**
@@ -362,4 +482,27 @@ function createSpectatorView(state: GameState): GameState {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ---------------------------------------------------------------------------
+// AGO-68: First-bet invite reward trigger
+// ---------------------------------------------------------------------------
+
+/**
+ * Check if the agent's owner user has pending first-bet invite rewards and distribute them.
+ * No-op if the agent is a bot (bot:// URL) or has no owner with a pending invite.
+ * Called fire-and-forget after recording a non-fold/non-timeout game action.
+ */
+async function triggerFirstBetRewards(agentId: string): Promise<void> {
+  // Look up the agent's owner user
+  const [agentRow] = await db
+    .select({ ownerId: schema.agents.ownerId })
+    .from(schema.agents)
+    .where(eq(schema.agents.id, agentId))
+    .limit(1);
+
+  if (!agentRow) return;
+
+  // allocateFirstBetRewards is idempotent — it checks firstBetRewardedAt internally
+  await chipService.allocateFirstBetRewards(agentRow.ownerId);
 }

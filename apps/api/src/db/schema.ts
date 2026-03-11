@@ -36,12 +36,18 @@ export const users = pgTable('users', {
   passwordHash: varchar('password_hash', { length: 255 }),
   chipBalance: bigint('chip_balance', { mode: 'number' }).notNull().default(0),
   frozenAmount: bigint('frozen_amount', { mode: 'number' }).notNull().default(0),
+  // AGO-68: invite tracking
+  // invitedByCodeId: the invite code redeemed at registration (null = no invite)
+  invitedByCodeId: uuid('invited_by_code_id').references((): AnyPgColumn => inviteCodes.id),
+  // firstBetRewardedAt: set once referee's first-bet rewards are distributed (idempotency guard)
+  firstBetRewardedAt: timestamp('first_bet_rewarded_at'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 }, (t) => [
   uniqueIndex('users_username_idx').on(t.username),
   uniqueIndex('users_email_idx').on(t.email),
   uniqueIndex('users_wallet_idx').on(t.walletAddress),
+  index('users_invited_by_code_idx').on(t.invitedByCodeId),
 ]);
 
 // Agents table
@@ -51,6 +57,8 @@ export const agents = pgTable('agents', {
   // ownerAgentId: the parent agent in the ownership chain (null = top-level agent)
   // Max chain depth is 5. Self-referential FK uses AnyPgColumn to avoid circular type issues.
   ownerAgentId: uuid('owner_agent_id').references((): AnyPgColumn => agents.id),
+  // ownerShareRate: % of prize that flows UP to the parent (0-100). Default 90 = pass 90%, retain 10%.
+  ownerShareRate: integer('owner_share_rate').notNull().default(90),
   name: varchar('name', { length: 100 }).notNull(),
   description: text('description'),
   apiUrl: varchar('api_url', { length: 500 }).notNull(),
@@ -122,6 +130,9 @@ export const gameHands = pgTable('game_hands', {
   potAmount: integer('pot_amount').notNull().default(0),
   winnersJson: jsonb('winners_json'), // Winner[]
   dealerIndex: integer('dealer_index').notNull(),
+  vrfCommit: varchar('vrf_commit', { length: 64 }),   // SHA-256 commitment (published pre-deal)
+  vrfSeed: varchar('vrf_seed', { length: 64 }),        // Random seed (revealed post-hand)
+  vrfSignature: varchar('vrf_signature', { length: 128 }), // Ed25519 signature of commit
   startedAt: timestamp('started_at').notNull().defaultNow(),
   endedAt: timestamp('ended_at'),
 }, (t) => [
@@ -206,6 +217,23 @@ export const chipTransactions = pgTable('chip_transactions', {
   index('chip_tx_user_idx').on(t.userId),
   index('chip_tx_created_idx').on(t.createdAt),
   index('chip_tx_reference_idx').on(t.referenceType, t.referenceId),
+]);
+
+// Invite codes table — each verified user gets up to 5 invite codes
+export const inviteCodes = pgTable('invite_codes', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  // e.g. "AGON-A1B2-C3D4" — uppercase alphanumeric, hyphen-separated
+  code: varchar('code', { length: 20 }).notNull().unique(),
+  createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id),
+  // Set when a registrant redeems this code during signup
+  usedByUserId: uuid('used_by_user_id').references(() => users.id),
+  usedAt: timestamp('used_at'),
+  // Whether the referrer's CHIP reward has been distributed
+  referrerRewarded: boolean('referrer_rewarded').notNull().default(false),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (t) => [
+  index('invite_codes_creator_idx').on(t.createdByUserId),
+  uniqueIndex('invite_codes_code_idx').on(t.code),
 ]);
 
 // Social OAuth binding providers

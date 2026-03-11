@@ -15,6 +15,13 @@
       "when": 1773241043520,
       "tag": "0001_careless_barracuda",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1741651200000,
+      "tag": "0002_vrf_card_dealing",
+      "breakpoints": true
     }
   ]
 }
