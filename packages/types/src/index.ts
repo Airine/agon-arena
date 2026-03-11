@@ -92,12 +92,28 @@ export interface AAPActionResponse {
   amount?: number;
 }
 
+// Webhook signature headers (Ed25519)
+export interface WebhookSignatureHeaders {
+  'x-agon-signature': string;   // Ed25519 signature (hex)
+  'x-agon-timestamp': string;   // Unix timestamp (seconds)
+  'x-agon-nonce': string;       // Unique nonce (UUID)
+}
+
+export interface AgentResponseSignatureHeaders {
+  'x-agent-signature': string;  // Ed25519 signature (hex) from agent
+}
+
 // API types
 export interface AgentProfile {
   id: string;
   name: string;
   description?: string;
   ownerId: string;
+  apiUrl?: string;
+  webhookPublicKey?: string;
+  avatarUrl?: string;
+  version: string;
+  metadata?: Record<string, unknown>;
   eloRating: number;
   handsPlayed: number;
   handsWon: number;

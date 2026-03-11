@@ -4,29 +4,58 @@ import crypto from 'crypto';
 import { eq, and, desc } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
+import { isValidEd25519PublicKey, getPlatformPublicKeyHex } from '../services/webhook-crypto.js';
 
 export const agentsRouter: RouterType = Router();
 
+/**
+ * 7-field agent registration schema:
+ * 1. name         - Display name (3-100 chars)
+ * 2. description  - Short description (max 500 chars)
+ * 3. apiUrl       - Webhook URL for receiving game actions
+ * 4. webhookPublicKey - Ed25519 public key hex (64 chars = 32 bytes)
+ * 5. avatarUrl    - Agent avatar image URL
+ * 6. version      - AAP protocol version
+ * 7. metadata     - Free-form JSON (framework, language, etc.)
+ */
 const createAgentSchema = z.object({
   name: z.string().min(3).max(100),
   description: z.string().max(500).optional(),
   apiUrl: z.string().url(),
+  webhookPublicKey: z.string().length(64).regex(/^[0-9a-f]{64}$/i, {
+    message: 'Must be a 64-character hex-encoded Ed25519 public key',
+  }),
+  avatarUrl: z.string().url().max(500).optional(),
+  version: z.string().max(20).default('1.0'),
+  metadata: z.record(z.unknown()).optional(),
 });
 
 const updateAgentSchema = z.object({
   name: z.string().min(3).max(100).optional(),
   description: z.string().max(500).optional(),
   apiUrl: z.string().url().optional(),
+  webhookPublicKey: z.string().length(64).regex(/^[0-9a-f]{64}$/i, {
+    message: 'Must be a 64-character hex-encoded Ed25519 public key',
+  }).optional(),
+  avatarUrl: z.string().url().max(500).nullable().optional(),
+  version: z.string().max(20).optional(),
+  metadata: z.record(z.unknown()).nullable().optional(),
   isActive: z.boolean().optional(),
 });
 
 /**
  * POST /agents - Register a new agent.
- * Returns the agent record and a raw API key (shown once).
+ * Requires all 7 fields (some optional). Returns the agent record and a raw API key (shown once).
  */
 agentsRouter.post('/', requireAuth, async (req, res) => {
   try {
     const body = createAgentSchema.parse(req.body);
+
+    // Validate the Ed25519 public key is actually usable
+    if (!isValidEd25519PublicKey(body.webhookPublicKey)) {
+      res.status(400).json({ error: 'Invalid Ed25519 public key' });
+      return;
+    }
 
     // Generate API key: agon_<random hex>
     const rawApiKey = `agon_${crypto.randomBytes(32).toString('hex')}`;
@@ -40,6 +69,10 @@ agentsRouter.post('/', requireAuth, async (req, res) => {
         description: body.description ?? null,
         apiUrl: body.apiUrl,
         apiKeyHash,
+        webhookPublicKey: body.webhookPublicKey,
+        avatarUrl: body.avatarUrl ?? null,
+        version: body.version,
+        metadata: body.metadata ?? null,
       })
       .returning();
 
@@ -49,11 +82,16 @@ agentsRouter.post('/', requireAuth, async (req, res) => {
         name: agent!.name,
         description: agent!.description,
         apiUrl: agent!.apiUrl,
+        webhookPublicKey: agent!.webhookPublicKey,
+        avatarUrl: agent!.avatarUrl,
+        version: agent!.version,
+        metadata: agent!.metadata,
         eloRating: agent!.eloRating,
         isActive: agent!.isActive,
         createdAt: agent!.createdAt,
       },
       apiKey: rawApiKey, // Only shown once
+      platformPublicKey: getPlatformPublicKeyHex(), // Platform's Ed25519 public key for verifying webhooks
     });
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -82,6 +120,8 @@ agentsRouter.get('/', async (req, res) => {
         name: schema.agents.name,
         description: schema.agents.description,
         ownerId: schema.agents.ownerId,
+        avatarUrl: schema.agents.avatarUrl,
+        version: schema.agents.version,
         eloRating: schema.agents.eloRating,
         handsPlayed: schema.agents.handsPlayed,
         handsWon: schema.agents.handsWon,
@@ -110,6 +150,9 @@ agentsRouter.get('/:id', async (req, res) => {
         name: schema.agents.name,
         description: schema.agents.description,
         ownerId: schema.agents.ownerId,
+        avatarUrl: schema.agents.avatarUrl,
+        version: schema.agents.version,
+        metadata: schema.agents.metadata,
         eloRating: schema.agents.eloRating,
         handsPlayed: schema.agents.handsPlayed,
         handsWon: schema.agents.handsWon,
@@ -156,12 +199,22 @@ agentsRouter.put('/:id', requireAuth, async (req, res) => {
       return;
     }
 
+    // Validate Ed25519 key if being updated
+    if (body.webhookPublicKey && !isValidEd25519PublicKey(body.webhookPublicKey)) {
+      res.status(400).json({ error: 'Invalid Ed25519 public key' });
+      return;
+    }
+
     const [updated] = await db
       .update(schema.agents)
       .set({
         ...(body.name !== undefined && { name: body.name }),
         ...(body.description !== undefined && { description: body.description }),
         ...(body.apiUrl !== undefined && { apiUrl: body.apiUrl }),
+        ...(body.webhookPublicKey !== undefined && { webhookPublicKey: body.webhookPublicKey }),
+        ...(body.avatarUrl !== undefined && { avatarUrl: body.avatarUrl }),
+        ...(body.version !== undefined && { version: body.version }),
+        ...(body.metadata !== undefined && { metadata: body.metadata }),
         ...(body.isActive !== undefined && { isActive: body.isActive }),
         updatedAt: new Date(),
       })
@@ -171,6 +224,10 @@ agentsRouter.put('/:id', requireAuth, async (req, res) => {
         name: schema.agents.name,
         description: schema.agents.description,
         apiUrl: schema.agents.apiUrl,
+        webhookPublicKey: schema.agents.webhookPublicKey,
+        avatarUrl: schema.agents.avatarUrl,
+        version: schema.agents.version,
+        metadata: schema.agents.metadata,
         eloRating: schema.agents.eloRating,
         isActive: schema.agents.isActive,
         updatedAt: schema.agents.updatedAt,

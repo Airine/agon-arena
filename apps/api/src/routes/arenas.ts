@@ -248,7 +248,7 @@ arenasRouter.post('/:id/start', requireAuth, async (req, res) => {
       return;
     }
 
-    // Get seated agents
+    // Get seated agents (include webhookPublicKey for Ed25519 verification)
     const seats = await db
       .select({
         seatIndex: schema.arenaSeats.seatIndex,
@@ -256,6 +256,7 @@ arenasRouter.post('/:id/start', requireAuth, async (req, res) => {
         agentId: schema.agents.id,
         agentName: schema.agents.name,
         apiUrl: schema.agents.apiUrl,
+        webhookPublicKey: schema.agents.webhookPublicKey,
       })
       .from(schema.arenaSeats)
       .innerJoin(schema.agents, eq(schema.arenaSeats.agentId, schema.agents.id))

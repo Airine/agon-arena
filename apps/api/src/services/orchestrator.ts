@@ -4,6 +4,7 @@ import type { GameState, PlayerAction, ActionType, AAPActionRequest, AAPActionRe
 import { createGame, processAction, getValidActions, getWinners, isHandOver, type GameConfig } from '../game/index.js';
 import { db, schema } from '../db/index.js';
 import { getIO } from './io.js';
+import { signWebhookPayload, verifyAgentSignature, consumeNonce } from './webhook-crypto.js';
 
 const ACTION_TIMEOUT_MS = 5000;
 const MAX_HANDS = 100; // Max hands per arena session
@@ -14,6 +15,7 @@ interface SeatInfo {
   agentId: string;
   agentName: string;
   apiUrl: string;
+  webhookPublicKey: string | null;
 }
 
 interface ArenaConfig {
@@ -40,6 +42,7 @@ export function startGame(arenaId: string, arena: ArenaConfig, seats: SeatInfo[]
 async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[]): Promise<void> {
   let dealerIndex = 0;
   const agentUrls = new Map(seats.map((s) => [s.agentId, s.apiUrl]));
+  const agentPublicKeys = new Map(seats.map((s) => [s.agentId, s.webhookPublicKey]));
 
   // Track stacks across hands
   const stacks = new Map(seats.map((s) => [s.agentId, arena.startingStack]));
@@ -119,13 +122,14 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
         timeoutMs: ACTION_TIMEOUT_MS,
       };
 
-      // Request action from agent
+      // Request action from agent with Ed25519 signed webhook
       const startTime = Date.now();
       let action: PlayerAction;
 
       try {
         const agentUrl = agentUrls.get(actor.agentId)!;
-        const response = await requestAgentAction(agentUrl, aapRequest);
+        const publicKey = agentPublicKeys.get(actor.agentId) ?? null;
+        const response = await requestAgentAction(agentUrl, aapRequest, publicKey);
         action = validateAction(response, validActions, currentState);
       } catch {
         // Timeout or error: auto-fold
@@ -236,16 +240,49 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
 
 /**
  * Request an action from an agent via webhook (AAP protocol).
+ * Signs the request with Ed25519 and optionally verifies the agent's response signature.
  */
-async function requestAgentAction(agentUrl: string, request: AAPActionRequest): Promise<AAPActionResponse> {
+async function requestAgentAction(
+  agentUrl: string,
+  request: AAPActionRequest,
+  agentPublicKeyHex: string | null,
+): Promise<AAPActionResponse> {
+  const bodyStr = JSON.stringify(request);
+
+  // Sign the webhook payload with platform Ed25519 key
+  const { signature, timestamp, nonce } = signWebhookPayload(bodyStr);
+
+  // Record nonce to prevent replay
+  consumeNonce(nonce);
+
   const response = await axios.post<AAPActionResponse>(
     `${agentUrl}/action`,
     request,
     {
       timeout: ACTION_TIMEOUT_MS,
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Agon-Signature': signature,
+        'X-Agon-Timestamp': timestamp,
+        'X-Agon-Nonce': nonce,
+      },
     },
   );
+
+  // Verify agent response signature if they provided a public key
+  if (agentPublicKeyHex) {
+    const agentSig = response.headers['x-agent-signature'] as string | undefined;
+    if (agentSig) {
+      const responseBody = JSON.stringify(response.data);
+      const valid = verifyAgentSignature(responseBody, agentSig, agentPublicKeyHex);
+      if (!valid) {
+        console.warn(`[Orchestrator] Invalid signature from agent ${request.agentId}`);
+        // Don't reject — log and continue. Agent may be misconfigured.
+        // In strict mode, this could throw to trigger auto-fold.
+      }
+    }
+  }
+
   return response.data;
 }
 

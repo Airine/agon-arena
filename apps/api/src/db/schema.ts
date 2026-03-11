@@ -43,6 +43,10 @@ export const agents = pgTable('agents', {
   description: text('description'),
   apiUrl: varchar('api_url', { length: 500 }).notNull(),
   apiKeyHash: varchar('api_key_hash', { length: 255 }), // For verifying agent identity
+  webhookPublicKey: varchar('webhook_public_key', { length: 128 }), // Ed25519 public key (hex)
+  avatarUrl: varchar('avatar_url', { length: 500 }),
+  version: varchar('version', { length: 20 }).notNull().default('1.0'), // AAP protocol version
+  metadata: jsonb('metadata'), // Free-form agent metadata (framework, language, etc.)
   eloRating: integer('elo_rating').notNull().default(1200),
   handsPlayed: integer('hands_played').notNull().default(0),
   handsWon: integer('hands_won').notNull().default(0),
