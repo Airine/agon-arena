@@ -59,6 +59,62 @@ jobs:
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Run database migrations
+        run: |
+          CLUSTER="${ENV_PREFIX}-cluster"
+          SERVICE="${ENV_PREFIX}-api"
+
+          # Fetch task definition ARN and network config from the running service
+          TASK_DEF=$(aws ecs describe-services \
+            --cluster "$CLUSTER" \
+            --services "$SERVICE" \
+            --query 'services[0].taskDefinition' \
+            --output text)
+
+          NETWORK_CONFIG=$(aws ecs describe-services \
+            --cluster "$CLUSTER" \
+            --services "$SERVICE" \
+            --query 'services[0].networkConfiguration' \
+            --output json)
+
+          echo "Running migrations with task definition: $TASK_DEF"
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$CLUSTER" \
+            --task-definition "$TASK_DEF" \
+            --launch-type FARGATE \
+            --network-configuration "$NETWORK_CONFIG" \
+            --overrides '{"containerOverrides":[{"name":"api","command":["sh","-c","cd /app/apps/api && node dist/db/migrate.js"]}]}' \
+            --query 'tasks[0].taskArn' \
+            --output text)
+
+          echo "Migration task ARN: $TASK_ARN"
+          echo "Waiting for migration task to complete..."
+
+          aws ecs wait tasks-stopped \
+            --cluster "$CLUSTER" \
+            --tasks "$TASK_ARN"
+
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster "$CLUSTER" \
+            --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[0].exitCode' \
+            --output text)
+
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "Migration failed with exit code $EXIT_CODE — fetching logs..."
+            TASK_ID="${TASK_ARN##*/}"
+            aws logs get-log-events \
+              --log-group-name "/ecs/${ENV_PREFIX}-api" \
+              --log-stream-name "api/api/${TASK_ID}" \
+              --limit 50 \
+              --query 'events[].message' \
+              --output text || true
+            exit 1
+          fi
+
+          echo "Migrations completed successfully."
+
       - name: Deploy to ECS
         run: |
           CLUSTER="${ENV_PREFIX}-cluster"
