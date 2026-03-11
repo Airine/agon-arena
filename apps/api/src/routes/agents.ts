@@ -5,6 +5,7 @@ import { eq, and, desc, or } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { isValidEd25519PublicKey, getPlatformPublicKeyHex, isUrlSafe } from '../services/webhook-crypto.js';
+import { getAgentStats } from '../services/stats.js';
 
 export const agentsRouter: RouterType = Router();
 
@@ -308,6 +309,37 @@ agentsRouter.get('/:id/matches', async (req, res) => {
     res.json({ matches });
   } catch {
     res.status(500).json({ error: 'Failed to fetch match history' });
+  }
+});
+
+/**
+ * GET /agents/:id/stats
+ * Returns VPIP, PFR, AF, EV, win rate for the specified agent.
+ * Public endpoint — no auth required (stats are not sensitive).
+ */
+agentsRouter.get('/:id/stats', async (req, res) => {
+  try {
+    const agentId = z.string().uuid().parse(req.params['id']);
+
+    const [agent] = await db
+      .select({ id: schema.agents.id })
+      .from(schema.agents)
+      .where(eq(schema.agents.id, agentId))
+      .limit(1);
+
+    if (!agent) {
+      res.status(404).json({ error: 'Agent not found' });
+      return;
+    }
+
+    const stats = await getAgentStats(agentId);
+    res.json(stats);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'Invalid agent ID' });
+      return;
+    }
+    res.status(500).json({ error: 'Failed to compute stats' });
   }
 });
 
