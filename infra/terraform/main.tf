@@ -184,6 +184,7 @@ module "monitoring" {
   target_group_arn_suffix = module.alb.target_group_arn_suffix
   api_log_group_name      = module.ecs.log_group_name
   alarm_sns_topic_arn     = var.alarm_sns_topic_arn
+  alarm_email             = var.alarm_email
 
   api_cloudfront_distribution_id = module.cloudfront.api_distribution_id
   web_cloudfront_distribution_id = module.cloudfront.web_distribution_id

@@ -139,3 +139,9 @@ variable "alarm_sns_topic_arn" {
   type        = string
   default     = ""
 }
+
+variable "alarm_email" {
+  description = "Email address to subscribe to the alarm SNS topic (empty = no email subscription)"
+  type        = string
+  default     = ""
+}

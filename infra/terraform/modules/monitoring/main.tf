@@ -1,5 +1,21 @@
+# =============================================================================
+# SNS Alarm Topic + Email Subscription
+# =============================================================================
+
+resource "aws_sns_topic" "alarms" {
+  name = "${var.name_prefix}-alarms"
+}
+
+resource "aws_sns_topic_subscription" "alarms_email" {
+  count     = var.alarm_email != "" ? 1 : 0
+  topic_arn = aws_sns_topic.alarms.arn
+  protocol  = "email"
+  endpoint  = var.alarm_email
+}
+
 locals {
-  alarm_actions = var.alarm_sns_topic_arn != "" ? [var.alarm_sns_topic_arn] : []
+  # Use the module-managed SNS topic for all alarm routing.
+  alarm_actions = [aws_sns_topic.alarms.arn]
 }
 
 # =============================================================================

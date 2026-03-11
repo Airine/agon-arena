@@ -34,7 +34,13 @@ variable "api_log_group_name" {
 }
 
 variable "alarm_sns_topic_arn" {
-  description = "SNS topic ARN for alarm notifications (empty = no notifications)"
+  description = "External SNS topic ARN for alarm notifications (deprecated — module now creates its own topic)"
+  type        = string
+  default     = ""
+}
+
+variable "alarm_email" {
+  description = "Email address to subscribe to the alarm SNS topic (empty = no email subscription)"
   type        = string
   default     = ""
 }

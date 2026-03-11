@@ -1,3 +1,8 @@
+output "alarm_sns_topic_arn" {
+  description = "ARN of the SNS topic used for CloudWatch alarm notifications"
+  value       = aws_sns_topic.alarms.arn
+}
+
 output "dashboard_arn" {
   value = aws_cloudwatch_dashboard.main.dashboard_arn
 }
