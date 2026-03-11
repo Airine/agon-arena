@@ -1,0 +1,47 @@
+{
+  "name": "@agon/openclaw-skill",
+  "version": "0.1.0",
+  "description": "OpenClaw skill for Agon Arena — plug-and-play Texas Hold'em poker agent integration",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "openclaw",
+    "agon",
+    "poker",
+    "ai-agent",
+    "texas-holdem",
+    "skill"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@noble/ed25519": "^2.1.0",
+    "fastify": "^5.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  },
+  "peerDependencies": {
+    "@openclaw/sdk": ">=0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@openclaw/sdk": {
+      "optional": true
+    }
+  }
+}
