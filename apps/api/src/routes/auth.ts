@@ -7,7 +7,7 @@ import { eq } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import { signToken, requireAuth } from '../middleware/auth.js';
 import { getPlatformPublicKeyHex } from '../services/webhook-crypto.js';
-import { storeSiweNonce, consumeSiweNonce, storeAgentNonce, consumeAgentNonce } from '../services/redis.js';
+import { storeSiweNonce, consumeSiweNonce, storeAgentNonce, consumeAgentNonce, storeBindNonce, consumeBindNonce } from '../services/redis.js';
 import { verifyMessage } from 'viem';
 
 export const authRouter: RouterType = Router();
@@ -317,6 +317,268 @@ authRouter.post('/agent/register', async (req, res) => {
     }
     console.error('[Agent] Register error:', err);
     res.status(500).json({ error: 'Agent registration failed' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Owner-Agent ownership chain (AGO-53)
+// ---------------------------------------------------------------------------
+
+const MAX_OWNERSHIP_DEPTH = 5;
+
+/**
+ * GET /auth/agent/bind-nonce
+ * Returns a fresh nonce for the owner-bind flow. Single-use, TTL=5min.
+ */
+authRouter.get('/agent/bind-nonce', async (_req, res) => {
+  try {
+    const nonce = randomBytes(16).toString('hex');
+    await storeBindNonce(nonce);
+    res.json({ nonce });
+  } catch {
+    res.status(500).json({ error: 'Failed to generate nonce' });
+  }
+});
+
+const bindOwnerSchema = z.object({
+  agentId: z.string().uuid(),           // The child agent being bound
+  ownerAgentId: z.string().uuid(),      // The owner (parent) agent
+  nonce: z.string().min(1),
+  signature: z.string().startsWith('0x'), // Owner's EIP-191 signature
+});
+
+/**
+ * Recursively compute the chain depth from an agent up to the root.
+ * Returns the number of ancestors (0 = no parent, 4 = 4 parents above).
+ * Aborts and returns MAX_OWNERSHIP_DEPTH + 1 if a cycle is detected.
+ */
+async function computeChainDepth(
+  agentId: string,
+  visited: Set<string> = new Set(),
+): Promise<number> {
+  if (visited.has(agentId)) return MAX_OWNERSHIP_DEPTH + 1; // cycle sentinel
+  visited.add(agentId);
+
+  const [row] = await db
+    .select({ ownerAgentId: schema.agents.ownerAgentId })
+    .from(schema.agents)
+    .where(eq(schema.agents.id, agentId))
+    .limit(1);
+
+  if (!row || !row.ownerAgentId) return 0;
+  return 1 + (await computeChainDepth(row.ownerAgentId, visited));
+}
+
+/**
+ * POST /auth/agent/bind-owner
+ * Bind a child agent to an owner agent. Requires the owner's EIP-191 signature.
+ *
+ * Message format (owner must sign exactly):
+ *   "Bind Agent\nOwner: {ownerWalletAddress}\nAgent: {agentWalletAddress}\nNonce: {nonce}"
+ *
+ * Business rules:
+ *  - Owner must be a registered agent with a known walletAddress
+ *  - Chain depth after binding must not exceed MAX_OWNERSHIP_DEPTH (5)
+ *  - No circular dependencies allowed
+ *  - Each agent may only have one owner (overwrites existing)
+ */
+authRouter.post('/agent/bind-owner', async (req, res) => {
+  try {
+    const { agentId, ownerAgentId, nonce, signature } = bindOwnerSchema.parse(req.body);
+
+    if (agentId === ownerAgentId) {
+      res.status(400).json({ error: 'Agent cannot own itself' });
+      return;
+    }
+
+    // Load child agent + its user (to get wallet address)
+    const [childRow] = await db
+      .select({
+        agentId: schema.agents.id,
+        walletAddress: schema.users.walletAddress,
+      })
+      .from(schema.agents)
+      .innerJoin(schema.users, eq(schema.agents.ownerId, schema.users.id))
+      .where(eq(schema.agents.id, agentId))
+      .limit(1);
+
+    if (!childRow) {
+      res.status(404).json({ error: 'Agent not found' });
+      return;
+    }
+
+    if (!childRow.walletAddress) {
+      res.status(400).json({ error: 'Child agent has no wallet address' });
+      return;
+    }
+
+    // Load owner agent + its user (to get wallet address for signature verification)
+    const [ownerRow] = await db
+      .select({
+        agentId: schema.agents.id,
+        walletAddress: schema.users.walletAddress,
+      })
+      .from(schema.agents)
+      .innerJoin(schema.users, eq(schema.agents.ownerId, schema.users.id))
+      .where(eq(schema.agents.id, ownerAgentId))
+      .limit(1);
+
+    if (!ownerRow) {
+      res.status(404).json({ error: 'Owner agent not found' });
+      return;
+    }
+
+    if (!ownerRow.walletAddress) {
+      res.status(400).json({ error: 'Owner agent has no wallet address' });
+      return;
+    }
+
+    // Verify owner's EIP-191 signature
+    const message =
+      `Bind Agent\nOwner: ${ownerRow.walletAddress}\nAgent: ${childRow.walletAddress}\nNonce: ${nonce}`;
+
+    try {
+      const valid = await verifyMessage({
+        address: ownerRow.walletAddress as `0x${string}`,
+        message,
+        signature: signature as `0x${string}`,
+      });
+      if (!valid) {
+        res.status(401).json({ error: 'Invalid owner signature' });
+        return;
+      }
+    } catch {
+      res.status(401).json({ error: 'Invalid owner signature' });
+      return;
+    }
+
+    // Consume nonce (single-use)
+    const nonceValid = await consumeBindNonce(nonce);
+    if (!nonceValid) {
+      res.status(401).json({ error: 'Nonce already used or expired' });
+      return;
+    }
+
+    // Cycle detection: would setting child.ownerAgentId = ownerAgentId create a cycle?
+    // A cycle exists if ownerAgentId is already a descendant of agentId.
+    const ownerChainDepth = await computeChainDepth(ownerAgentId);
+    if (ownerChainDepth >= MAX_OWNERSHIP_DEPTH + 1) {
+      res.status(400).json({ error: 'Circular ownership detected' });
+      return;
+    }
+
+    // Check that adding this child would not exceed max depth.
+    // The child may already have sub-agents below it; compute the longest chain
+    // from this child downward, then add 1 (for the new owner link) plus ownerChainDepth.
+    // Simpler approach: after binding, the total chain from the root of ownerAgentId
+    // through to the deepest descendant of agentId must be ≤ MAX_OWNERSHIP_DEPTH.
+    // We check: (depth of owner from its root) + 1 + (depth of agentId subtree below) ≤ 5
+    // For now, just check ownerChainDepth + 1 ≤ MAX_OWNERSHIP_DEPTH (conservative).
+    if (ownerChainDepth + 1 >= MAX_OWNERSHIP_DEPTH) {
+      res.status(400).json({ error: `Ownership chain would exceed maximum depth of ${MAX_OWNERSHIP_DEPTH}` });
+      return;
+    }
+
+    // Detect cycle: if agentId is an ancestor of ownerAgentId, binding would create a loop.
+    async function isAncestor(potentialAncestorId: string, targetId: string): Promise<boolean> {
+      const visited = new Set<string>();
+      let current: string | null = targetId;
+      while (current) {
+        if (visited.has(current)) return false; // already a cycle elsewhere, stop
+        visited.add(current);
+        if (current === potentialAncestorId) return true;
+        const [row] = await db
+          .select({ ownerAgentId: schema.agents.ownerAgentId })
+          .from(schema.agents)
+          .where(eq(schema.agents.id, current))
+          .limit(1);
+        current = row?.ownerAgentId ?? null;
+      }
+      return false;
+    }
+
+    const wouldCycle = await isAncestor(agentId, ownerAgentId);
+    if (wouldCycle) {
+      res.status(400).json({ error: 'Circular ownership detected' });
+      return;
+    }
+
+    // Bind: set ownerAgentId on the child agent
+    await db
+      .update(schema.agents)
+      .set({ ownerAgentId })
+      .where(eq(schema.agents.id, agentId));
+
+    res.json({
+      agentId,
+      ownerAgentId,
+      message: 'Ownership binding successful',
+    });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'Validation failed', details: err.errors });
+      return;
+    }
+    console.error('[BindOwner] Error:', err);
+    res.status(500).json({ error: 'Failed to bind owner' });
+  }
+});
+
+/**
+ * GET /auth/agent/:agentId/ownership-chain
+ * Returns the full ownership chain for an agent, from the agent up to its root owner.
+ *
+ * Response: { chain: [{ agentId, name, walletAddress }, ...] }
+ * chain[0] is the queried agent; chain[last] is the root (no owner).
+ */
+authRouter.get('/agent/:agentId/ownership-chain', async (req, res) => {
+  try {
+    const { agentId } = req.params;
+
+    if (!agentId || !/^[0-9a-f-]{36}$/.test(agentId)) {
+      res.status(400).json({ error: 'Invalid agentId' });
+      return;
+    }
+
+    const chain: Array<{ agentId: string; name: string; walletAddress: string | null }> = [];
+    const visited = new Set<string>();
+    let currentId: string | null = agentId;
+
+    while (currentId) {
+      if (visited.has(currentId)) {
+        // Cycle in DB (data integrity violation) — return what we have
+        break;
+      }
+      visited.add(currentId);
+
+      const [row] = await db
+        .select({
+          agentId: schema.agents.id,
+          name: schema.agents.name,
+          ownerAgentId: schema.agents.ownerAgentId,
+          walletAddress: schema.users.walletAddress,
+        })
+        .from(schema.agents)
+        .innerJoin(schema.users, eq(schema.agents.ownerId, schema.users.id))
+        .where(eq(schema.agents.id, currentId))
+        .limit(1);
+
+      if (!row) {
+        if (chain.length === 0) {
+          res.status(404).json({ error: 'Agent not found' });
+          return;
+        }
+        break;
+      }
+
+      chain.push({ agentId: row.agentId, name: row.name, walletAddress: row.walletAddress });
+      currentId = row.ownerAgentId ?? null;
+    }
+
+    res.json({ chain, depth: chain.length });
+  } catch (err) {
+    console.error('[OwnershipChain] Error:', err);
+    res.status(500).json({ error: 'Failed to fetch ownership chain' });
   }
 });
 

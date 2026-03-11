@@ -63,3 +63,27 @@ export async function consumeAgentNonce(nonce: string): Promise<boolean> {
   const deleted = await redis.del(`${AGENT_NONCE_PREFIX}${nonce}`);
   return deleted === 1;
 }
+
+const BIND_NONCE_PREFIX = 'bind:nonce:';
+const BIND_NONCE_TTL_SECONDS = 300; // 5 minutes
+
+/**
+ * Store an owner-bind nonce in Redis with 5-minute TTL.
+ * Key: bind:nonce:<nonce>  Value: "1"
+ */
+export async function storeBindNonce(nonce: string): Promise<void> {
+  const redis = await getRedisClient();
+  await redis.set(`${BIND_NONCE_PREFIX}${nonce}`, '1', {
+    EX: BIND_NONCE_TTL_SECONDS,
+  });
+}
+
+/**
+ * Consume an owner-bind nonce — atomic check-and-delete.
+ * Returns true if nonce existed (valid), false if already used or expired.
+ */
+export async function consumeBindNonce(nonce: string): Promise<boolean> {
+  const redis = await getRedisClient();
+  const deleted = await redis.del(`${BIND_NONCE_PREFIX}${nonce}`);
+  return deleted === 1;
+}

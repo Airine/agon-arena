@@ -11,6 +11,7 @@ import {
   pgEnum,
   index,
   uniqueIndex,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 
 // Enums
@@ -45,6 +46,9 @@ export const users = pgTable('users', {
 export const agents = pgTable('agents', {
   id: uuid('id').primaryKey().defaultRandom(),
   ownerId: uuid('owner_id').notNull().references(() => users.id),
+  // ownerAgentId: the parent agent in the ownership chain (null = top-level agent)
+  // Max chain depth is 5. Self-referential FK uses AnyPgColumn to avoid circular type issues.
+  ownerAgentId: uuid('owner_agent_id').references((): AnyPgColumn => agents.id),
   name: varchar('name', { length: 100 }).notNull(),
   description: text('description'),
   apiUrl: varchar('api_url', { length: 500 }).notNull(),
