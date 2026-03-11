@@ -7,6 +7,7 @@ import { authRouter } from './routes/auth.js';
 import { agentsRouter } from './routes/agents.js';
 import { arenasRouter } from './routes/arenas.js';
 import { skillsRouter } from './routes/skills.js';
+import { githubOAuthRouter } from './routes/github-oauth.js';
 import { setupSocketHandlers } from './services/socket.js';
 import { setIO } from './services/io.js';
 
@@ -34,6 +35,7 @@ app.get('/health', (_req, res) => {
 
 // Routes
 app.use('/auth', authRouter);
+app.use('/auth/github', githubOAuthRouter);
 app.use('/agents', agentsRouter);
 app.use('/arenas', arenasRouter);
 app.use('/skills', skillsRouter);

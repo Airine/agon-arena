@@ -199,3 +199,27 @@ export const chipTransactions = pgTable('chip_transactions', {
   index('chip_tx_created_idx').on(t.createdAt),
   index('chip_tx_reference_idx').on(t.referenceType, t.referenceId),
 ]);
+
+// Social OAuth binding providers
+export const socialProviderEnum = pgEnum('social_provider', ['github', 'google', 'twitter', 'ens']);
+
+// Social bindings table — links users to OAuth providers
+export const socialBindings = pgTable('social_bindings', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id),
+  provider: socialProviderEnum('provider').notNull(),
+  // Provider-assigned user ID (GitHub numeric ID, Google sub, etc.)
+  providerUserId: varchar('provider_user_id', { length: 255 }).notNull(),
+  // Display name at provider (GitHub login, Google name, X handle)
+  providerUsername: varchar('provider_username', { length: 255 }),
+  providerEmail: varchar('provider_email', { length: 255 }),
+  // Whether the first-bind CHIP reward has been distributed
+  chipRewarded: boolean('chip_rewarded').notNull().default(false),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+}, (t) => [
+  // One provider binding per user (e.g., user can only link one GitHub account)
+  uniqueIndex('social_bindings_user_provider_idx').on(t.userId, t.provider),
+  // One user per provider account (prevent multi-account farm)
+  uniqueIndex('social_bindings_provider_uid_idx').on(t.provider, t.providerUserId),
+]);

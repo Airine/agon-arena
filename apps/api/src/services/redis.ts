@@ -87,3 +87,81 @@ export async function consumeBindNonce(nonce: string): Promise<boolean> {
   const deleted = await redis.del(`${BIND_NONCE_PREFIX}${nonce}`);
   return deleted === 1;
 }
+
+// ---------------------------------------------------------------------------
+// OAuth CSRF state
+// ---------------------------------------------------------------------------
+
+const OAUTH_STATE_PREFIX = 'oauth:state:';
+const OAUTH_STATE_TTL_SECONDS = 600; // 10 minutes
+
+export interface OAuthStatePayload {
+  provider: string;
+  /** userId if the user is already logged in and linking (vs. fresh login) */
+  userId?: string;
+}
+
+/**
+ * Store an OAuth CSRF state with 10-minute TTL.
+ * Key: oauth:state:<state>
+ */
+export async function storeOAuthState(state: string, payload: OAuthStatePayload): Promise<void> {
+  const redis = await getRedisClient();
+  await redis.set(`${OAUTH_STATE_PREFIX}${state}`, JSON.stringify(payload), {
+    EX: OAUTH_STATE_TTL_SECONDS,
+  });
+}
+
+/**
+ * Consume an OAuth CSRF state — atomic check-and-delete.
+ * Returns the payload if the state existed, null if invalid/expired.
+ */
+export async function consumeOAuthState(state: string): Promise<OAuthStatePayload | null> {
+  const redis = await getRedisClient();
+  const val = await redis.getDel(`${OAUTH_STATE_PREFIX}${state}`);
+  if (!val) return null;
+  try {
+    return JSON.parse(val) as OAuthStatePayload;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Short-lived OAuth exchange codes (token handoff after OAuth callback)
+// ---------------------------------------------------------------------------
+
+const OAUTH_EXCHANGE_PREFIX = 'oauth:exchange:';
+const OAUTH_EXCHANGE_TTL_SECONDS = 60; // 60 seconds — frontend must redeem quickly
+
+export interface OAuthExchangePayload {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+}
+
+/**
+ * Store a short-lived exchange code that the frontend can redeem for a token pair.
+ * Prevents tokens from appearing in redirect URLs (single-use, 60s TTL).
+ */
+export async function storeOAuthExchange(code: string, payload: OAuthExchangePayload): Promise<void> {
+  const redis = await getRedisClient();
+  await redis.set(`${OAUTH_EXCHANGE_PREFIX}${code}`, JSON.stringify(payload), {
+    EX: OAUTH_EXCHANGE_TTL_SECONDS,
+  });
+}
+
+/**
+ * Consume an OAuth exchange code — atomic check-and-delete.
+ * Returns the token payload if the code existed, null if invalid/expired.
+ */
+export async function consumeOAuthExchange(code: string): Promise<OAuthExchangePayload | null> {
+  const redis = await getRedisClient();
+  const val = await redis.getDel(`${OAUTH_EXCHANGE_PREFIX}${code}`);
+  if (!val) return null;
+  try {
+    return JSON.parse(val) as OAuthExchangePayload;
+  } catch {
+    return null;
+  }
+}
