@@ -1,4 +1,4 @@
-import { defineConfig } from '@playwright/test';
+import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests',
@@ -17,8 +17,20 @@ export default defineConfig({
 
   projects: [
     {
+      // API integration tests — use Playwright request fixture (no browser)
       name: 'api-e2e',
-      testMatch: '**/*.spec.ts',
+      testMatch: /0[1-4]-.*\.spec\.ts$/,
+    },
+    {
+      // Frontend browser tests — complete user journey through the Next.js UI
+      name: 'frontend-e2e',
+      testMatch: '**/05-frontend-user-journey.spec.ts',
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: process.env['WEB_BASE_URL'] ?? 'http://localhost:3000',
+        // Reset extraHTTPHeaders — frontend tests use page.route() for mocking
+        extraHTTPHeaders: {},
+      },
     },
   ],
 });
