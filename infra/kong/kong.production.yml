@@ -1,0 +1,106 @@
+_format_version: "3.0"
+_transform: true
+
+# Production Kong configuration for Agon Arena
+# Upstream target: ECS Fargate service via ALB internal DNS
+
+services:
+  - name: agon-api
+    host: agon-arena-production-api.internal
+    port: 4000
+    protocol: http
+    connect_timeout: 5000
+    write_timeout: 60000
+    read_timeout: 60000
+    retries: 3
+    routes:
+      # Public API routes
+      - name: api-public
+        paths:
+          - /api
+        strip_path: true
+        protocols: [https]
+
+      # WebSocket
+      - name: websocket
+        paths:
+          - /socket.io
+        protocols: [https, wss]
+
+plugins:
+  # Rate limiting: Redis-backed for distributed consistency
+  - name: rate-limiting
+    config:
+      minute: 100
+      hour: 5000
+      policy: redis
+      redis:
+        host: agon-arena-production-redis.internal
+        port: 6379
+      fault_tolerant: true
+      hide_client_headers: false
+      error_code: 429
+      error_message: "Rate limit exceeded. Try again later."
+
+  # Authenticated users get higher limits
+  - name: rate-limiting
+    route: api-authenticated
+    config:
+      minute: 300
+      hour: 15000
+      policy: redis
+      redis:
+        host: agon-arena-production-redis.internal
+        port: 6379
+
+  # CORS
+  - name: cors
+    config:
+      origins:
+        - "https://agon.win"
+        - "https://www.agon.win"
+      methods: [GET, POST, PUT, DELETE, OPTIONS]
+      headers: [Content-Type, Authorization, X-Request-ID]
+      credentials: true
+      max_age: 3600
+
+  # Security headers
+  - name: response-transformer
+    config:
+      add:
+        headers:
+          - "X-Content-Type-Options: nosniff"
+          - "X-Frame-Options: DENY"
+          - "X-XSS-Protection: 1; mode=block"
+          - "Strict-Transport-Security: max-age=31536000; includeSubDomains"
+          - "Content-Security-Policy: default-src 'self'"
+
+  # Request size limit
+  - name: request-size-limiting
+    config:
+      allowed_payload_size: 1
+      size_unit: megabytes
+
+  # Correlation ID for tracing
+  - name: correlation-id
+    config:
+      header_name: X-Request-ID
+      generator: uuid#counter
+      echo_downstream: true
+
+  # Prometheus metrics
+  - name: prometheus
+    config:
+      per_consumer: true
+      status_code_metrics: true
+      latency_metrics: true
+      bandwidth_metrics: true
+
+  # Bot detection
+  - name: bot-detection
+
+  # Request termination for maintenance mode (disabled by default)
+  # - name: request-termination
+  #   config:
+  #     status_code: 503
+  #     message: "Agon Arena is under maintenance. Please try again later."

@@ -1,0 +1,156 @@
+_format_version: "3.0"
+_transform: true
+
+# --- Services ---
+services:
+  - name: agon-api
+    url: http://api:4000
+    protocol: http
+    connect_timeout: 5000
+    write_timeout: 60000
+    read_timeout: 60000
+    retries: 2
+    routes:
+      # Public routes (no JWT required)
+      - name: health
+        paths:
+          - /api/health
+        methods: [GET]
+        strip_path: true
+        plugins:
+          - name: request-transformer
+            config:
+              replace:
+                uri: /health
+
+      - name: auth-public
+        paths:
+          - /api/auth/register
+          - /api/auth/login
+          - /api/auth/public-key
+        methods: [POST, GET]
+        strip_path: false
+        plugins:
+          - name: request-transformer
+            config:
+              replace:
+                uri: "$(uri_captures[0])"
+
+      - name: agents-public-read
+        paths:
+          - /api/agents
+        methods: [GET]
+        strip_path: false
+
+      # Protected routes (JWT required)
+      - name: auth-me
+        paths:
+          - /api/auth/me
+        methods: [GET]
+        strip_path: false
+
+      - name: agents-write
+        paths:
+          - /api/agents
+        methods: [POST, PUT, DELETE]
+        strip_path: false
+
+      - name: arenas-all
+        paths:
+          - /api/arenas
+        methods: [GET, POST]
+        strip_path: false
+
+    plugins:
+      # Strip /api prefix before forwarding to backend
+      - name: request-transformer
+        config:
+          replace:
+            uri: "/$(uri_captures[1])"
+
+  # WebSocket passthrough
+  - name: agon-websocket
+    url: http://api:4000
+    protocol: http
+    routes:
+      - name: socket-io
+        paths:
+          - /socket.io
+        protocols: [http, https, ws, wss]
+
+# --- Global Plugins ---
+plugins:
+  # Rate limiting: 100 req/min per IP for public, 300 for authenticated
+  - name: rate-limiting
+    config:
+      minute: 100
+      policy: local
+      fault_tolerant: true
+      hide_client_headers: false
+      error_code: 429
+      error_message: "Rate limit exceeded. Try again later."
+
+  # CORS
+  - name: cors
+    config:
+      origins:
+        - "https://agon.win"
+        - "http://localhost:3000"
+      methods:
+        - GET
+        - POST
+        - PUT
+        - DELETE
+        - OPTIONS
+      headers:
+        - Content-Type
+        - Authorization
+        - X-Request-ID
+      exposed_headers:
+        - X-RateLimit-Limit-Minute
+        - X-RateLimit-Remaining-Minute
+      credentials: true
+      max_age: 3600
+
+  # Request size limit
+  - name: request-size-limiting
+    config:
+      allowed_payload_size: 1
+      size_unit: megabytes
+
+  # Request ID for tracing
+  - name: correlation-id
+    config:
+      header_name: X-Request-ID
+      generator: uuid#counter
+      echo_downstream: true
+
+  # IP restriction for admin routes (optional, configure per-route)
+  # - name: ip-restriction
+  #   config:
+  #     allow:
+  #       - 10.0.0.0/8
+
+  # Bot detection
+  - name: bot-detection
+    config:
+      deny: []
+
+  # Response transformer: add security headers
+  - name: response-transformer
+    config:
+      add:
+        headers:
+          - "X-Content-Type-Options: nosniff"
+          - "X-Frame-Options: DENY"
+          - "X-XSS-Protection: 1; mode=block"
+          - "Strict-Transport-Security: max-age=31536000; includeSubDomains"
+
+# --- Consumers (for JWT) ---
+consumers:
+  - username: agon-api-internal
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 1000
+          policy: local
