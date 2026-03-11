@@ -52,7 +52,7 @@ export default function SpectatorPage({
   params: Promise<{ id: string }>;
 }) {
   const { id: arenaId } = use(params);
-  const { gameState, actions, connected } = useArenaSocket(arenaId);
+  const { gameState, actions, connected, arenaFinished } = useArenaSocket(arenaId);
   const [arena, setArena] = useState<ArenaDetail | null>(null);
 
   useEffect(() => {
@@ -128,6 +128,20 @@ export default function SpectatorPage({
             />
             {connected ? 'Live' : 'Disconnected'}
           </div>
+          {arenaFinished && (
+            <span
+              style={{
+                fontSize: '11px',
+                padding: '2px 8px',
+                borderRadius: '4px',
+                background: '#2d1a1a',
+                color: '#fc8181',
+                border: '1px solid #8b2d2d',
+              }}
+            >
+              FINISHED
+            </span>
+          )}
         </div>
       </div>
 
