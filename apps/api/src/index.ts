@@ -3,6 +3,8 @@ import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
+import { createClient } from 'redis';
 import { authRouter } from './routes/auth.js';
 import { agentsRouter } from './routes/agents.js';
 import { arenasRouter } from './routes/arenas.js';
@@ -23,6 +25,23 @@ const io = new SocketIOServer(httpServer, {
     methods: ['GET', 'POST'],
   },
 });
+
+// Redis Pub/Sub adapter for multi-instance support
+const REDIS_URL = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
+const pubClient = createClient({ url: REDIS_URL });
+const subClient = pubClient.duplicate();
+
+pubClient.on('error', (err) => console.warn('[Redis Pub] error:', err));
+subClient.on('error', (err) => console.warn('[Redis Sub] error:', err));
+
+Promise.all([pubClient.connect(), subClient.connect()])
+  .then(() => {
+    io.adapter(createAdapter(pubClient, subClient));
+    console.log('[Socket.io] Redis adapter attached');
+  })
+  .catch((err) => {
+    console.warn('[Socket.io] Redis adapter unavailable, falling back to in-memory:', err);
+  });
 
 // Register IO instance for orchestrator access
 setIO(io);
