@@ -80,4 +80,18 @@ describe('calculatePots', () => {
     expect(pots[0]!.eligiblePlayers).toHaveLength(2);
     expect(pots[0]!.eligiblePlayers).not.toContain('p1');
   });
+
+  it('dead money above all-in cap merges into last pot', () => {
+    // p1 all-in at 50; p2 folded after betting 100 (excess 50 is dead money).
+    // That 50 should not be lost — it gets merged into the pot p1 can win.
+    const players = [
+      makePlayer('p1', { totalBet: 50, isAllIn: true, stack: 0 }),
+      makePlayer('p2', { totalBet: 100, isFolded: true }),
+    ];
+    const pots = calculatePots(players);
+    // One pot: main (50+50=100) + dead money (50) = 150, eligible: [p1]
+    expect(pots).toHaveLength(1);
+    expect(pots[0]!.amount).toBe(150);
+    expect(pots[0]!.eligiblePlayers).toEqual(['p1']);
+  });
 });

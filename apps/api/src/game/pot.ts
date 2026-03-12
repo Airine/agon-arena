@@ -62,8 +62,14 @@ export function calculatePots(players: PlayerState[]): PotInfo[] {
     }
   }
 
-  if (remainingAmount > 0 && remainingEligible.length > 0) {
-    pots.push({ amount: remainingAmount, eligiblePlayers: remainingEligible });
+  if (remainingAmount > 0) {
+    if (remainingEligible.length > 0) {
+      pots.push({ amount: remainingAmount, eligiblePlayers: remainingEligible });
+    } else if (pots.length > 0) {
+      // Dead money from folded players above the max all-in cap —
+      // award to the highest pot with eligible winners
+      pots[pots.length - 1]!.amount += remainingAmount;
+    }
   }
 
   return pots;
