@@ -22,6 +22,27 @@
       "when": 1741651200000,
       "tag": "0002_vrf_card_dealing",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1741651300000,
+      "tag": "0003_invite_codes",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1741651400000,
+      "tag": "0004_invite_rewards",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1741651500000,
+      "tag": "0005_ownership_cascade",
+      "breakpoints": true
     }
   ]
 }

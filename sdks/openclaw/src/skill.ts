@@ -187,12 +187,12 @@ export function createAgonSkill(options: CreateAgonSkillOptions): AgonSkill {
 
 /** Check if the agent has a pocket pair. */
 export function hasPocketPair(cards: Card[]): boolean {
-  return cards.length === 2 && cards[0].rank === cards[1].rank;
+  return cards.length === 2 && cards[0]!.rank === cards[1]!.rank;
 }
 
 /** Check if the agent has suited hole cards. */
 export function isSuited(cards: Card[]): boolean {
-  return cards.length === 2 && cards[0].suit === cards[1].suit;
+  return cards.length === 2 && cards[0]!.suit === cards[1]!.suit;
 }
 
 /** Get the highest card rank value (2=2, ..., A=14). */
@@ -207,8 +207,8 @@ export function rankValue(rank: string): number {
 /** Simple preflop hand strength heuristic (0.0 to 1.0). */
 export function preflopStrength(cards: Card[]): number {
   if (cards.length !== 2) return 0;
-  const r1 = rankValue(cards[0].rank);
-  const r2 = rankValue(cards[1].rank);
+  const r1 = rankValue(cards[0]!.rank);
+  const r2 = rankValue(cards[1]!.rank);
   const high = Math.max(r1, r2);
   const low = Math.min(r1, r2);
 
