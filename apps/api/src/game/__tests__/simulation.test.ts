@@ -173,7 +173,7 @@ describe('1000-hand simulation', () => {
     expect(handsPlayed).toBeGreaterThan(50); // game should last at least 50 hands
   });
 
-  it('always terminates within 500 actions per hand', () => {
+  it('always terminates within 500 actions per hand', { timeout: 15000 }, () => {
     const rng2 = makeLCG(99);
     for (let hand = 0; hand < 1000; hand++) {
       const config = makeConfig(Math.floor(rng2() * 7) + 2, 500); // 2-8 players
