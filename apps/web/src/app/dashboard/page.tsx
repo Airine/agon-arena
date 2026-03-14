@@ -1,9 +1,23 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
-import { buildApiUrl, clearSession, getAccessToken, saveAccessToken } from '../../lib/api';
-
-// ─── Types ────────────────────────────────────────────────────────────────
+import {
+  ConsoleShell,
+  EmptyState,
+  FormCard,
+  MetricCard,
+  SectionTitle,
+  StatusBadge,
+  SurfaceCard,
+} from '../../components/chrome';
+import { buildConsoleNav } from '../../components/console-nav';
+import {
+  buildApiUrl,
+  clearSession,
+  getAccessToken,
+  saveAccessToken,
+} from '../../lib/api';
 
 interface User {
   id: string;
@@ -42,157 +56,70 @@ interface Match {
   agentName: string;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────
-
 function truncateWallet(addr: string | null): string {
-  if (!addr) return '—';
-  return addr.slice(0, 6) + '...' + addr.slice(-4);
+  if (!addr) return '--';
+  return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────
-
-function SectionHeader({ title }: { title: string }) {
-  return (
-    <div
-      style={{
-        fontSize: '13px',
-        fontWeight: 700,
-        color: 'var(--muted)',
-        textTransform: 'uppercase',
-        letterSpacing: '0.8px',
-        marginBottom: '12px',
-      }}
-    >
-      {title}
-    </div>
-  );
+function formatSigned(value: number): string {
+  return `${value >= 0 ? '+' : ''}${value.toLocaleString()}`;
 }
-
-function StatItem({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: string;
-  color?: string;
-}) {
-  return (
-    <div>
-      <div
-        style={{
-          fontSize: '11px',
-          color: 'var(--muted)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.5px',
-          marginBottom: '4px',
-        }}
-      >
-        {label}
-      </div>
-      <div style={{ fontSize: '22px', fontWeight: 700, color: color ?? 'var(--fg)' }}>
-        {value}
-      </div>
-    </div>
-  );
-}
-
-// ─── Connect form ─────────────────────────────────────────────────────────
 
 function ConnectForm({ onConnect }: { onConnect: () => void }) {
   const [tokenInput, setTokenInput] = useState('');
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const t = tokenInput.trim();
-    if (!t) return;
-    saveAccessToken(t);
+    const trimmed = tokenInput.trim();
+    if (!trimmed) return;
+    saveAccessToken(trimmed);
     onConnect();
   }
 
   return (
-    <div
-      style={{
-        minHeight: '60vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <div
-        style={{
-          padding: '32px 36px',
-          background: 'var(--card-bg)',
-          border: '1px solid var(--border)',
-          borderRadius: '12px',
-          width: '100%',
-          maxWidth: '400px',
-        }}
-      >
-        <h2 style={{ fontSize: '18px', fontWeight: 700, marginBottom: '8px' }}>
-          Connect to Dashboard
-        </h2>
-        <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '24px' }}>
-          Enter your API token to view your assets and P&amp;L.
+    <FormCard
+      eyebrow="Access"
+      title="Connect the owner console"
+      description="Paste the dashboard token you already use today. The redesign changes the shell, not the token flow."
+      footer={
+        <p className="muted-copy" style={{ fontSize: '0.9rem' }}>
+          You can also{' '}
+          <Link href="/login" style={{ color: 'var(--accent-blue)' }}>
+            sign in
+          </Link>{' '}
+          or{' '}
+          <Link href="/register" style={{ color: 'var(--accent-blue)' }}>
+            create an account
+          </Link>
+          .
         </p>
-        <form onSubmit={handleSubmit}>
-          <label
-            style={{
-              display: 'block',
-              fontSize: '12px',
-              color: 'var(--muted)',
-              marginBottom: '6px',
-            }}
-          >
-            Enter your API token
-          </label>
+      }
+    >
+      <form onSubmit={handleSubmit} className="field-grid">
+        <div className="form-field">
+          <label className="form-label">Dashboard token</label>
           <input
             type="password"
             value={tokenInput}
             onChange={(e) => setTokenInput(e.target.value)}
+            className="text-input mono-copy"
             placeholder="eyJ..."
-            style={{
-              width: '100%',
-              padding: '10px 12px',
-              background: '#111',
-              border: '1px solid var(--border)',
-              borderRadius: '6px',
-              color: 'var(--fg)',
-              fontSize: '13px',
-              marginBottom: '14px',
-              outline: 'none',
-            }}
           />
-          <button
-            type="submit"
-            style={{
-              width: '100%',
-              padding: '10px',
-              background: '#3b82f6',
-              border: 'none',
-              borderRadius: '6px',
-              color: '#fff',
-              fontSize: '14px',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            Connect
-          </button>
-        </form>
-      </div>
-    </div>
+        </div>
+        <button type="submit" className="button-primary" style={{ width: '100%' }}>
+          Connect Workspace
+        </button>
+      </form>
+    </FormCard>
   );
 }
-
-// ─── Portfolio P&L Chart ──────────────────────────────────────────────────
 
 function PortfolioPnLChart({ matches }: { matches: Match[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const chartRef = useRef<any>(null);
 
-  const finished = matches.filter((m) => m.status === 'finished');
+  const finished = matches.filter((match) => match.status === 'finished');
 
   useEffect(() => {
     if (!containerRef.current || finished.length < 2) return;
@@ -203,10 +130,9 @@ function PortfolioPnLChart({ matches }: { matches: Match[] }) {
       if (disposed || !containerRef.current) return;
 
       if (!chartRef.current) {
-        chartRef.current = echarts.init(containerRef.current, 'dark');
+        chartRef.current = echarts.init(containerRef.current);
       }
 
-      // Sort by date ascending
       const sorted = [...finished].sort((a, b) => {
         const da = new Date(a.finishedAt ?? a.createdAt).getTime();
         const db = new Date(b.finishedAt ?? b.createdAt).getTime();
@@ -215,44 +141,46 @@ function PortfolioPnLChart({ matches }: { matches: Match[] }) {
 
       const cumulative: number[] = [];
       let sum = 0;
-      for (const m of sorted) {
-        sum += m.profit;
+      for (const match of sorted) {
+        sum += match.profit;
         cumulative.push(sum);
       }
 
       chartRef.current.setOption(
         {
+          animationDuration: 600,
           backgroundColor: 'transparent',
-          grid: { top: 16, right: 12, bottom: 28, left: 64 },
+          grid: { top: 20, right: 12, bottom: 28, left: 56 },
           tooltip: {
             trigger: 'axis',
+            backgroundColor: '#fffaf0',
+            borderColor: '#d8cfbf',
+            textStyle: { color: '#1b1a16' },
             formatter: (params: Array<{ dataIndex: number; value: number }>) => {
-              const p = params[0];
-              if (!p) return '';
-              const match = sorted[p.dataIndex];
-              const sign = p.value >= 0 ? '+' : '';
-              return `${match?.agentName ?? ''} @ ${match?.arenaName ?? ''}<br/>Cumulative: ${sign}${p.value.toLocaleString()}`;
+              const point = params[0];
+              if (!point) return '';
+              const match = sorted[point.dataIndex];
+              return `${match.agentName} @ ${match.arenaName}<br/>Cumulative: ${formatSigned(point.value)}`;
             },
           },
           xAxis: {
             type: 'category',
-            data: sorted.map((_, i) => `M${i + 1}`),
-            axisLabel: { color: '#888', fontSize: 10 },
-            axisLine: { lineStyle: { color: '#444' } },
+            data: sorted.map((_, index) => `M${index + 1}`),
+            axisLabel: { color: '#7d7666', fontSize: 11 },
+            axisLine: { lineStyle: { color: '#d8cfbf' } },
           },
           yAxis: {
             type: 'value',
-            axisLabel: { color: '#888', fontSize: 10 },
-            splitLine: { lineStyle: { color: '#2a2a2a' } },
+            axisLabel: { color: '#7d7666', fontSize: 11 },
+            splitLine: { lineStyle: { color: '#ebe4d6' } },
           },
           series: [
             {
-              name: 'Portfolio P&L',
               type: 'line',
               smooth: true,
               symbol: 'circle',
-              symbolSize: 5,
-              color: '#63b3ed',
+              symbolSize: 6,
+              color: '#2f78cf',
               areaStyle: {
                 color: {
                   type: 'linear',
@@ -261,8 +189,8 @@ function PortfolioPnLChart({ matches }: { matches: Match[] }) {
                   x2: 0,
                   y2: 1,
                   colorStops: [
-                    { offset: 0, color: 'rgba(99,179,237,0.3)' },
-                    { offset: 1, color: 'rgba(99,179,237,0.02)' },
+                    { offset: 0, color: 'rgba(47, 120, 207, 0.24)' },
+                    { offset: 1, color: 'rgba(47, 120, 207, 0.02)' },
                   ],
                 },
               },
@@ -289,37 +217,81 @@ function PortfolioPnLChart({ matches }: { matches: Match[] }) {
 
   if (finished.length < 2) {
     return (
-      <div
-        style={{
-          padding: '32px',
-          background: 'var(--card-bg)',
-          border: '1px solid var(--border)',
-          borderRadius: '8px',
-          textAlign: 'center',
-          color: 'var(--muted)',
-          fontSize: '13px',
-        }}
-      >
-        Not enough match data yet.
-      </div>
+      <EmptyState
+        title="Not enough match data yet"
+        description="Complete a couple of matches to unlock the portfolio curve."
+      />
+    );
+  }
+
+  return <div ref={containerRef} style={{ width: '100%', height: 240 }} />;
+}
+
+function AgentRoster({ agents }: { agents: Agent[] }) {
+  if (agents.length === 0) {
+    return (
+      <EmptyState
+        title="No agents registered"
+        description={
+          <>
+            Create your first agent from the registration flow or the settings
+            page to populate this roster.
+          </>
+        }
+        action={
+          <Link href="/register" className="button-secondary">
+            Register Agent
+          </Link>
+        }
+      />
     );
   }
 
   return (
-    <div
-      style={{
-        padding: '16px',
-        background: 'var(--card-bg)',
-        border: '1px solid var(--border)',
-        borderRadius: '8px',
-      }}
-    >
-      <div ref={containerRef} style={{ width: '100%', height: '200px' }} />
+    <div className="console-list">
+      {agents.map((agent) => {
+        const winRate =
+          agent.handsPlayed > 0
+            ? `${((agent.handsWon / agent.handsPlayed) * 100).toFixed(1)}%`
+            : '--';
+
+        return (
+          <Link key={agent.id} href={`/agents/${agent.id}`} className="console-row-card">
+            <div className="console-row-card__body">
+              <div className="console-row-card__title">
+                <h3>{agent.name}</h3>
+                <StatusBadge
+                  label={agent.isActive ? 'Active' : 'Inactive'}
+                  tone={agent.isActive ? 'success' : 'neutral'}
+                />
+              </div>
+              <p className="console-row-card__copy">
+                {agent.description ?? 'No description yet.'}
+              </p>
+              <div className="console-row-card__meta">
+                <span>Hands: {agent.handsPlayed.toLocaleString()}</span>
+                <span>Win rate: {winRate}</span>
+                <span>ELO: {agent.eloRating}</span>
+              </div>
+            </div>
+
+            <div className="console-row-card__aside">
+              <div
+                style={{
+                  color: agent.totalChipsWon >= 0 ? 'var(--accent-green)' : 'var(--accent-red)',
+                  fontWeight: 800,
+                }}
+              >
+                {formatSigned(agent.totalChipsWon)}
+              </div>
+              <div className="console-link-arrow">Open</div>
+            </div>
+          </Link>
+        );
+      })}
     </div>
   );
 }
-
-// ─── Main dashboard ───────────────────────────────────────────────────────
 
 export default function OwnerDashboardPage() {
   const [token, setTokenState] = useState<string | null>(null);
@@ -329,12 +301,10 @@ export default function OwnerDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState(false);
 
-  // Read token from localStorage on mount
   useEffect(() => {
     setTokenState(getAccessToken());
   }, []);
 
-  // Fetch data when token is available
   useEffect(() => {
     if (!token) {
       setLoading(false);
@@ -347,51 +317,47 @@ export default function OwnerDashboardPage() {
     fetch(buildApiUrl('/auth/me'), {
       headers: { Authorization: `Bearer ${token}` },
     })
-      .then(async (r) => {
-        if (r.status === 401 || r.status === 403) {
+      .then(async (res) => {
+        if (res.status === 401 || res.status === 403) {
           clearSession();
           setTokenState(null);
           setAuthError(true);
           setLoading(false);
           return;
         }
-        const userData = (await r.json()) as User;
+
+        const userData = (await res.json()) as User;
         setUser(userData);
 
-        // Fetch agents owned by this user
         const agentsRes = await fetch(buildApiUrl(`/agents?ownerId=${userData.id}`));
         const agentsData = (await agentsRes.json()) as { agents: Agent[] };
         const ownedAgents = agentsData.agents ?? [];
         setAgents(ownedAgents);
 
-        // Fetch matches for all agents in parallel
         const matchResults = await Promise.all(
-          ownedAgents.map((a) =>
-            fetch(buildApiUrl(`/agents/${a.id}/matches`))
-              .then((r2) => r2.json())
-              .then((d: { matches: Match[] }) =>
-                (d.matches ?? []).map((m) => ({
-                  ...m,
-                  agentId: a.id,
-                  agentName: a.name,
+          ownedAgents.map((agent) =>
+            fetch(buildApiUrl(`/agents/${agent.id}/matches`))
+              .then((r) => r.json())
+              .then((data: { matches: Match[] }) =>
+                (data.matches ?? []).map((match) => ({
+                  ...match,
+                  agentId: agent.id,
+                  agentName: agent.name,
                 })),
               )
               .catch(() => [] as Match[]),
           ),
         );
 
-        const combined = matchResults.flat();
-        combined.sort((a, b) => {
+        const combined = matchResults.flat().sort((a, b) => {
           const da = new Date(a.finishedAt ?? a.createdAt).getTime();
           const db = new Date(b.finishedAt ?? b.createdAt).getTime();
-          return db - da; // descending for recent table
+          return db - da;
         });
         setAllMatches(combined);
         setLoading(false);
       })
-      .catch(() => {
-        setLoading(false);
-      });
+      .catch(() => setLoading(false));
   }, [token]);
 
   function handleConnect() {
@@ -406,500 +372,254 @@ export default function OwnerDashboardPage() {
     setAllMatches([]);
   }
 
-  // Not authenticated
-  if (!token) {
-    return (
-      <div style={{ padding: '2rem', maxWidth: '900px', margin: '0 auto' }}>
-        <a
-          href="/"
-          style={{
-            color: 'var(--muted)',
-            fontSize: '13px',
-            display: 'block',
-            marginBottom: '4px',
-          }}
-        >
-          ← Agon Arena
-        </a>
-        <h1 style={{ fontSize: '28px', fontWeight: 700, marginBottom: '24px' }}>
-          Owner Dashboard
-        </h1>
-        {authError && (
-          <div
-            style={{
-              padding: '12px 16px',
-              background: '#2d1a1a',
-              border: '1px solid #742a2a',
-              borderRadius: '8px',
-              color: '#fc8181',
-              fontSize: '13px',
-              marginBottom: '16px',
-            }}
-          >
-            Token invalid or expired. Please reconnect.
-          </div>
-        )}
-        <ConnectForm onConnect={handleConnect} />
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div style={{ padding: '2rem', maxWidth: '900px', margin: '0 auto' }}>
-        <a
-          href="/"
-          style={{ color: 'var(--muted)', fontSize: '13px', display: 'block', marginBottom: '4px' }}
-        >
-          ← Agon Arena
-        </a>
-        <h1 style={{ fontSize: '28px', fontWeight: 700, marginBottom: '24px' }}>
-          Owner Dashboard
-        </h1>
-        <div style={{ textAlign: 'center', color: 'var(--muted)', padding: '64px' }}>
-          Loading dashboard…
-        </div>
-      </div>
-    );
-  }
-
-  const recentMatches = allMatches.slice(0, 10);
   const totalPnL = allMatches
-    .filter((m) => m.status === 'finished')
-    .reduce((acc, m) => acc + m.profit, 0);
+    .filter((match) => match.status === 'finished')
+    .reduce((sum, match) => sum + match.profit, 0);
+  const finishedMatches = allMatches.filter((match) => match.status === 'finished');
+  const runningMatches = allMatches.filter((match) => match.status === 'running');
+  const activeAgents = agents.filter((agent) => agent.isActive);
+  const bestAgent = [...agents].sort((a, b) => b.eloRating - a.eloRating)[0] ?? null;
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '900px', margin: '0 auto' }}>
-      {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'flex-start',
-          justifyContent: 'space-between',
-          marginBottom: '24px',
-        }}
-      >
-        <div>
-          <a
-            href="/"
-            style={{
-              color: 'var(--muted)',
-              fontSize: '13px',
-              display: 'block',
-              marginBottom: '4px',
-            }}
-          >
-            ← Agon Arena
-          </a>
-          <h1 style={{ fontSize: '28px', fontWeight: 700, color: 'var(--fg)', margin: 0 }}>
-            Owner Dashboard
-          </h1>
-          {user && (
-            <p style={{ color: 'var(--muted)', fontSize: '14px', marginTop: '4px' }}>
-              {user.username}
-            </p>
-          )}
-        </div>
-        <button
-          onClick={handleDisconnect}
-          style={{
-            padding: '6px 14px',
-            background: 'none',
-            border: '1px solid var(--border)',
-            borderRadius: '6px',
-            color: 'var(--muted)',
-            fontSize: '12px',
-            cursor: 'pointer',
-            marginTop: '20px',
-          }}
-        >
-          Disconnect
-        </button>
-      </div>
-
-      {/* CHIP Wallet card */}
-      {user && (
-        <div
-          style={{
-            padding: '20px 24px',
-            background: 'var(--card-bg)',
-            border: '1px solid var(--border)',
-            borderRadius: '12px',
-            marginBottom: '28px',
-          }}
-        >
-          <div
-            style={{
-              fontSize: '12px',
-              color: 'var(--muted)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.8px',
-              marginBottom: '16px',
-            }}
-          >
-            CHIP Wallet
-          </div>
-
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
-              gap: '20px',
-              marginBottom: '20px',
-            }}
-          >
-            <StatItem
-              label="Total Balance"
-              value={user.chipBalance.toLocaleString() + ' CHIP'}
-              color="#f6ad55"
-            />
-            <StatItem
-              label="Available"
-              value={user.chipBalance.toLocaleString() + ' CHIP'}
-              color="#68d391"
-            />
-            <StatItem
-              label="Total P&L"
-              value={(totalPnL >= 0 ? '+' : '') + totalPnL.toLocaleString()}
-              color={totalPnL >= 0 ? '#68d391' : '#fc8181'}
-            />
-            <div>
-              <div
-                style={{
-                  fontSize: '11px',
-                  color: 'var(--muted)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px',
-                  marginBottom: '4px',
-                }}
-              >
-                Wallet
-              </div>
-              <div
-                style={{
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  color: user.walletAddress ? '#63b3ed' : 'var(--muted)',
-                  fontFamily: 'monospace',
-                }}
-              >
-                {truncateWallet(user.walletAddress)}
-              </div>
-            </div>
-          </div>
-
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              borderTop: '1px solid var(--border)',
-              paddingTop: '16px',
-            }}
-          >
-            <button
-              disabled
-              style={{
-                padding: '8px 18px',
-                background: '#1a2b40',
-                border: '1px solid var(--border)',
-                borderRadius: '6px',
-                color: 'var(--muted)',
-                fontSize: '13px',
-                fontWeight: 600,
-                cursor: 'not-allowed',
-                opacity: 0.7,
-              }}
-            >
-              Buy CHIP (x402)
+    <ConsoleShell
+      section="dashboard"
+      title="Owner Dashboard"
+      eyebrow="Control Surface"
+      description="Track your roster, portfolio curve, and recent table results from the redesigned competition board."
+      actions={
+        token ? (
+          <>
+            <Link href="/settings" className="button-secondary">
+              Settings
+            </Link>
+            <button onClick={handleDisconnect} className="button-ghost">
+              Disconnect
             </button>
-            <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
-              Joined {new Date(user.createdAt).toLocaleDateString()}
-            </span>
+          </>
+        ) : (
+          <>
+            <Link href="/login" className="button-secondary">
+              Sign In
+            </Link>
+            <Link href="/register" className="button-primary">
+              Create Account
+            </Link>
+          </>
+        )
+      }
+      sidebarGroups={buildConsoleNav('dashboard')}
+      sidebarFooter={
+        <SurfaceCard tone="spotlight" className="surface-card--padded">
+          <div className="section-title__eyebrow">Session</div>
+          <h3 style={{ marginTop: '8px', fontSize: '1.06rem', fontWeight: 800 }}>
+            {user?.username ?? 'No active owner session'}
+          </h3>
+          <p className="muted-copy" style={{ marginTop: '10px', fontSize: '0.92rem' }}>
+            {user
+              ? `Wallet ${truncateWallet(user.walletAddress)}`
+              : 'Connect with an existing dashboard token or sign in normally.'}
+          </p>
+        </SurfaceCard>
+      }
+    >
+      {!token ? (
+        <div className="split-grid">
+          <ConnectForm onConnect={handleConnect} />
+          <SurfaceCard tone="brand">
+            <SectionTitle eyebrow="What changes here" title="Same workflows, cleaner board" />
+            <div className="console-list">
+              <div className="console-row-card">
+                <div className="console-row-card__body">
+                  <div className="console-row-card__title">
+                    <h3>Token compatibility preserved</h3>
+                  </div>
+                  <p className="console-row-card__copy">
+                    Existing dashboard access still works through the shared
+                    session helper and legacy mirrored token storage.
+                  </p>
+                </div>
+              </div>
+              <div className="console-row-card">
+                <div className="console-row-card__body">
+                  <div className="console-row-card__title">
+                    <h3>Paperclip-inspired structure</h3>
+                  </div>
+                  <p className="console-row-card__copy">
+                    The board now favors cards, lists, and activity blocks over a
+                    single dark slab of utilities.
+                  </p>
+                </div>
+              </div>
+              {authError ? (
+                <div className="error-banner">
+                  The last token was invalid or expired. Connect again to reopen
+                  the workspace.
+                </div>
+              ) : null}
+            </div>
+          </SurfaceCard>
+        </div>
+      ) : loading ? (
+        <SurfaceCard>
+          <EmptyState
+            title="Loading dashboard"
+            description="Fetching your owner profile, registered agents, and recent matches."
+          />
+        </SurfaceCard>
+      ) : (
+        <div className="page-stack">
+          <div className="metric-grid">
+            <MetricCard
+              label="CHIP Balance"
+              value={`${user?.chipBalance.toLocaleString() ?? '0'} CHIP`}
+              description="Current owner balance."
+            />
+            <MetricCard
+              label="Total P&L"
+              value={formatSigned(totalPnL)}
+              description={`${finishedMatches.length} finished matches`}
+            />
+            <MetricCard
+              label="Agents Enabled"
+              value={agents.length.toLocaleString()}
+              description={`${activeAgents.length} active, ${agents.length - activeAgents.length} inactive`}
+              href="/agents"
+            />
+            <MetricCard
+              label="Live Tables"
+              value={runningMatches.length.toLocaleString()}
+              description={bestAgent ? `Best ELO: ${bestAgent.name}` : 'No roster leader yet'}
+              href="/arenas"
+            />
+          </div>
+
+          <div className="split-grid">
+            <div className="stack-grid">
+              <SurfaceCard>
+                <SectionTitle eyebrow="Wallet" title="Owner ledger" />
+                <div className="console-stat-grid">
+                  <div className="console-stat">
+                    <div className="console-stat__label">Wallet</div>
+                    <div className="console-stat__value mono-copy">{truncateWallet(user?.walletAddress ?? null)}</div>
+                  </div>
+                  <div className="console-stat">
+                    <div className="console-stat__label">Member Since</div>
+                    <div className="console-stat__value">
+                      {user?.createdAt ? new Date(user.createdAt).toLocaleDateString() : '--'}
+                    </div>
+                  </div>
+                  <div className="console-stat">
+                    <div className="console-stat__label">Available</div>
+                    <div className="console-stat__value">
+                      {user?.chipBalance.toLocaleString() ?? '0'} CHIP
+                    </div>
+                  </div>
+                  <div className="console-stat">
+                    <div className="console-stat__label">Session</div>
+                    <div className="console-stat__value">
+                      <StatusBadge label="Connected" tone="success" />
+                    </div>
+                  </div>
+                </div>
+              </SurfaceCard>
+
+              <SurfaceCard>
+                <SectionTitle eyebrow="Performance" title="Portfolio curve" />
+                <PortfolioPnLChart matches={allMatches} />
+              </SurfaceCard>
+
+              <SurfaceCard>
+                <SectionTitle eyebrow="Recent Matches" title={`Latest results (${allMatches.slice(0, 8).length})`} />
+                {allMatches.length === 0 ? (
+                  <EmptyState
+                    title="No match history yet"
+                    description="Once your agents sit in arenas, recent results will appear here."
+                  />
+                ) : (
+                  <div className="console-data-table">
+                    <div
+                      className="console-data-table__head"
+                      style={{ gridTemplateColumns: '140px 1fr 90px 110px 90px' }}
+                    >
+                      <div>Agent</div>
+                      <div>Arena</div>
+                      <div>Mode</div>
+                      <div style={{ textAlign: 'right' }}>P&L</div>
+                      <div style={{ textAlign: 'right' }}>Status</div>
+                    </div>
+                    {allMatches.slice(0, 8).map((match) => (
+                      <div
+                        key={`${match.arenaId}-${match.agentId}`}
+                        className="console-data-table__row"
+                        style={{ gridTemplateColumns: '140px 1fr 90px 110px 90px' }}
+                      >
+                        <Link href={`/agents/${match.agentId}`} style={{ color: 'var(--accent-blue)' }}>
+                          {match.agentName}
+                        </Link>
+                        <div>{match.arenaName}</div>
+                        <div className="console-data-table__cell--muted">{match.mode}</div>
+                        <div
+                          style={{
+                            textAlign: 'right',
+                            color:
+                              match.profit >= 0 ? 'var(--accent-green)' : 'var(--accent-red)',
+                            fontWeight: 800,
+                          }}
+                        >
+                          {formatSigned(match.profit)}
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <StatusBadge
+                            label={match.status}
+                            tone={match.status === 'running' ? 'accent' : 'neutral'}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </SurfaceCard>
+            </div>
+
+            <div className="stack-grid">
+              <SurfaceCard>
+                <SectionTitle eyebrow="Roster" title={`Agents (${agents.length})`} />
+                <AgentRoster agents={agents} />
+              </SurfaceCard>
+
+              <SurfaceCard tone="spotlight">
+                <SectionTitle eyebrow="Quick Read" title="Board status" />
+                <div className="console-list">
+                  <div className="console-row-card">
+                    <div className="console-row-card__body">
+                      <div className="console-row-card__title">
+                        <h3>Active tables</h3>
+                      </div>
+                      <p className="console-row-card__copy">
+                        {runningMatches.length > 0
+                          ? `${runningMatches.length} match${runningMatches.length === 1 ? '' : 'es'} still in motion.`
+                          : 'No live matches right now.'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="console-row-card">
+                    <div className="console-row-card__body">
+                      <div className="console-row-card__title">
+                        <h3>Roster leader</h3>
+                      </div>
+                      <p className="console-row-card__copy">
+                        {bestAgent
+                          ? `${bestAgent.name} currently leads your roster at ${bestAgent.eloRating} ELO.`
+                          : 'Register an agent to establish a ladder leader.'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </SurfaceCard>
+            </div>
           </div>
         </div>
       )}
-
-      {/* My Agents */}
-      <div style={{ marginBottom: '28px' }}>
-        <SectionHeader title={`My Agents (${agents.length})`} />
-
-        {agents.length === 0 ? (
-          <div
-            style={{
-              padding: '32px',
-              background: 'var(--card-bg)',
-              border: '1px solid var(--border)',
-              borderRadius: '8px',
-              textAlign: 'center',
-              color: 'var(--muted)',
-              fontSize: '13px',
-            }}
-          >
-            No agents registered yet.{' '}
-            <a href="/register" style={{ color: '#63b3ed' }}>
-              Register your first agent →
-            </a>
-          </div>
-        ) : (
-          <div
-            style={{
-              background: 'var(--card-bg)',
-              border: '1px solid var(--border)',
-              borderRadius: '8px',
-              overflow: 'hidden',
-            }}
-          >
-            {/* Table header */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 80px 90px 110px 70px',
-                padding: '10px 16px',
-                borderBottom: '1px solid var(--border)',
-                fontSize: '11px',
-                color: 'var(--muted)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
-              }}
-            >
-              <div>Agent</div>
-              <div style={{ textAlign: 'center' }}>Status</div>
-              <div style={{ textAlign: 'right' }}>Hands</div>
-              <div style={{ textAlign: 'right' }}>Total Won</div>
-              <div style={{ textAlign: 'right' }}>ELO</div>
-            </div>
-
-            {agents.map((agent, i) => (
-              <a
-                key={agent.id}
-                href={`/agents/${agent.id}`}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 80px 90px 110px 70px',
-                  padding: '12px 16px',
-                  borderBottom: i < agents.length - 1 ? '1px solid var(--border)' : 'none',
-                  alignItems: 'center',
-                  textDecoration: 'none',
-                  transition: 'background 0.1s',
-                }}
-              >
-                <div>
-                  <div
-                    style={{
-                      fontSize: '14px',
-                      fontWeight: 600,
-                      color: 'var(--fg)',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {agent.name}
-                  </div>
-                  {agent.description && (
-                    <div
-                      style={{
-                        fontSize: '11px',
-                        color: 'var(--muted)',
-                        marginTop: '2px',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {agent.description}
-                    </div>
-                  )}
-                </div>
-                <div style={{ textAlign: 'center' }}>
-                  <span
-                    style={{
-                      fontSize: '10px',
-                      padding: '2px 8px',
-                      borderRadius: '4px',
-                      background: agent.isActive ? '#1a4731' : '#2d3748',
-                      color: agent.isActive ? '#68d391' : 'var(--muted)',
-                      border: `1px solid ${agent.isActive ? '#2d8b5a' : 'var(--border)'}`,
-                      fontWeight: 600,
-                    }}
-                  >
-                    {agent.isActive ? 'ACTIVE' : 'OFF'}
-                  </span>
-                </div>
-                <div
-                  style={{
-                    textAlign: 'right',
-                    fontSize: '13px',
-                    color: 'var(--fg)',
-                  }}
-                >
-                  {agent.handsPlayed.toLocaleString()}
-                </div>
-                <div
-                  style={{
-                    textAlign: 'right',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    color: agent.totalChipsWon >= 0 ? '#68d391' : '#fc8181',
-                  }}
-                >
-                  {agent.totalChipsWon >= 0 ? '+' : ''}
-                  {agent.totalChipsWon.toLocaleString()}
-                </div>
-                <div
-                  style={{
-                    textAlign: 'right',
-                    fontSize: '14px',
-                    fontWeight: 700,
-                    color: '#f6e05e',
-                  }}
-                >
-                  {agent.eloRating}
-                </div>
-              </a>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Portfolio P&L Chart */}
-      <div style={{ marginBottom: '28px' }}>
-        <SectionHeader title="Portfolio P&L" />
-        <PortfolioPnLChart matches={allMatches} />
-      </div>
-
-      {/* Recent Matches */}
-      <div style={{ marginBottom: '28px' }}>
-        <SectionHeader title={`Recent Matches (${recentMatches.length})`} />
-
-        {recentMatches.length === 0 ? (
-          <div
-            style={{
-              padding: '32px',
-              background: 'var(--card-bg)',
-              border: '1px solid var(--border)',
-              borderRadius: '8px',
-              textAlign: 'center',
-              color: 'var(--muted)',
-              fontSize: '13px',
-            }}
-          >
-            No match history yet.
-          </div>
-        ) : (
-          <div
-            style={{
-              background: 'var(--card-bg)',
-              border: '1px solid var(--border)',
-              borderRadius: '8px',
-              overflow: 'hidden',
-            }}
-          >
-            {/* Table header */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '140px 1fr 80px 100px 80px',
-                padding: '10px 16px',
-                borderBottom: '1px solid var(--border)',
-                fontSize: '11px',
-                color: 'var(--muted)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
-              }}
-            >
-              <div>Agent</div>
-              <div>Arena</div>
-              <div>Mode</div>
-              <div style={{ textAlign: 'right' }}>P&L</div>
-              <div style={{ textAlign: 'right' }}>Status</div>
-            </div>
-
-            {recentMatches.map((match, i) => {
-              const isGain = match.profit >= 0;
-              return (
-                <div
-                  key={`${match.arenaId}-${match.agentId}`}
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '140px 1fr 80px 100px 80px',
-                    padding: '11px 16px',
-                    borderBottom:
-                      i < recentMatches.length - 1 ? '1px solid var(--border)' : 'none',
-                    alignItems: 'center',
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: '12px',
-                      color: '#63b3ed',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      paddingRight: '8px',
-                    }}
-                  >
-                    <a
-                      href={`/agents/${match.agentId}`}
-                      style={{ color: '#63b3ed', textDecoration: 'none' }}
-                    >
-                      {match.agentName}
-                    </a>
-                  </div>
-                  <div
-                    style={{
-                      fontSize: '13px',
-                      color: 'var(--fg)',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      paddingRight: '8px',
-                    }}
-                  >
-                    {match.arenaName}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: '12px',
-                      color: 'var(--muted)',
-                      textTransform: 'capitalize',
-                    }}
-                  >
-                    {match.mode}
-                  </div>
-                  <div
-                    style={{
-                      textAlign: 'right',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      color: isGain ? '#68d391' : '#fc8181',
-                    }}
-                  >
-                    {isGain ? '+' : ''}
-                    {match.profit.toLocaleString()}
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <span
-                      style={{
-                        fontSize: '10px',
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                        background: match.status === 'running' ? '#1a4731' : '#1a2b40',
-                        color: match.status === 'running' ? '#68d391' : 'var(--muted)',
-                        border: `1px solid ${match.status === 'running' ? '#2d8b5a' : 'var(--border)'}`,
-                        fontWeight: 600,
-                      }}
-                    >
-                      {match.status.toUpperCase()}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </div>
+    </ConsoleShell>
   );
 }

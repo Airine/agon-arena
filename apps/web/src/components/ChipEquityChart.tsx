@@ -28,7 +28,7 @@ export default function ChipEquityChart({ snapshots, height = 200 }: Props) {
       if (disposed || !containerRef.current) return;
 
       if (!chartRef.current) {
-        chartRef.current = echarts.init(containerRef.current, 'dark');
+        chartRef.current = echarts.init(containerRef.current);
       }
 
       const agentIds = snapshots[0]!.stacks.map((s) => s.agentId);
@@ -52,18 +52,18 @@ export default function ChipEquityChart({ snapshots, height = 200 }: Props) {
           legend: {
             show: series.length <= 6,
             top: 0,
-            textStyle: { color: '#ccc', fontSize: 10 },
+            textStyle: { color: '#67604f', fontSize: 10 },
           },
           xAxis: {
             type: 'category',
             data: xData,
-            axisLabel: { color: '#888', fontSize: 10 },
-            axisLine: { lineStyle: { color: '#444' } },
+            axisLabel: { color: '#7d7666', fontSize: 10 },
+            axisLine: { lineStyle: { color: '#d8cfbf' } },
           },
           yAxis: {
             type: 'value',
-            axisLabel: { color: '#888', fontSize: 10 },
-            splitLine: { lineStyle: { color: '#2a2a2a' } },
+            axisLabel: { color: '#7d7666', fontSize: 10 },
+            splitLine: { lineStyle: { color: '#ebe4d6' } },
           },
           series,
         },

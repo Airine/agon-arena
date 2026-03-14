@@ -1,11 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import {
+  ConsoleShell,
+  FormCard,
+  SectionTitle,
+  StatusBadge,
+  SurfaceCard,
+} from '../../components/chrome';
+import { buildConsoleNav } from '../../components/console-nav';
 import { api, clearSession, isLoggedIn, type UserInfo } from '../../lib/api';
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 interface EthereumProvider {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
@@ -22,33 +26,6 @@ interface AgentInfo {
   name: string;
   apiUrl: string;
 }
-
-// ---------------------------------------------------------------------------
-// Shared styles
-// ---------------------------------------------------------------------------
-
-const inputStyle: React.CSSProperties = {
-  padding: '0.6rem 0.75rem',
-  background: 'var(--bg)',
-  border: '1px solid var(--border)',
-  borderRadius: '6px',
-  color: 'var(--fg)',
-  fontSize: '1rem',
-  outline: 'none',
-  width: '100%',
-};
-
-const cardStyle: React.CSSProperties = {
-  background: 'var(--card-bg)',
-  border: '1px solid var(--border)',
-  borderRadius: '12px',
-  padding: '1.5rem',
-  marginBottom: '1.5rem',
-};
-
-// ---------------------------------------------------------------------------
-// Agent Registration Panel
-// ---------------------------------------------------------------------------
 
 function AgentRegistrationPanel() {
   const [name, setName] = useState('');
@@ -70,27 +47,22 @@ function AgentRegistrationPanel() {
 
     setLoading(true);
     try {
-      // 1. Get accounts
       const accounts = (await window.ethereum.request({
         method: 'eth_requestAccounts',
       })) as string[];
       const walletAddress = accounts[0];
       if (!walletAddress) throw new Error('No account selected');
 
-      // 2. Get nonce
       const { nonce } = await api.get<{ nonce: string }>('/auth/agent/nonce');
-
-      // 3. Sign EIP-191 message
       const message = `Register Agon Agent\nNonce: ${nonce}`;
       const signature = (await window.ethereum.request({
         method: 'personal_sign',
         params: [message, walletAddress],
       })) as string;
 
-      // 4. Register agent
       const capList = capabilities
         .split(',')
-        .map((s) => s.trim())
+        .map((item) => item.trim())
         .filter(Boolean);
 
       const result = await api.post<{ agent: AgentInfo }>('/auth/agent/register', {
@@ -113,124 +85,75 @@ function AgentRegistrationPanel() {
     }
   }
 
-  if (registered) {
-    return (
-      <div style={cardStyle}>
-        <h2 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>Agent Registration</h2>
-        <div
-          style={{
-            padding: '1rem',
-            background: '#14532d33',
-            border: '1px solid #22c55e44',
-            borderRadius: '8px',
-            color: '#22c55e',
-          }}
-        >
-          <p style={{ fontWeight: 600, marginBottom: '0.25rem' }}>
-            ✓ Agent registered successfully
-          </p>
-          <p style={{ fontSize: '0.875rem', opacity: 0.8 }}>
-            Name: {registered.name} · ID: {registered.id.slice(0, 8)}…
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div style={cardStyle}>
-      <h2 style={{ marginBottom: '0.5rem', fontSize: '1.1rem' }}>Register an Agent</h2>
-      <p style={{ color: 'var(--muted)', fontSize: '0.875rem', marginBottom: '1rem' }}>
-        Connect your AI agent to compete in the arena. Requires wallet signature.
-      </p>
-
-      <form
-        onSubmit={handleRegister}
-        style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          <label style={{ fontSize: '0.875rem', color: 'var(--muted)' }}>Agent Name *</label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-            style={inputStyle}
-            placeholder="My Poker Bot"
-          />
+    <FormCard
+      eyebrow="Agent Registration"
+      title="Add a new poker agent"
+      description="This keeps the existing wallet-sign flow but puts it inside the new console shell."
+    >
+      {registered ? (
+        <div className="success-banner">
+          Agent registered successfully: {registered.name} ({registered.id.slice(0, 8)}...)
         </div>
+      ) : (
+        <form onSubmit={handleRegister} className="field-grid">
+          <div className="form-field">
+            <label className="form-label">Agent Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              className="text-input"
+              placeholder="My Poker Bot"
+            />
+          </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          <label style={{ fontSize: '0.875rem', color: 'var(--muted)' }}>
-            Description{' '}
-            <span style={{ fontSize: '0.8rem', opacity: 0.6 }}>(optional)</span>
-          </label>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={2}
-            maxLength={500}
-            style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }}
-            placeholder="A GTO-based poker agent…"
-          />
-        </div>
+          <div className="form-field">
+            <label className="form-label">Description</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              maxLength={500}
+              className="text-area"
+              placeholder="A GTO-based poker agent..."
+            />
+          </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          <label style={{ fontSize: '0.875rem', color: 'var(--muted)' }}>
-            API URL *
-          </label>
-          <input
-            type="url"
-            value={apiUrl}
-            onChange={(e) => setApiUrl(e.target.value)}
-            required
-            style={inputStyle}
-            placeholder="https://your-agent.example.com"
-          />
-        </div>
+          <div className="form-field">
+            <label className="form-label">API URL</label>
+            <input
+              type="url"
+              value={apiUrl}
+              onChange={(e) => setApiUrl(e.target.value)}
+              required
+              className="text-input"
+              placeholder="https://your-agent.example.com"
+            />
+          </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          <label style={{ fontSize: '0.875rem', color: 'var(--muted)' }}>
-            Capabilities{' '}
-            <span style={{ fontSize: '0.8rem', opacity: 0.6 }}>(comma-separated)</span>
-          </label>
-          <input
-            type="text"
-            value={capabilities}
-            onChange={(e) => setCapabilities(e.target.value)}
-            style={inputStyle}
-            placeholder="gto, bluff-detection, hand-reading"
-          />
-        </div>
+          <div className="form-field">
+            <label className="form-label">Capabilities</label>
+            <input
+              type="text"
+              value={capabilities}
+              onChange={(e) => setCapabilities(e.target.value)}
+              className="text-input"
+              placeholder="gto, bluff-detection, hand-reading"
+            />
+          </div>
 
-        {error && (
-          <p style={{ color: '#ef4444', fontSize: '0.875rem' }}>{error}</p>
-        )}
+          {error ? <div className="error-banner">{error}</div> : null}
 
-        <button
-          type="submit"
-          disabled={loading}
-          style={{
-            padding: '0.75rem 1.5rem',
-            background: loading ? 'var(--border)' : 'var(--accent)',
-            color: 'var(--fg)',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: loading ? 'not-allowed' : 'pointer',
-            fontSize: '1rem',
-            fontWeight: 600,
-          }}
-        >
-          {loading ? 'Registering…' : 'Register Agent (Sign with Wallet)'}
-        </button>
-      </form>
-    </div>
+          <button type="submit" disabled={loading} className="button-primary" style={{ width: '100%' }}>
+            {loading ? 'Registering...' : 'Register Agent'}
+          </button>
+        </form>
+      )}
+    </FormCard>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Page
-// ---------------------------------------------------------------------------
 
 export default function SettingsPage() {
   const [user, setUser] = useState<UserInfo | null>(null);
@@ -241,11 +164,12 @@ export default function SettingsPage() {
       window.location.href = '/login';
       return;
     }
+
     api.get<UserInfo>('/auth/me')
       .then(setUser)
       .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : 'Failed to load profile';
-        setLoadError(msg);
+        const message = err instanceof Error ? err.message : 'Failed to load profile';
+        setLoadError(message);
       });
   }, []);
 
@@ -254,102 +178,99 @@ export default function SettingsPage() {
     window.location.href = '/login';
   }
 
-  if (loadError) {
-    return (
-      <main style={{ padding: '2rem', maxWidth: '640px', margin: '0 auto' }}>
-        <p style={{ color: '#ef4444' }}>{loadError}</p>
-        <a href="/login" style={{ color: 'var(--accent)' }}>
-          Go to login
-        </a>
-      </main>
-    );
-  }
-
-  if (!user) {
-    return (
-      <main style={{ padding: '2rem', maxWidth: '640px', margin: '0 auto' }}>
-        <p style={{ color: 'var(--muted)' }}>Loading…</p>
-      </main>
-    );
-  }
+  const walletDisplay = user?.walletAddress
+    ? `${user.walletAddress.slice(0, 6)}...${user.walletAddress.slice(-4)}`
+    : '--';
 
   return (
-    <main style={{ padding: '2rem', maxWidth: '640px', margin: '0 auto' }}>
-      {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '2rem',
-        }}
-      >
-        <div>
-          <h1 style={{ fontSize: '2rem', marginBottom: '0.25rem' }}>Settings</h1>
-          <a href="/dashboard" style={{ color: 'var(--muted)', fontSize: '0.875rem' }}>
-            ← Back to Dashboard
-          </a>
-        </div>
-        <button
-          onClick={handleLogout}
-          style={{
-            padding: '0.5rem 1rem',
-            background: 'transparent',
-            border: '1px solid var(--border)',
-            borderRadius: '6px',
-            color: 'var(--muted)',
-            cursor: 'pointer',
-            fontSize: '0.875rem',
-          }}
-        >
+    <ConsoleShell
+      section="settings"
+      title="Settings"
+      eyebrow="Owner Console"
+      description="Profile and registration settings now live in the same console language as the dashboard."
+      actions={
+        <button onClick={handleLogout} className="button-ghost">
           Logout
         </button>
-      </div>
+      }
+      sidebarGroups={buildConsoleNav('settings')}
+      sidebarFooter={
+        <SurfaceCard tone="spotlight" className="surface-card--padded">
+          <div className="section-title__eyebrow">Profile Status</div>
+          <h3 style={{ marginTop: '8px', fontSize: '1.02rem', fontWeight: 800 }}>
+            {user?.username ?? 'Loading profile'}
+          </h3>
+          <p className="muted-copy" style={{ marginTop: '10px', fontSize: '0.92rem' }}>
+            Wallet {walletDisplay}
+          </p>
+        </SurfaceCard>
+      }
+    >
+      {loadError ? <div className="error-banner">{loadError}</div> : null}
 
-      {/* Profile card */}
-      <div style={cardStyle}>
-        <h2 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>Profile</h2>
-        <table style={{ borderCollapse: 'collapse', width: '100%' }}>
-          <tbody>
-            {[
-              ['Username', user.username],
-              ['Email', user.email ?? '—'],
-              ['Wallet', user.walletAddress
-                ? `${user.walletAddress.slice(0, 6)}…${user.walletAddress.slice(-4)}`
-                : '—'],
-              ['CHIP Balance', user.chipBalance !== undefined ? user.chipBalance.toLocaleString() : '—'],
-              ['Member since', user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '—'],
-            ].map(([label, value]) => (
-              <tr key={label}>
-                <td
-                  style={{
-                    padding: '0.5rem 0',
-                    color: 'var(--muted)',
-                    fontSize: '0.875rem',
-                    width: '40%',
-                    borderBottom: '1px solid var(--border)',
-                  }}
-                >
-                  {label}
-                </td>
-                <td
-                  style={{
-                    padding: '0.5rem 0',
-                    fontSize: '0.9rem',
-                    borderBottom: '1px solid var(--border)',
-                    fontFamily: label === 'Wallet' ? 'monospace' : 'inherit',
-                  }}
-                >
-                  {value}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <div className="split-grid">
+        <div className="stack-grid">
+          <SurfaceCard>
+            <SectionTitle eyebrow="Profile" title="Owner identity" />
+            {!user ? (
+              <p className="muted-copy">Loading profile...</p>
+            ) : (
+              <div className="console-stat-grid">
+                <div className="console-stat">
+                  <div className="console-stat__label">Username</div>
+                  <div className="console-stat__value">{user.username}</div>
+                </div>
+                <div className="console-stat">
+                  <div className="console-stat__label">Email</div>
+                  <div className="console-stat__value">{user.email ?? '--'}</div>
+                </div>
+                <div className="console-stat">
+                  <div className="console-stat__label">Wallet</div>
+                  <div className="console-stat__value mono-copy">{walletDisplay}</div>
+                </div>
+                <div className="console-stat">
+                  <div className="console-stat__label">CHIP Balance</div>
+                  <div className="console-stat__value">
+                    {user.chipBalance !== undefined ? user.chipBalance.toLocaleString() : '--'}
+                  </div>
+                </div>
+              </div>
+            )}
+          </SurfaceCard>
 
-      {/* Agent registration */}
-      <AgentRegistrationPanel />
-    </main>
+          <SurfaceCard tone="spotlight">
+            <SectionTitle eyebrow="Session" title="Current auth posture" />
+            <div className="console-list">
+              <div className="console-row-card">
+                <div className="console-row-card__body">
+                  <div className="console-row-card__title">
+                    <h3>Web session</h3>
+                    <StatusBadge label="Active" tone="success" />
+                  </div>
+                  <p className="console-row-card__copy">
+                    Access token storage remains centralized in the shared helper,
+                    including compatibility with the older dashboard token key.
+                  </p>
+                </div>
+              </div>
+              <div className="console-row-card">
+                <div className="console-row-card__body">
+                  <div className="console-row-card__title">
+                    <h3>Agent registration</h3>
+                    <StatusBadge label="Wallet Signature" tone="accent" />
+                  </div>
+                  <p className="console-row-card__copy">
+                    The registration flow below still requests a wallet signature
+                    before creating a new agent card.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </SurfaceCard>
+        </div>
+
+        <AgentRegistrationPanel />
+      </div>
+    </ConsoleShell>
   );
 }

@@ -1,18 +1,15 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
+import { BrandShell, FormCard, StatusBadge } from '../../components/chrome';
 import { api } from '../../lib/api';
 
-const inputStyle: React.CSSProperties = {
-  padding: '0.6rem 0.75rem',
-  background: 'var(--bg)',
-  border: '1px solid var(--border)',
-  borderRadius: '6px',
-  color: 'var(--fg)',
-  fontSize: '1rem',
-  outline: 'none',
-  width: '100%',
-};
+const benefits = [
+  'Start with a cleaner front door but keep the existing auth and API behavior intact.',
+  'Register an owner account, then move directly into the arena, ladder, or owner console.',
+  'Optional invite codes still work and continue to award the extra CHIP boost.',
+];
 
 export default function RegisterPage() {
   const [username, setUsername] = useState('');
@@ -47,132 +44,109 @@ export default function RegisterPage() {
   }
 
   return (
-    <main
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '2rem',
-      }}
-    >
-      <div
-        style={{
-          width: '100%',
-          maxWidth: '420px',
-          background: 'var(--card-bg)',
-          border: '1px solid var(--border)',
-          borderRadius: '12px',
-          padding: '2rem',
-        }}
-      >
-        <h1 style={{ fontSize: '1.75rem', marginBottom: '0.25rem' }}>Create Account</h1>
-        <p style={{ color: 'var(--muted)', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
-          Join Agon Arena — get 1,000 CHIP on signup
-        </p>
+    <BrandShell compact>
+      <section className="auth-shell">
+        <div className="auth-shell__story surface-card surface-card--brand surface-card--padded">
+          <p className="brand-kicker">Owner Onboarding</p>
+          <h1 className="auth-shell__title">Create the account behind your agents.</h1>
+          <p className="auth-shell__lead">
+            This is the calmer version of the original onboarding flow: same
+            backend behavior, cleaner surface, better separation between brand
+            entry and operational pages.
+          </p>
 
-        {success ? (
-          <div
-            style={{
-              padding: '1rem',
-              background: '#14532d33',
-              border: '1px solid #22c55e44',
-              borderRadius: '8px',
-              color: '#22c55e',
-              textAlign: 'center',
-            }}
-          >
-            Account created! Redirecting to login…
+          <div className="page-stack">
+            <StatusBadge label="1000 CHIP Signup" tone="warning" />
+            <StatusBadge label="Invite Bonus Supported" tone="accent" />
           </div>
-        ) : (
-          <form
-            onSubmit={handleSubmit}
-            style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
-          >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <label style={{ fontSize: '0.875rem', color: 'var(--muted)' }}>Username</label>
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                required
-                minLength={3}
-                maxLength={50}
-                style={inputStyle}
-                placeholder="coolagent"
-              />
-            </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <label style={{ fontSize: '0.875rem', color: 'var(--muted)' }}>Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                style={inputStyle}
-                placeholder="you@example.com"
-              />
-            </div>
+          <div className="auth-shell__notes">
+            {benefits.map((item) => (
+              <div key={item} className="auth-shell__note">
+                {item}
+              </div>
+            ))}
+          </div>
+        </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <label style={{ fontSize: '0.875rem', color: 'var(--muted)' }}>Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={6}
-                style={inputStyle}
-                placeholder="••••••••"
-              />
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <label style={{ fontSize: '0.875rem', color: 'var(--muted)' }}>
-                Invite Code{' '}
-                <span style={{ fontSize: '0.8rem', opacity: 0.6 }}>(optional — +500 CHIP)</span>
-              </label>
-              <input
-                type="text"
-                value={inviteCode}
-                onChange={(e) => setInviteCode(e.target.value)}
-                style={inputStyle}
-                placeholder="AGON-XXXX-XXXX"
-                maxLength={20}
-              />
-            </div>
-
-            {error && (
-              <p style={{ color: '#ef4444', fontSize: '0.875rem' }}>{error}</p>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              style={{
-                padding: '0.75rem 1.5rem',
-                background: loading ? 'var(--border)' : 'var(--accent)',
-                color: 'var(--fg)',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                fontSize: '1rem',
-                fontWeight: 600,
-              }}
-            >
-              {loading ? 'Creating account…' : 'Create Account'}
-            </button>
-
-            <p style={{ fontSize: '0.875rem', color: 'var(--muted)', textAlign: 'center' }}>
-              Already have an account?{' '}
-              <a href="/login" style={{ color: 'var(--accent)' }}>
-                Sign in
-              </a>
+        <FormCard
+          eyebrow="Account Creation"
+          title="Open your owner workspace"
+          description="Create a login first. Agent registration and console access follow immediately after."
+          footer={
+            <p className="muted-copy" style={{ fontSize: '0.92rem' }}>
+              Already registered?{' '}
+              <Link href="/login" style={{ color: 'var(--accent-blue)' }}>
+                Sign in instead
+              </Link>
+              .
             </p>
-          </form>
-        )}
-      </div>
-    </main>
+          }
+        >
+          {success ? (
+            <div className="success-banner">Account created. Redirecting to sign in...</div>
+          ) : (
+            <form onSubmit={handleSubmit} className="field-grid">
+              <div className="form-field">
+                <label className="form-label">Username</label>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                  minLength={3}
+                  maxLength={50}
+                  className="text-input"
+                  placeholder="coolagent"
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="form-label">Email</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="text-input"
+                  placeholder="you@example.com"
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="form-label">Password</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  className="text-input"
+                  placeholder="••••••••"
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="form-label">Invite Code (optional)</label>
+                <input
+                  type="text"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                  className="text-input"
+                  placeholder="AGON-XXXX-XXXX"
+                  maxLength={20}
+                />
+              </div>
+
+              {error ? <div className="error-banner">{error}</div> : null}
+
+              <button type="submit" disabled={loading} className="button-primary" style={{ width: '100%' }}>
+                {loading ? 'Creating account...' : 'Create Account'}
+              </button>
+            </form>
+          )}
+        </FormCard>
+      </section>
+    </BrandShell>
   );
 }

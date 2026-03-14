@@ -103,8 +103,8 @@ function ThoughtBubble({ entry }: { entry: ActionEntry }) {
         marginTop: 4,
         padding: '5px 8px',
         borderRadius: '6px',
-        background: '#111827',
-        border: `1px solid ${color}30`,
+        background: 'rgba(244, 240, 232, 0.92)',
+        border: `1px solid ${color}25`,
         fontSize: '11px',
         color: 'var(--muted)',
         lineHeight: 1.5,
@@ -259,10 +259,10 @@ function ActionEntry_({ entry }: { entry: ActionEntry }) {
             style={{
               fontSize: '12px',
               fontWeight: 600,
-              color: 'var(--fg)',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+        color: 'var(--fg)',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
               maxWidth: 110,
             }}
             title={agentName}
@@ -336,9 +336,9 @@ export default function ActionLog({ actions }: ActionLogProps) {
               fontSize: '10px',
               padding: '1px 6px',
               borderRadius: '10px',
-              background: '#1a3a5c',
-              color: '#63b3ed',
-              border: '1px solid #2a5a8c',
+              background: 'rgba(47, 120, 207, 0.1)',
+              color: 'var(--accent)',
+              border: '1px solid rgba(47, 120, 207, 0.18)',
             }}
           >
             {actions.length}
@@ -355,9 +355,9 @@ export default function ActionLog({ actions }: ActionLogProps) {
               fontSize: '10px',
               padding: '2px 8px',
               borderRadius: '4px',
-              background: '#1a3a5c',
-              color: '#63b3ed',
-              border: '1px solid #2a5a8c',
+              background: 'rgba(47, 120, 207, 0.1)',
+              color: 'var(--accent)',
+              border: '1px solid rgba(47, 120, 207, 0.18)',
               cursor: 'pointer',
             }}
           >

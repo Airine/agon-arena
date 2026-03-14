@@ -1,11 +1,9 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
+import { BrandShell, FormCard, StatusBadge } from '../../components/chrome';
 import { api, saveSession, type TokenPair, type UserInfo } from '../../lib/api';
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 interface EthereumProvider {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
@@ -16,10 +14,6 @@ declare global {
     ethereum?: EthereumProvider;
   }
 }
-
-// ---------------------------------------------------------------------------
-// SIWE helpers
-// ---------------------------------------------------------------------------
 
 function buildSiweMessage(address: string, nonce: string): string {
   const domain = window.location.host;
@@ -39,10 +33,6 @@ function buildSiweMessage(address: string, nonce: string): string {
   ].join('\n');
 }
 
-// ---------------------------------------------------------------------------
-// Tab components
-// ---------------------------------------------------------------------------
-
 function SiweTab({ onSuccess }: { onSuccess: () => void }) {
   const [status, setStatus] = useState<'idle' | 'connecting' | 'signing' | 'verifying'>('idle');
   const [error, setError] = useState('');
@@ -60,7 +50,6 @@ function SiweTab({ onSuccess }: { onSuccess: () => void }) {
       const accounts = (await window.ethereum.request({
         method: 'eth_requestAccounts',
       })) as string[];
-
       const address = accounts[0];
       if (!address) throw new Error('No account selected');
 
@@ -74,10 +63,10 @@ function SiweTab({ onSuccess }: { onSuccess: () => void }) {
       })) as string;
 
       setStatus('verifying');
-      const result = await api.post<TokenPair & { user: UserInfo }>(
-        '/auth/siwe/verify',
-        { message, signature },
-      );
+      const result = await api.post<TokenPair & { user: UserInfo }>('/auth/siwe/verify', {
+        message,
+        signature,
+      });
 
       saveSession(result);
       onSuccess();
@@ -89,38 +78,28 @@ function SiweTab({ onSuccess }: { onSuccess: () => void }) {
 
   const labels: Record<typeof status, string> = {
     idle: 'Connect Wallet & Sign In',
-    connecting: 'Connecting wallet…',
-    signing: 'Sign the message in your wallet…',
-    verifying: 'Verifying…',
+    connecting: 'Connecting wallet...',
+    signing: 'Sign the message in your wallet...',
+    verifying: 'Verifying...',
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
-        Sign in with your Ethereum wallet using EIP-4361 (Base Sepolia).
+    <div className="page-stack">
+      <p className="muted-copy">
+        Use wallet auth when you want the shortest path into spectator and owner
+        flows on Base Sepolia.
       </p>
 
       <button
         onClick={handleSiweLogin}
         disabled={status !== 'idle'}
-        style={{
-          padding: '0.75rem 1.5rem',
-          background: status !== 'idle' ? 'var(--border)' : 'var(--accent)',
-          color: 'var(--fg)',
-          border: 'none',
-          borderRadius: '6px',
-          cursor: status !== 'idle' ? 'not-allowed' : 'pointer',
-          fontSize: '1rem',
-          fontWeight: 600,
-          transition: 'background 0.2s',
-        }}
+        className="button-primary"
+        style={{ width: '100%' }}
       >
         {labels[status]}
       </button>
 
-      {error && (
-        <p style={{ color: '#ef4444', fontSize: '0.875rem' }}>{error}</p>
-      )}
+      {error ? <div className="error-banner">{error}</div> : null}
     </div>
   );
 }
@@ -135,6 +114,7 @@ function EmailTab({ onSuccess }: { onSuccess: () => void }) {
     e.preventDefault();
     setError('');
     setLoading(true);
+
     try {
       const result = await api.post<TokenPair & { user: UserInfo }>('/auth/login', {
         email,
@@ -150,82 +130,47 @@ function EmailTab({ onSuccess }: { onSuccess: () => void }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-        <label style={{ fontSize: '0.875rem', color: 'var(--muted)' }}>Email</label>
+    <form onSubmit={handleSubmit} className="field-grid">
+      <div className="form-field">
+        <label className="form-label">Email</label>
         <input
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
-          style={inputStyle}
+          className="text-input"
           placeholder="you@example.com"
         />
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-        <label style={{ fontSize: '0.875rem', color: 'var(--muted)' }}>Password</label>
+      <div className="form-field">
+        <label className="form-label">Password</label>
         <input
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
-          style={inputStyle}
+          className="text-input"
           placeholder="••••••••"
         />
       </div>
 
-      {error && (
-        <p style={{ color: '#ef4444', fontSize: '0.875rem' }}>{error}</p>
-      )}
+      {error ? <div className="error-banner">{error}</div> : null}
 
-      <button
-        type="submit"
-        disabled={loading}
-        style={{
-          padding: '0.75rem 1.5rem',
-          background: loading ? 'var(--border)' : 'var(--accent)',
-          color: 'var(--fg)',
-          border: 'none',
-          borderRadius: '6px',
-          cursor: loading ? 'not-allowed' : 'pointer',
-          fontSize: '1rem',
-          fontWeight: 600,
-        }}
-      >
-        {loading ? 'Signing in…' : 'Sign In'}
+      <button type="submit" disabled={loading} className="button-primary" style={{ width: '100%' }}>
+        {loading ? 'Signing in...' : 'Sign In'}
       </button>
-
-      <p style={{ fontSize: '0.875rem', color: 'var(--muted)', textAlign: 'center' }}>
-        No account?{' '}
-        <a href="/register" style={{ color: 'var(--accent)' }}>
-          Register
-        </a>
-      </p>
     </form>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Shared styles
-// ---------------------------------------------------------------------------
-
-const inputStyle: React.CSSProperties = {
-  padding: '0.6rem 0.75rem',
-  background: 'var(--bg)',
-  border: '1px solid var(--border)',
-  borderRadius: '6px',
-  color: 'var(--fg)',
-  fontSize: '1rem',
-  outline: 'none',
-  width: '100%',
-};
-
-// ---------------------------------------------------------------------------
-// Page
-// ---------------------------------------------------------------------------
-
 type Tab = 'siwe' | 'email';
+
+const valueProps = [
+  'Brand-forward landing on the outside, board-shaped control surface inside.',
+  'Session helpers stay intact, including legacy dashboard token mirroring.',
+  'Spectator pages still preserve the dark table where immersion matters.',
+];
 
 export default function LoginPage() {
   const [tab, setTab] = useState<Tab>('siwe');
@@ -235,67 +180,60 @@ export default function LoginPage() {
   }
 
   return (
-    <main
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '2rem',
-      }}
-    >
-      <div
-        style={{
-          width: '100%',
-          maxWidth: '420px',
-          background: 'var(--card-bg)',
-          border: '1px solid var(--border)',
-          borderRadius: '12px',
-          padding: '2rem',
-        }}
-      >
-        <h1 style={{ fontSize: '1.75rem', marginBottom: '0.25rem' }}>Sign In</h1>
-        <p style={{ color: 'var(--muted)', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
-          Welcome back to Agon Arena
-        </p>
+    <BrandShell compact>
+      <section className="auth-shell">
+        <div className="auth-shell__story surface-card surface-card--brand surface-card--padded">
+          <p className="brand-kicker">Owner Access</p>
+          <h1 className="auth-shell__title">Sign into the competition surface.</h1>
+          <p className="auth-shell__lead">
+            The public side should feel editorial. The working side should feel
+            composed. This flow is the bridge between the two.
+          </p>
 
-        {/* Tabs */}
-        <div
-          style={{
-            display: 'flex',
-            borderBottom: '1px solid var(--border)',
-            marginBottom: '1.5rem',
-          }}
-        >
-          {(['siwe', 'email'] as Tab[]).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              style={{
-                flex: 1,
-                padding: '0.6rem',
-                background: 'none',
-                border: 'none',
-                borderBottom: tab === t ? `2px solid var(--accent)` : '2px solid transparent',
-                color: tab === t ? 'var(--fg)' : 'var(--muted)',
-                cursor: 'pointer',
-                fontSize: '0.9rem',
-                fontWeight: tab === t ? 600 : 400,
-                marginBottom: '-1px',
-                transition: 'color 0.15s',
-              }}
-            >
-              {t === 'siwe' ? 'Wallet (SIWE)' : 'Email / Password'}
-            </button>
-          ))}
+          <div className="page-stack">
+            <StatusBadge label="Brand Layer" tone="accent" />
+            <StatusBadge label="Console Layer" tone="success" />
+          </div>
+
+          <div className="auth-shell__notes">
+            {valueProps.map((item) => (
+              <div key={item} className="auth-shell__note">
+                {item}
+              </div>
+            ))}
+          </div>
         </div>
 
-        {tab === 'siwe' ? (
-          <SiweTab onSuccess={handleSuccess} />
-        ) : (
-          <EmailTab onSuccess={handleSuccess} />
-        )}
-      </div>
-    </main>
+        <FormCard
+          eyebrow="Authentication"
+          title="Welcome back"
+          description="Choose wallet auth for the shortest path, or sign in with email and password."
+          footer={
+            <p className="muted-copy" style={{ fontSize: '0.92rem' }}>
+              No account yet?{' '}
+              <Link href="/register" style={{ color: 'var(--accent-blue)' }}>
+                Create one here
+              </Link>
+              .
+            </p>
+          }
+        >
+          <div className="pill-row" style={{ marginBottom: '18px' }}>
+            {(['siwe', 'email'] as Tab[]).map((item) => (
+              <button
+                key={item}
+                onClick={() => setTab(item)}
+                className={`pill-button ${tab === item ? 'pill-button--active' : ''}`}
+                type="button"
+              >
+                {item === 'siwe' ? 'Wallet (SIWE)' : 'Email / Password'}
+              </button>
+            ))}
+          </div>
+
+          {tab === 'siwe' ? <SiweTab onSuccess={handleSuccess} /> : <EmailTab onSuccess={handleSuccess} />}
+        </FormCard>
+      </section>
+    </BrandShell>
   );
 }

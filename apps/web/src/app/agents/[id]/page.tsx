@@ -1,7 +1,17 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { use } from 'react';
+import Link from 'next/link';
+import { use, useEffect, useRef, useState } from 'react';
+import {
+  ConsoleShell,
+  EmptyState,
+  EntityAvatar,
+  MetricCard,
+  SectionTitle,
+  StatusBadge,
+  SurfaceCard,
+} from '../../../components/chrome';
+import { buildConsoleNav } from '../../../components/console-nav';
 import { buildApiUrl } from '../../../lib/api';
 
 interface AgentDetail {
@@ -43,47 +53,12 @@ interface Match {
   createdAt: string;
 }
 
-function StatCard({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <div
-      style={{
-        padding: '16px 20px',
-        background: 'var(--card-bg)',
-        border: '1px solid var(--border)',
-        borderRadius: '8px',
-      }}
-    >
-      <div style={{ fontSize: '11px', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
-        {label}
-      </div>
-      <div style={{ fontSize: '22px', fontWeight: 700, color: color ?? 'var(--fg)' }}>
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function SectionHeader({ title }: { title: string }) {
-  return (
-    <div style={{
-      fontSize: '13px',
-      fontWeight: 700,
-      color: 'var(--muted)',
-      textTransform: 'uppercase',
-      letterSpacing: '0.8px',
-      marginBottom: '12px',
-    }}>
-      {title}
-    </div>
-  );
-}
-
 function ProfitChart({ matches }: { matches: Match[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const chartRef = useRef<any>(null);
 
-  const finished = matches.filter((m) => m.status === 'finished');
+  const finished = matches.filter((match) => match.status === 'finished');
 
   useEffect(() => {
     if (!containerRef.current || finished.length < 2) return;
@@ -94,57 +69,55 @@ function ProfitChart({ matches }: { matches: Match[] }) {
       if (disposed || !containerRef.current) return;
 
       if (!chartRef.current) {
-        chartRef.current = echarts.init(containerRef.current, 'dark');
+        chartRef.current = echarts.init(containerRef.current);
       }
 
       const chronological = [...finished].reverse();
       const cumulative: number[] = [];
-      let sum = 0;
-      for (const m of chronological) {
-        sum += m.profit;
-        cumulative.push(sum);
+      let total = 0;
+      for (const match of chronological) {
+        total += match.profit;
+        cumulative.push(total);
       }
 
       chartRef.current.setOption(
         {
           backgroundColor: 'transparent',
-          grid: { top: 16, right: 12, bottom: 28, left: 60 },
+          grid: { top: 18, right: 12, bottom: 28, left: 56 },
           tooltip: {
             trigger: 'axis',
-            formatter: (params: Array<{ dataIndex: number; value: number }>) => {
-              const p = params[0];
-              if (!p) return '';
-              const match = chronological[p.dataIndex];
-              const sign = p.value >= 0 ? '+' : '';
-              return `Match ${p.dataIndex + 1}: ${match?.arenaName ?? ''}<br/>Cumulative: ${sign}${p.value.toLocaleString()}`;
-            },
+            backgroundColor: '#fffaf0',
+            borderColor: '#d8cfbf',
+            textStyle: { color: '#1b1a16' },
           },
           xAxis: {
             type: 'category',
-            data: chronological.map((_, i) => `M${i + 1}`),
-            axisLabel: { color: '#888', fontSize: 10 },
-            axisLine: { lineStyle: { color: '#444' } },
+            data: chronological.map((_, index) => `M${index + 1}`),
+            axisLabel: { color: '#7d7666', fontSize: 11 },
+            axisLine: { lineStyle: { color: '#d8cfbf' } },
           },
           yAxis: {
             type: 'value',
-            axisLabel: { color: '#888', fontSize: 10 },
-            splitLine: { lineStyle: { color: '#2a2a2a' } },
+            axisLabel: { color: '#7d7666', fontSize: 11 },
+            splitLine: { lineStyle: { color: '#ebe4d6' } },
           },
           series: [
             {
-              name: 'Cumulative Profit',
               type: 'line',
               smooth: true,
               symbol: 'circle',
-              symbolSize: 5,
-              color: '#63b3ed',
+              symbolSize: 6,
+              color: '#2f78cf',
               areaStyle: {
                 color: {
                   type: 'linear',
-                  x: 0, y: 0, x2: 0, y2: 1,
+                  x: 0,
+                  y: 0,
+                  x2: 0,
+                  y2: 1,
                   colorStops: [
-                    { offset: 0, color: 'rgba(99,179,237,0.3)' },
-                    { offset: 1, color: 'rgba(99,179,237,0.02)' },
+                    { offset: 0, color: 'rgba(47, 120, 207, 0.24)' },
+                    { offset: 1, color: 'rgba(47, 120, 207, 0.02)' },
                   ],
                 },
               },
@@ -169,23 +142,16 @@ function ProfitChart({ matches }: { matches: Match[] }) {
     };
   }, [finished]);
 
-  if (finished.length < 2) return null;
+  if (finished.length < 2) {
+    return (
+      <EmptyState
+        title="Not enough match data"
+        description="This agent needs a couple more finished matches before the cumulative profit curve becomes useful."
+      />
+    );
+  }
 
-  return (
-    <div style={{ marginBottom: '28px' }}>
-      <SectionHeader title="Profit Curve" />
-      <div
-        style={{
-          padding: '16px',
-          background: 'var(--card-bg)',
-          border: '1px solid var(--border)',
-          borderRadius: '8px',
-        }}
-      >
-        <div ref={containerRef} style={{ width: '100%', height: '180px' }} />
-      </div>
-    </div>
-  );
+  return <div ref={containerRef} style={{ width: '100%', height: 240 }} />;
 }
 
 export default function AgentDetailPage({
@@ -202,17 +168,20 @@ export default function AgentDetailPage({
 
   useEffect(() => {
     Promise.all([
-      fetch(buildApiUrl(`/agents/${id}`)).then((r) => {
-        if (r.status === 404) { setNotFound(true); return null; }
-        return r.json() as Promise<AgentDetail>;
+      fetch(buildApiUrl(`/agents/${id}`)).then((res) => {
+        if (res.status === 404) {
+          setNotFound(true);
+          return null;
+        }
+        return res.json() as Promise<AgentDetail>;
       }),
       fetch(buildApiUrl(`/skills?agentId=${id}`))
-        .then((r) => r.json())
-        .then((d: { skills: Skill[] }) => d.skills ?? [])
+        .then((res) => res.json())
+        .then((data: { skills: Skill[] }) => data.skills ?? [])
         .catch(() => [] as Skill[]),
       fetch(buildApiUrl(`/agents/${id}/matches`))
-        .then((r) => r.json())
-        .then((d: { matches: Match[] }) => d.matches ?? [])
+        .then((res) => res.json())
+        .then((data: { matches: Match[] }) => data.matches ?? [])
         .catch(() => [] as Match[]),
     ])
       .then(([agentData, skillsData, matchesData]) => {
@@ -226,369 +195,184 @@ export default function AgentDetailPage({
 
   const winRate =
     agent && agent.handsPlayed > 0
-      ? ((agent.handsWon / agent.handsPlayed) * 100).toFixed(1) + '%'
-      : '—';
+      ? `${((agent.handsWon / agent.handsPlayed) * 100).toFixed(1)}%`
+      : '--';
+
+  const detailLabel = agent?.name ?? 'Agent Detail';
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '780px', margin: '0 auto' }}>
-      <a
-        href="/agents"
-        style={{ color: 'var(--muted)', fontSize: '13px', display: 'block', marginBottom: '20px' }}
-      >
-        ← Agent Plaza
-      </a>
-
-      {loading && (
-        <div style={{ textAlign: 'center', color: 'var(--muted)', padding: '48px' }}>
-          Loading agent…
-        </div>
-      )}
-
-      {notFound && !loading && (
-        <div
-          style={{
-            padding: '16px',
-            background: '#2d1a1a',
-            border: '1px solid #742a2a',
-            borderRadius: '8px',
-            color: '#fc8181',
-          }}
-        >
-          Agent not found.
-        </div>
-      )}
-
-      {agent && (
-        <>
-          {/* Agent header */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '20px',
-              marginBottom: '28px',
-              padding: '20px',
-              background: 'var(--card-bg)',
-              border: '1px solid var(--border)',
-              borderRadius: '12px',
-            }}
-          >
-            {/* Avatar */}
-            <div
-              style={{
-                width: '64px',
-                height: '64px',
-                borderRadius: '50%',
-                background: '#1a2b40',
-                border: '2px solid var(--border)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '22px',
-                fontWeight: 700,
-                color: 'var(--fg)',
-                flexShrink: 0,
-                overflow: 'hidden',
-              }}
-            >
-              {agent.avatarUrl ? (
-                <img
-                  src={agent.avatarUrl}
-                  alt={agent.name}
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                />
-              ) : (
-                agent.name.slice(0, 1).toUpperCase()
-              )}
-            </div>
-
-            {/* Info */}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <h1 style={{ fontSize: '22px', fontWeight: 700, color: 'var(--fg)', margin: 0 }}>
-                  {agent.name}
-                </h1>
-                <span
-                  style={{
-                    fontSize: '11px',
-                    padding: '2px 8px',
-                    borderRadius: '4px',
-                    background: agent.isActive ? '#1a4731' : '#2d3748',
-                    color: agent.isActive ? '#68d391' : 'var(--muted)',
-                    border: `1px solid ${agent.isActive ? '#2d8b5a' : 'var(--border)'}`,
-                    fontWeight: 600,
-                  }}
-                >
-                  {agent.isActive ? 'ACTIVE' : 'INACTIVE'}
-                </span>
-                <span
-                  style={{
-                    fontSize: '11px',
-                    padding: '2px 8px',
-                    borderRadius: '4px',
-                    background: '#1a2b40',
-                    color: 'var(--muted)',
-                    border: '1px solid var(--border)',
-                  }}
-                >
-                  v{agent.version}
-                </span>
-              </div>
-              {agent.description && (
-                <p style={{ color: 'var(--muted)', fontSize: '14px', margin: '6px 0 0' }}>
-                  {agent.description}
+    <ConsoleShell
+      section="agents"
+      title={agent?.name ?? 'Agent Detail'}
+      eyebrow="Entity Surface"
+      description={
+        agent?.description ??
+        'A Paperclip-shaped detail page for roster, performance, and match history.'
+      }
+      actions={
+        <Link href="/agents" className="button-secondary">
+          Back to Agent Plaza
+        </Link>
+      }
+      sidebarGroups={buildConsoleNav('agents', {
+        label: detailLabel,
+        meta: agent ? `ELO ${agent.eloRating}` : 'Loading',
+      })}
+      sidebarFooter={
+        <SurfaceCard tone="spotlight" className="surface-card--padded">
+          <div className="section-title__eyebrow">Roster Snapshot</div>
+          <h3 style={{ marginTop: '8px', fontSize: '1.04rem', fontWeight: 800 }}>
+            {agent?.name ?? 'Loading agent'}
+          </h3>
+          <p className="muted-copy" style={{ marginTop: '10px', fontSize: '0.92rem' }}>
+            {agent ? `Joined ${new Date(agent.createdAt).toLocaleDateString()}` : 'Fetching profile'}
+          </p>
+        </SurfaceCard>
+      }
+    >
+      {loading ? (
+        <SurfaceCard>
+          <EmptyState
+            title="Loading agent"
+            description="Fetching profile, skills, and match history."
+          />
+        </SurfaceCard>
+      ) : notFound || !agent ? (
+        <SurfaceCard>
+          <EmptyState
+            title="Agent not found"
+            description="The requested agent could not be loaded from the current API surface."
+            action={
+              <Link href="/agents" className="button-secondary">
+                Return to Agent Plaza
+              </Link>
+            }
+          />
+        </SurfaceCard>
+      ) : (
+        <div className="page-stack">
+          <SurfaceCard>
+            <div className="console-row-card" style={{ padding: 0, border: 'none', background: 'transparent' }}>
+              <EntityAvatar label={agent.name} imageUrl={agent.avatarUrl} size="lg" />
+              <div className="console-row-card__body">
+                <div className="console-row-card__title">
+                  <h3 style={{ fontSize: '1.7rem' }}>{agent.name}</h3>
+                  <StatusBadge label={agent.isActive ? 'Active' : 'Inactive'} tone={agent.isActive ? 'success' : 'neutral'} />
+                  <StatusBadge label={`v${agent.version}`} tone="accent" />
+                </div>
+                <p className="console-row-card__copy">
+                  {agent.description ?? 'No public description registered yet.'}
                 </p>
-              )}
-              <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '8px' }}>
-                Joined {new Date(agent.createdAt).toLocaleDateString()}
+                <div className="console-row-card__meta">
+                  <span>Owner: {agent.ownerId.slice(0, 8)}...</span>
+                  <span>Joined: {new Date(agent.createdAt).toLocaleDateString()}</span>
+                </div>
               </div>
             </div>
+          </SurfaceCard>
 
-            {/* ELO */}
-            <div
-              style={{
-                textAlign: 'center',
-                padding: '12px 20px',
-                background: '#1a1a2e',
-                borderRadius: '8px',
-                border: '1px solid #4a5568',
-                flexShrink: 0,
-              }}
-            >
-              <div style={{ fontSize: '10px', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                ELO Rating
-              </div>
-              <div style={{ fontSize: '28px', fontWeight: 700, color: '#f6e05e', lineHeight: 1.2 }}>
-                {agent.eloRating}
-              </div>
-            </div>
-          </div>
-
-          {/* Stats grid */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
-              gap: '12px',
-              marginBottom: '32px',
-            }}
-          >
-            <StatCard label="Hands Played" value={agent.handsPlayed.toLocaleString()} />
-            <StatCard label="Hands Won" value={agent.handsWon.toLocaleString()} color="#68d391" />
-            <StatCard label="Win Rate" value={winRate} color="#63b3ed" />
-            <StatCard
+          <div className="metric-grid">
+            <MetricCard label="ELO Rating" value={agent.eloRating.toLocaleString()} />
+            <MetricCard label="Hands Played" value={agent.handsPlayed.toLocaleString()} />
+            <MetricCard label="Win Rate" value={winRate} />
+            <MetricCard
               label="Total Chips Won"
-              value={`$${agent.totalChipsWon.toLocaleString()}`}
-              color="#f6ad55"
+              value={`${agent.totalChipsWon >= 0 ? '+' : ''}${agent.totalChipsWon.toLocaleString()}`}
+              description={matches.length ? `${matches.length} recorded matches` : 'No matches yet'}
             />
           </div>
 
-          {/* Profit curve chart */}
-          <ProfitChart matches={matches} />
+          <div className="split-grid">
+            <div className="stack-grid">
+              <SurfaceCard>
+                <SectionTitle eyebrow="Performance" title="Profit curve" />
+                <ProfitChart matches={matches} />
+              </SurfaceCard>
 
-          {/* Skills */}
-          <div style={{ marginBottom: '28px' }}>
-            <SectionHeader title={`Skills (${skills.length})`} />
-            {skills.length === 0 ? (
-              <div
-                style={{
-                  padding: '24px',
-                  background: 'var(--card-bg)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '8px',
-                  color: 'var(--muted)',
-                  fontSize: '13px',
-                  textAlign: 'center',
-                }}
-              >
-                No public skills registered.
-              </div>
-            ) : (
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-                  gap: '10px',
-                }}
-              >
-                {skills.map((skill) => (
-                  <div
-                    key={skill.id}
-                    style={{
-                      padding: '14px 16px',
-                      background: 'var(--card-bg)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '8px',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                      <div style={{
-                        fontSize: '14px',
-                        fontWeight: 600,
-                        color: 'var(--fg)',
-                        flex: 1,
-                        minWidth: 0,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}>
-                        {skill.name}
+              <SurfaceCard>
+                <SectionTitle eyebrow="Skill Surface" title={`Skills (${skills.length})`} />
+                {skills.length === 0 ? (
+                  <EmptyState
+                    title="No public skills"
+                    description="This agent has not published any visible skills yet."
+                  />
+                ) : (
+                  <div className="console-list">
+                    {skills.map((skill) => (
+                      <div key={skill.id} className="console-row-card">
+                        <div className="console-row-card__body">
+                          <div className="console-row-card__title">
+                            <h3>{skill.name}</h3>
+                            <StatusBadge
+                              label={skill.visibility}
+                              tone={skill.visibility === 'public' ? 'success' : 'neutral'}
+                            />
+                          </div>
+                          <p className="console-row-card__copy">
+                            {skill.description ?? 'No skill description supplied.'}
+                          </p>
+                          <div className="console-row-card__meta">
+                            <span>Version {skill.currentVersion}</span>
+                            <span>Updated {new Date(skill.updatedAt).toLocaleDateString()}</span>
+                          </div>
+                        </div>
                       </div>
-                      <span
+                    ))}
+                  </div>
+                )}
+              </SurfaceCard>
+            </div>
+
+            <SurfaceCard>
+              <SectionTitle eyebrow="Match History" title={`Recent matches (${matches.length})`} />
+              {matches.length === 0 ? (
+                <EmptyState
+                  title="No match history"
+                  description="Once the agent sits in a table, its arena results will appear here."
+                />
+              ) : (
+                <div className="console-data-table">
+                  <div
+                    className="console-data-table__head"
+                    style={{ gridTemplateColumns: '1fr 92px 110px 88px' }}
+                  >
+                    <div>Arena</div>
+                    <div>Mode</div>
+                    <div style={{ textAlign: 'right' }}>Result</div>
+                    <div style={{ textAlign: 'right' }}>Status</div>
+                  </div>
+                  {matches.map((match) => (
+                    <div
+                      key={`${match.arenaId}-${match.createdAt}`}
+                      className="console-data-table__row"
+                      style={{ gridTemplateColumns: '1fr 92px 110px 88px' }}
+                    >
+                      <div>{match.arenaName}</div>
+                      <div className="console-data-table__cell--muted">{match.mode}</div>
+                      <div
                         style={{
-                          fontSize: '10px',
-                          padding: '1px 6px',
-                          borderRadius: '4px',
-                          background: skill.visibility === 'public' ? '#1a4731' : '#2d3748',
-                          color: skill.visibility === 'public' ? '#68d391' : 'var(--muted)',
-                          border: `1px solid ${skill.visibility === 'public' ? '#2d8b5a' : 'var(--border)'}`,
-                          fontWeight: 600,
-                          flexShrink: 0,
+                          textAlign: 'right',
+                          color: match.profit >= 0 ? 'var(--accent-green)' : 'var(--accent-red)',
+                          fontWeight: 800,
                         }}
                       >
-                        {skill.visibility === 'public' ? 'PUBLIC' : 'PRIVATE'}
-                      </span>
-                    </div>
-                    {skill.description && (
-                      <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '8px', lineHeight: 1.4 }}>
-                        {skill.description}
-                      </div>
-                    )}
-                    <div style={{ fontSize: '11px', color: 'var(--muted)' }}>
-                      v{skill.currentVersion}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Match History */}
-          <div style={{ marginBottom: '28px' }}>
-            <SectionHeader title={`Match History (${matches.length})`} />
-            {matches.length === 0 ? (
-              <div
-                style={{
-                  padding: '24px',
-                  background: 'var(--card-bg)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '8px',
-                  color: 'var(--muted)',
-                  fontSize: '13px',
-                  textAlign: 'center',
-                }}
-              >
-                No match history yet.
-              </div>
-            ) : (
-              <div
-                style={{
-                  background: 'var(--card-bg)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '8px',
-                  overflow: 'hidden',
-                }}
-              >
-                {/* Table header */}
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 90px 110px 80px',
-                    padding: '10px 16px',
-                    borderBottom: '1px solid var(--border)',
-                    fontSize: '11px',
-                    color: 'var(--muted)',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px',
-                  }}
-                >
-                  <div>Arena</div>
-                  <div>Mode</div>
-                  <div style={{ textAlign: 'right' }}>Result</div>
-                  <div style={{ textAlign: 'right' }}>Status</div>
-                </div>
-
-                {/* Table rows */}
-                {matches.map((match, i) => {
-                  const isGain = match.profit >= 0;
-                  return (
-                    <div
-                      key={match.arenaId}
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: '1fr 90px 110px 80px',
-                        padding: '12px 16px',
-                        borderBottom: i < matches.length - 1 ? '1px solid var(--border)' : 'none',
-                        alignItems: 'center',
-                      }}
-                    >
-                      <div style={{
-                        fontSize: '13px',
-                        color: 'var(--fg)',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        paddingRight: '8px',
-                      }}>
-                        {match.arenaName}
-                      </div>
-                      <div style={{ fontSize: '12px', color: 'var(--muted)', textTransform: 'capitalize' }}>
-                        {match.mode}
-                      </div>
-                      <div style={{ textAlign: 'right', fontSize: '13px', fontWeight: 600, color: isGain ? '#68d391' : '#fc8181' }}>
-                        {isGain ? '+' : ''}{match.profit.toLocaleString()}
+                        {match.profit >= 0 ? '+' : ''}
+                        {match.profit.toLocaleString()}
                       </div>
                       <div style={{ textAlign: 'right' }}>
-                        <span
-                          style={{
-                            fontSize: '10px',
-                            padding: '2px 8px',
-                            borderRadius: '4px',
-                            background: match.status === 'running' ? '#1a4731' : '#1a2b40',
-                            color: match.status === 'running' ? '#68d391' : 'var(--muted)',
-                            border: `1px solid ${match.status === 'running' ? '#2d8b5a' : 'var(--border)'}`,
-                            fontWeight: 600,
-                          }}
-                        >
-                          {match.status.toUpperCase()}
-                        </span>
+                        <StatusBadge
+                          label={match.status}
+                          tone={match.status === 'running' ? 'accent' : 'neutral'}
+                        />
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </SurfaceCard>
           </div>
-
-          {/* Metadata */}
-          {agent.metadata && Object.keys(agent.metadata).length > 0 && (
-            <div
-              style={{
-                padding: '16px 20px',
-                background: 'var(--card-bg)',
-                border: '1px solid var(--border)',
-                borderRadius: '8px',
-              }}
-            >
-              <div style={{ fontSize: '12px', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' }}>
-                Metadata
-              </div>
-              <pre
-                style={{
-                  margin: 0,
-                  fontSize: '12px',
-                  color: 'var(--fg)',
-                  background: 'none',
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-all',
-                }}
-              >
-                {JSON.stringify(agent.metadata, null, 2)}
-              </pre>
-            </div>
-          )}
-        </>
+        </div>
       )}
-    </div>
+    </ConsoleShell>
   );
 }
