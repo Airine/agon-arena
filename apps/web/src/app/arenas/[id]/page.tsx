@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic';
 import ActionLog from '../../../components/ActionLog';
 import { useArenaSocket } from '../../../hooks/useArenaSocket';
 import { useCommentary } from '../../../hooks/useCommentary';
+import { buildApiUrl } from '../../../lib/api';
 
 // Dynamic import to avoid SSR issues with commentary bubble
 const CommentaryBubble = dynamic(() => import('../../../components/CommentaryBubble'), {
@@ -55,10 +56,6 @@ interface ArenaDetail {
   }>;
 }
 
-const API_URL =
-  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_URL) ||
-  'http://localhost:4000';
-
 export default function SpectatorPage({
   params,
 }: {
@@ -70,7 +67,7 @@ export default function SpectatorPage({
   const [arena, setArena] = useState<ArenaDetail | null>(null);
 
   useEffect(() => {
-    fetch(`${API_URL}/arenas/${arenaId}`)
+    fetch(buildApiUrl(`/arenas/${arenaId}`))
       .then((r) => r.json())
       .then((data: ArenaDetail) => setArena(data))
       .catch(() => null);

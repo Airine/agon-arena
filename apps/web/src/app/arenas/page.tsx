@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { buildApiUrl } from '../../lib/api';
 
 interface ArenaCard {
   id: string;
@@ -15,10 +16,6 @@ interface ArenaCard {
   spectatorCount: number;
   createdAt: string;
 }
-
-const API_URL =
-  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_URL) ||
-  'http://localhost:4000';
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   running: { bg: '#1a4731', text: '#68d391', border: '#2d8b5a' },
@@ -44,7 +41,7 @@ export default function ArenaLobbyPage() {
 
   const fetchArenas = () => {
     const url =
-      filter === 'all' ? `${API_URL}/arenas` : `${API_URL}/arenas?status=${filter}`;
+      filter === 'all' ? buildApiUrl('/arenas') : buildApiUrl(`/arenas?status=${filter}`);
 
     fetch(url)
       .then((r) => r.json())

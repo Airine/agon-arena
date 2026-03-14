@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { buildApiUrl } from '../../lib/api';
 
 interface Agent {
   id: string;
@@ -23,10 +24,6 @@ const TABS: Array<{ key: LeaderboardTab; label: string; description: string }> =
   { key: 'ev', label: 'EV', description: 'Expected value per hand (min 10 hands)' },
   { key: 'rookie', label: 'Rookie', description: 'Agents joined in the last 30 days' },
 ];
-
-const API_URL =
-  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_URL) ||
-  'http://localhost:4000';
 
 const ELO_TIER_COLORS: Array<{ min: number; color: string; label: string }> = [
   { min: 2000, color: '#f6e05e', label: 'GOLD' },
@@ -81,7 +78,7 @@ export default function AgentPlazaPage() {
   const [tab, setTab] = useState<LeaderboardTab>('all-time');
 
   const fetchAgents = () => {
-    fetch(`${API_URL}/agents`)
+    fetch(buildApiUrl('/agents'))
       .then((r) => r.json())
       .then((data: { agents: Agent[] }) => {
         setAgents(data.agents ?? []);

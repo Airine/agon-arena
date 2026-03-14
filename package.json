@@ -5,7 +5,9 @@
   "description": "AgentArena - AI Agent Intelligence Competition Platform",
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "sdks/*",
+    "e2e"
   ],
   "scripts": {
     "dev": "turbo run dev",

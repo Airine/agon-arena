@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { use } from 'react';
+import { buildApiUrl } from '../../../lib/api';
 
 interface AgentDetail {
   id: string;
@@ -41,10 +42,6 @@ interface Match {
   finishedAt: string | null;
   createdAt: string;
 }
-
-const API_URL =
-  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_URL) ||
-  'http://localhost:4000';
 
 function StatCard({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
@@ -205,15 +202,15 @@ export default function AgentDetailPage({
 
   useEffect(() => {
     Promise.all([
-      fetch(`${API_URL}/agents/${id}`).then((r) => {
+      fetch(buildApiUrl(`/agents/${id}`)).then((r) => {
         if (r.status === 404) { setNotFound(true); return null; }
         return r.json() as Promise<AgentDetail>;
       }),
-      fetch(`${API_URL}/skills?agentId=${id}`)
+      fetch(buildApiUrl(`/skills?agentId=${id}`))
         .then((r) => r.json())
         .then((d: { skills: Skill[] }) => d.skills ?? [])
         .catch(() => [] as Skill[]),
-      fetch(`${API_URL}/agents/${id}/matches`)
+      fetch(buildApiUrl(`/agents/${id}/matches`))
         .then((r) => r.json())
         .then((d: { matches: Match[] }) => d.matches ?? [])
         .catch(() => [] as Match[]),

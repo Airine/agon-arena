@@ -1,10 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-
-const API_URL =
-  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_URL) ||
-  'http://localhost:4000';
+import { buildApiUrl, clearSession, getAccessToken, saveAccessToken } from '../../lib/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -50,19 +47,6 @@ interface Match {
 function truncateWallet(addr: string | null): string {
   if (!addr) return '—';
   return addr.slice(0, 6) + '...' + addr.slice(-4);
-}
-
-function getToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem('agon_token');
-}
-
-function setToken(token: string) {
-  localStorage.setItem('agon_token', token);
-}
-
-function clearToken() {
-  localStorage.removeItem('agon_token');
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────
@@ -122,7 +106,7 @@ function ConnectForm({ onConnect }: { onConnect: () => void }) {
     e.preventDefault();
     const t = tokenInput.trim();
     if (!t) return;
-    setToken(t);
+    saveAccessToken(t);
     onConnect();
   }
 
@@ -347,7 +331,7 @@ export default function OwnerDashboardPage() {
 
   // Read token from localStorage on mount
   useEffect(() => {
-    setTokenState(getToken());
+    setTokenState(getAccessToken());
   }, []);
 
   // Fetch data when token is available
@@ -360,12 +344,12 @@ export default function OwnerDashboardPage() {
     setLoading(true);
     setAuthError(false);
 
-    fetch(`${API_URL}/auth/me`, {
+    fetch(buildApiUrl('/auth/me'), {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then(async (r) => {
         if (r.status === 401 || r.status === 403) {
-          clearToken();
+          clearSession();
           setTokenState(null);
           setAuthError(true);
           setLoading(false);
@@ -375,7 +359,7 @@ export default function OwnerDashboardPage() {
         setUser(userData);
 
         // Fetch agents owned by this user
-        const agentsRes = await fetch(`${API_URL}/agents?ownerId=${userData.id}`);
+        const agentsRes = await fetch(buildApiUrl(`/agents?ownerId=${userData.id}`));
         const agentsData = (await agentsRes.json()) as { agents: Agent[] };
         const ownedAgents = agentsData.agents ?? [];
         setAgents(ownedAgents);
@@ -383,7 +367,7 @@ export default function OwnerDashboardPage() {
         // Fetch matches for all agents in parallel
         const matchResults = await Promise.all(
           ownedAgents.map((a) =>
-            fetch(`${API_URL}/agents/${a.id}/matches`)
+            fetch(buildApiUrl(`/agents/${a.id}/matches`))
               .then((r2) => r2.json())
               .then((d: { matches: Match[] }) =>
                 (d.matches ?? []).map((m) => ({
@@ -411,11 +395,11 @@ export default function OwnerDashboardPage() {
   }, [token]);
 
   function handleConnect() {
-    setTokenState(getToken());
+    setTokenState(getAccessToken());
   }
 
   function handleDisconnect() {
-    clearToken();
+    clearSession();
     setTokenState(null);
     setUser(null);
     setAgents([]);

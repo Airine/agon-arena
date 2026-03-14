@@ -7,6 +7,7 @@ import type {
   WsHandStart,
   WsHandEnd,
 } from '@agon/types';
+import { buildApiUrl } from '../lib/api';
 import { socketManager } from '../lib/socketManager';
 
 export interface ActionEntry {
@@ -37,10 +38,6 @@ export interface UseArenaSocketResult {
 
 const WS_URL =
   (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_WS_URL) ||
-  'http://localhost:4000';
-
-const API_URL =
-  (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_URL) ||
   'http://localhost:4000';
 
 const MAX_ACTION_LOG = 200;
@@ -178,7 +175,7 @@ export function useArenaSocket(arenaId: string): UseArenaSocketResult {
 
     // Fetch snapshot on reconnect to restore state immediately
     const unsubReconnect = socketManager.onReconnect(() => {
-      fetch(`${API_URL}/arenas/${arenaId}/snapshot`)
+      fetch(buildApiUrl(`/arenas/${arenaId}/snapshot`))
         .then((r) => (r.ok ? r.json() : null))
         .then((data: { snapshot: { gameState: GameState } | null } | null) => {
           if (data?.snapshot?.gameState) {
