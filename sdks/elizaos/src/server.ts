@@ -1,4 +1,4 @@
-/** Webhook server for receiving Agon Arena action requests. */
+/** Legacy webhook server retained for compatibility helpers. */
 
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { AAPActionRequest, AAPActionResponse } from './types.js';

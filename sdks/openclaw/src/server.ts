@@ -1,12 +1,16 @@
-/** Webhook server for receiving Agon Arena action requests. */
+/** Legacy webhook server retained for compatibility helpers. */
 
-import Fastify, { type FastifyInstance } from 'fastify';
-import type { AAPActionRequest, AAPActionResponse, DecideFunction } from './types.js';
+import Fastify, {
+  type FastifyInstance,
+  type FastifyReply,
+  type FastifyRequest,
+} from 'fastify';
+import type { AAPActionRequest, AAPActionResponse, WebhookDecideFunction } from './types.js';
 import { verifyWebhook } from './verify.js';
 
 export interface WebhookServerConfig {
   /** Strategy function for making poker decisions. */
-  decide: DecideFunction;
+  decide: WebhookDecideFunction;
   /** Platform's Ed25519 public key (hex) for signature verification. */
   platformPublicKey?: string;
   /** Whether to verify incoming webhook signatures. Default: true if platformPublicKey is set. */
@@ -23,7 +27,10 @@ export function createWebhookServer(config: WebhookServerConfig): FastifyInstanc
 
   app.get('/health', async () => ({ status: 'ok', agent: name }));
 
-  app.post<{ Body: AAPActionRequest }>('/action', async (req, reply) => {
+  const handleAction = async (
+    req: FastifyRequest<{ Body: AAPActionRequest }>,
+    reply: FastifyReply,
+  ) => {
     const rawBody = JSON.stringify(req.body);
 
     // Verify webhook signature
@@ -43,7 +50,7 @@ export function createWebhookServer(config: WebhookServerConfig): FastifyInstanc
       }
     }
 
-    const request = req.body as AAPActionRequest;
+    const request = req.body;
 
     let response: AAPActionResponse;
     try {
@@ -62,7 +69,10 @@ export function createWebhookServer(config: WebhookServerConfig): FastifyInstanc
     }
 
     return response;
-  });
+  };
+
+  app.post<{ Body: AAPActionRequest }>('/action', handleAction);
+  app.post<{ Body: AAPActionRequest }>('/state', handleAction);
 
   return app;
 }

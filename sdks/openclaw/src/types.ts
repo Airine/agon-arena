@@ -67,6 +67,52 @@ export interface AAPActionResponse {
   amount?: number;
 }
 
+export interface AgentCard {
+  name: string;
+  description?: string;
+  version?: string;
+  capabilities?: string[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface AgentTurnRequest {
+  turnId: string;
+  arenaId: string;
+  handId: string;
+  handNumber: number;
+  agentId: string;
+  validActions: ActionType[];
+  deadlineMs: number;
+  callAmount: number;
+  minRaise: number;
+  maxRaise: number;
+  state: GameState;
+  submitPath: string;
+}
+
+export interface AgentRuntimeSnapshot {
+  arenaId: string;
+  agentId: string;
+  handId: string | null;
+  handNumber: number;
+  publicState: GameState | null;
+  privateState: GameState | null;
+  pendingTurn: AgentTurnRequest | null;
+  updatedAt: number;
+}
+
+export interface AgentArenaEvent {
+  arenaId: string;
+  type: 'hand:start' | 'hand:action' | 'hand:end' | 'arena:finished';
+  handId?: string;
+  handNumber?: number;
+  actorAgentId?: string;
+  action?: { type: ActionType; amount?: number };
+  state?: GameState;
+  winners?: Array<{ agentId: string; amount: number }>;
+  updatedAt: number;
+}
+
 export type HandRank =
   | 'royal_flush'
   | 'straight_flush'
@@ -83,17 +129,26 @@ export type HandRank =
 export interface AgonSkillConfig {
   /** Agon Arena API base URL. */
   apiUrl: string;
-  /** Agent's webhook server port. */
-  port?: number;
-  /** Agent's webhook server host. */
-  host?: string;
-  /** Platform's Ed25519 public key (hex) for verifying incoming webhooks. */
-  platformPublicKey?: string;
-  /** Whether to verify incoming webhook signatures. Default: true. */
-  verifySignatures?: boolean;
+  /** EVM private key used for wallet-signed agent bootstrap. */
+  agentWalletPrivateKey?: string;
+  /** Optional description stored on the agent card. */
+  agentDescription?: string;
+  /** Optional semantic version for the agent card. */
+  agentVersion?: string;
+  /** Optional capabilities list advertised on the agent card. */
+  agentCapabilities?: string[];
+  /** Optional metadata object advertised on the agent card. */
+  agentMetadata?: Record<string, unknown>;
+  /** Arena to auto-join after bootstrap. Defaults to the first waiting arena. */
+  autoJoinArenaId?: string;
 }
 
 /** Strategy function that decides the agent's next action. */
 export type DecideFunction = (
+  request: AgentTurnRequest,
+) => AAPActionResponse | Promise<AAPActionResponse>;
+
+/** Legacy webhook strategy function retained for compatibility helpers. */
+export type WebhookDecideFunction = (
   request: AAPActionRequest,
 ) => AAPActionResponse | Promise<AAPActionResponse>;

@@ -39,6 +39,8 @@ async function seed() {
     .values([
       {
         ownerId: user1!.id,
+        creatorUserId: user1!.id,
+        agentAddress: null,
         name: 'PokerBot-Alpha',
         description: 'Conservative strategy agent',
         apiUrl: 'http://localhost:5001/action',
@@ -46,6 +48,8 @@ async function seed() {
       },
       {
         ownerId: user1!.id,
+        creatorUserId: user1!.id,
+        agentAddress: null,
         name: 'PokerBot-Beta',
         description: 'Aggressive bluffing agent',
         apiUrl: 'http://localhost:5002/action',
@@ -53,6 +57,8 @@ async function seed() {
       },
       {
         ownerId: user2!.id,
+        creatorUserId: user2!.id,
+        agentAddress: null,
         name: 'DeepStack-v1',
         description: 'Neural network based agent',
         apiUrl: 'http://localhost:5003/action',

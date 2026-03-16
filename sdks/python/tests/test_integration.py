@@ -28,6 +28,7 @@ from agon_sdk.models import (
     Action,
     ActionRequest,
     ActionResponse,
+    AgentAccessCard,
     Card,
     GameState,
     PlayerState,
@@ -183,7 +184,7 @@ class TestVerifyWebhook:
             verify_webhook(
                 body=tampered_body,
                 signature_hex=sig,
-                timestamp=tampered_body,  # type: ignore[arg-type]
+                timestamp=timestamp,
                 nonce=nonce,
                 platform_public_key_hex=pub_hex,
             )
@@ -373,6 +374,35 @@ class TestAgonAgentServer:
         assert resp.status_code == 200
         assert resp.json()["action"] == "call"
 
+    def test_state_alias_with_valid_signature_passes(self):
+        """The /state endpoint remains compatible with live platform dispatches."""
+        private_key, public_key = make_keypair()
+        pub_hex = public_key_hex(public_key)
+
+        agent = SimplePokerAgent(platform_public_key=pub_hex)
+        client = TestClient(agent.app)
+
+        request = make_action_request(valid_actions=["fold", "call"])
+        body = json.dumps(request.model_dump()).encode()
+
+        timestamp = str(int(time.time()))
+        nonce = "nonce-state-001"
+        sig = sign_webhook(private_key, body, timestamp, nonce)
+
+        resp = client.post(
+            "/state",
+            content=body,
+            headers={
+                "Content-Type": "application/json",
+                "x-agon-signature": sig,
+                "x-agon-timestamp": timestamp,
+                "x-agon-nonce": nonce,
+            },
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["action"] == "call"
+
     def test_action_with_invalid_signature_returns_401(self):
         """Invalid/forged signature → 401 Unauthorized."""
         private_key, public_key = make_keypair()
@@ -538,14 +568,15 @@ class TestAgonClientFlow:
         return mock
 
     def test_register_flow(self):
-        """register() calls POST /auth/register and stores the token."""
+        """register() calls POST /auth/register and stores the access token."""
         from agon_sdk.client import AgonClient
 
-        with patch("agon_sdk.client.httpx.Client") as MockClient:
+        with patch("agon_sdk.client.httpx.Client") as mock_client_class:
             mock_http = MagicMock()
-            MockClient.return_value = mock_http
+            mock_client_class.return_value = mock_http
             mock_http.post.return_value = self._make_mock_response({
-                "token": "jwt-access-token",
+                "accessToken": "jwt-access-token",
+                "refreshToken": "jwt-refresh-token",
                 "user": {"id": "user-001", "username": "myagent"},
             })
 
@@ -565,43 +596,40 @@ class TestAgonClientFlow:
                 },
                 headers={"Content-Type": "application/json"},
             )
-            assert result["token"] == "jwt-access-token"
-            # Token is stored on the client
+            assert result["accessToken"] == "jwt-access-token"
             assert client._token == "jwt-access-token"
+            assert client._refresh_token == "jwt-refresh-token"
 
     def test_create_agent_flow(self):
-        """create_agent() calls POST /agents with agent registration payload."""
+        """create_agent() calls POST /agents with the metadata-only public schema."""
         from agon_sdk.client import AgonClient
 
-        with patch("agon_sdk.client.httpx.Client") as MockClient:
+        with patch("agon_sdk.client.httpx.Client") as mock_client_class:
             mock_http = MagicMock()
-            MockClient.return_value = mock_http
+            mock_client_class.return_value = mock_http
             mock_http.post.return_value = self._make_mock_response({
                 "agent": {"id": "agent-001", "name": "PythonBot"},
-                "apiKey": "agon-api-key-xyz",
-                "platformPublicKey": "a" * 64,
             })
 
             client = AgonClient(base_url="https://api.agon.win", token="jwt-token")
             result = client.create_agent(
                 name="PythonBot",
-                api_url="https://my-agent.example.com/action",
-                webhook_public_key="b" * 64,
+                metadata={"framework": "python"},
             )
 
             mock_http.post.assert_called_once()
             call_kwargs = mock_http.post.call_args
             assert call_kwargs[0][0] == "/agents"
-            assert result["apiKey"] == "agon-api-key-xyz"
-            assert result["platformPublicKey"] == "a" * 64
+            assert call_kwargs[1]["json"]["metadata"] == {"framework": "python"}
+            assert result["agent"]["name"] == "PythonBot"
 
     def test_join_arena_flow(self):
         """join_arena() calls POST /arenas/{id}/join with agentId."""
         from agon_sdk.client import AgonClient
 
-        with patch("agon_sdk.client.httpx.Client") as MockClient:
+        with patch("agon_sdk.client.httpx.Client") as mock_client_class:
             mock_http = MagicMock()
-            MockClient.return_value = mock_http
+            mock_client_class.return_value = mock_http
             mock_http.post.return_value = self._make_mock_response({"seat": 0})
 
             client = AgonClient(base_url="https://api.agon.win", token="jwt-token")
@@ -617,6 +645,43 @@ class TestAgonClientFlow:
             )
             assert result["seat"] == 0
 
+    def test_agent_access_flow(self):
+        """agent_access() signs headers, stores the session, and posts the agent card."""
+        from agon_sdk.client import AgonClient
+
+        with patch("agon_sdk.client.httpx.Client") as mock_client_class:
+            mock_http = MagicMock()
+            mock_client_class.return_value = mock_http
+            mock_http.post.return_value = self._make_mock_response({
+                "accessToken": "agent-access-token",
+                "refreshToken": "agent-refresh-token",
+                "created": True,
+                "agent": {"id": "agent-001", "name": "PythonBot"},
+                "user": {"id": "user-001", "walletAddress": "0x1234"},
+            })
+
+            client = AgonClient(base_url="https://api.agon.win")
+            result = client.agent_access(
+                wallet_private_key="0x59c6995e998f97a5a0044966f0945382d7f6b7cdb5fd3f9f0d9d8cf4f5d457b1",
+                agent_card=AgentAccessCard(
+                    name="PythonBot",
+                    capabilities=["socket:runtime"],
+                ),
+                timestamp_ms=1710000000000,
+                nonce="nonce-agent-access-1",
+            )
+
+            mock_http.post.assert_called_once()
+            call_args = mock_http.post.call_args
+            assert call_args[0][0] == "/auth/agent/access"
+            assert call_args[1]["json"]["agentCard"]["capabilities"] == ["socket:runtime"]
+            assert call_args[1]["headers"]["X-Agent-Address"].startswith("0x")
+            assert call_args[1]["headers"]["X-Nonce"] == "nonce-agent-access-1"
+            assert call_args[1]["headers"]["X-Signature"].startswith("0x")
+            assert result["agent"]["id"] == "agent-001"
+            assert client._token == "agent-access-token"
+            assert client._refresh_token == "agent-refresh-token"
+
     def test_full_registration_to_join_flow(self):
         """
         Complete flow: register → create_agent → list_arenas → join_arena.
@@ -624,21 +689,20 @@ class TestAgonClientFlow:
         """
         from agon_sdk.client import AgonClient
 
-        with patch("agon_sdk.client.httpx.Client") as MockClient:
+        with patch("agon_sdk.client.httpx.Client") as mock_client_class:
             mock_http = MagicMock()
-            MockClient.return_value = mock_http
+            mock_client_class.return_value = mock_http
 
             # Step 1: Register
             mock_http.post.side_effect = [
                 self._make_mock_response({
-                    "token": "my-jwt-token",
+                    "accessToken": "my-jwt-token",
+                    "refreshToken": "my-refresh-token",
                     "user": {"id": "user-001", "username": "pybot"},
                 }),
                 # Step 2: Create agent
                 self._make_mock_response({
                     "agent": {"id": "agent-001"},
-                    "apiKey": "api-key-001",
-                    "platformPublicKey": "c" * 64,
                 }),
                 # Step 4: Join arena
                 self._make_mock_response({"seat": 2}),
@@ -651,16 +715,14 @@ class TestAgonClientFlow:
 
             # Step 1: Register (sets token)
             reg_result = client.register("pybot", "pybot@example.com", "pass123")
-            assert reg_result["token"] == "my-jwt-token"
+            assert reg_result["accessToken"] == "my-jwt-token"
 
             # Step 2: Create agent
             agent_result = client.create_agent(
                 name="PyPokerBot",
-                api_url="https://pybot.example.com/action",
-                webhook_public_key="d" * 64,
+                metadata={"framework": "python"},
             )
-            platform_pub_key = agent_result["platformPublicKey"]
-            assert len(platform_pub_key) == 64
+            assert agent_result["agent"]["id"] == "agent-001"
 
             # Step 3: Find available arenas
             arenas = client.list_arenas(status="waiting")
@@ -675,9 +737,9 @@ class TestAgonClientFlow:
         """get_platform_public_key() returns the hex Ed25519 key."""
         from agon_sdk.client import AgonClient
 
-        with patch("agon_sdk.client.httpx.Client") as MockClient:
+        with patch("agon_sdk.client.httpx.Client") as mock_client_class:
             mock_http = MagicMock()
-            MockClient.return_value = mock_http
+            mock_client_class.return_value = mock_http
             mock_http.get.return_value = self._make_mock_response({
                 "publicKey": "e" * 64,
             })

@@ -1,4 +1,4 @@
-"""FastAPI-based webhook server template for Agon agents."""
+"""Legacy FastAPI webhook server template kept for compatibility helpers."""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 
-from agon_sdk.models import ActionRequest, ActionResponse, Action
+from agon_sdk.models import Action, ActionRequest, ActionResponse
 from agon_sdk.verify import verify_webhook
 
 logger = logging.getLogger("agon_sdk")
@@ -70,8 +70,7 @@ class AgonAgent(ABC):
         async def health() -> dict[str, Any]:
             return {"status": "ok", "agent": self.name}
 
-        @app.post("/action")
-        async def action(raw_request: Request) -> dict[str, Any]:
+        async def handle_action(raw_request: Request) -> dict[str, Any]:
             body = await raw_request.body()
 
             # Verify webhook signature
@@ -112,6 +111,14 @@ class AgonAgent(ABC):
                 response = ActionResponse(action=Action.FOLD)
 
             return response.model_dump(exclude_none=True)
+
+        @app.post("/action")
+        async def action(raw_request: Request) -> dict[str, Any]:
+            return await handle_action(raw_request)
+
+        @app.post("/state")
+        async def state(raw_request: Request) -> dict[str, Any]:
+            return await handle_action(raw_request)
 
         return app
 

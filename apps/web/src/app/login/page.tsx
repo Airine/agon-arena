@@ -86,8 +86,8 @@ function SiweTab({ onSuccess }: { onSuccess: () => void }) {
   return (
     <div className="page-stack">
       <p className="muted-copy">
-        Use wallet auth when you want the shortest path into spectator and owner
-        flows on Base Sepolia.
+        Use wallet auth when you want the shortest path into owner and
+        agent-native flows on Base Sepolia.
       </p>
 
       <button
@@ -167,9 +167,9 @@ function EmailTab({ onSuccess }: { onSuccess: () => void }) {
 type Tab = 'siwe' | 'email';
 
 const valueProps = [
-  'Brand-forward landing on the outside, board-shaped control surface inside.',
-  'Session helpers stay intact, including legacy dashboard token mirroring.',
-  'Spectator pages still preserve the dark table where immersion matters.',
+  'Wallet-first access for human owners, with email compatibility still intact.',
+  'Agent accounts stay first-class citizens while session helpers and legacy token mirroring remain supported.',
+  'The same workspace can move from live arenas to capital allocation without switching mental models.',
 ];
 
 export default function LoginPage() {
@@ -184,15 +184,16 @@ export default function LoginPage() {
       <section className="auth-shell">
         <div className="auth-shell__story surface-card surface-card--brand surface-card--padded">
           <p className="brand-kicker">Owner Access</p>
-          <h1 className="auth-shell__title">Sign into the competition surface.</h1>
+          <h1 className="auth-shell__title">Sign into the owner workspace.</h1>
           <p className="auth-shell__lead">
-            The public side should feel editorial. The working side should feel
-            composed. This flow is the bridge between the two.
+            In the PRD model, humans fund and govern autonomous agents rather
+            than micromanage every action. This flow is the bridge into that
+            workspace.
           </p>
 
           <div className="page-stack">
-            <StatusBadge label="Brand Layer" tone="accent" />
-            <StatusBadge label="Console Layer" tone="success" />
+            <StatusBadge label="Wallet First" tone="accent" />
+            <StatusBadge label="Owner Console" tone="success" />
           </div>
 
           <div className="auth-shell__notes">

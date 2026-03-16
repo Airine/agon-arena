@@ -4,12 +4,13 @@ from agon_sdk.models import (
     Action,
     ActionRequest,
     ActionResponse,
+    AgentAccessCard,
+    AgentRegistration,
     Card,
     GameState,
     PlayerState,
     Rank,
     Suit,
-    AgentRegistration,
 )
 
 
@@ -76,11 +77,18 @@ def test_action_request_parse():
 def test_agent_registration_validation():
     reg = AgentRegistration(
         name="TestBot",
-        api_url="https://example.com/action",
-        webhook_public_key="a" * 64,
+        metadata={"framework": "python"},
     )
     assert reg.version == "1.0"
-    assert reg.webhook_public_key == "a" * 64
+    assert reg.metadata == {"framework": "python"}
+
+
+def test_agent_access_card_defaults():
+    card = AgentAccessCard(
+        name="SkillBot",
+    )
+    assert card.version == "1.0"
+    assert card.capabilities == []
 
 
 def test_game_state_with_community_cards():

@@ -1,5 +1,10 @@
 import { createClient, type RedisClientType } from 'redis';
-import type { GameState } from '@agon/types';
+import type {
+  AgentActionSubmission,
+  AgentRuntimeSnapshot,
+  AgentTurnRequest,
+  GameState,
+} from '@agon/types';
 
 type RedisClient = RedisClientType;
 
@@ -63,6 +68,22 @@ export async function consumeAgentNonce(nonce: string): Promise<boolean> {
   const redis = await getRedisClient();
   const deleted = await redis.del(`${AGENT_NONCE_PREFIX}${nonce}`);
   return deleted === 1;
+}
+
+const AGENT_ACCESS_NONCE_PREFIX = 'agent:access:nonce:';
+const AGENT_ACCESS_NONCE_TTL_SECONDS = 300; // 5 minutes
+
+/**
+ * Claim an agent access nonce that the client generated itself.
+ * Returns true only for the first successful claim within the TTL window.
+ */
+export async function claimAgentAccessNonce(nonce: string): Promise<boolean> {
+  const redis = await getRedisClient();
+  const result = await redis.set(`${AGENT_ACCESS_NONCE_PREFIX}${nonce}`, '1', {
+    EX: AGENT_ACCESS_NONCE_TTL_SECONDS,
+    NX: true,
+  });
+  return result === 'OK';
 }
 
 const BIND_NONCE_PREFIX = 'bind:nonce:';
@@ -207,4 +228,122 @@ export async function getGameSnapshot(arenaId: string): Promise<ArenaSnapshot | 
   } catch {
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Agent runtime snapshot + pending turn cache
+// ---------------------------------------------------------------------------
+
+const AGENT_RUNTIME_SNAPSHOT_PREFIX = 'agent:runtime:snapshot:';
+const AGENT_RUNTIME_SNAPSHOT_TTL_SECONDS = 3600;
+const AGENT_PENDING_TURN_PREFIX = 'agent:runtime:turn:';
+const AGENT_PENDING_TURN_TTL_SECONDS = 300;
+
+export interface StoredAgentTurn extends AgentTurnRequest {
+  status: 'pending' | 'submitted';
+  createdAt: number;
+  submittedAction?: AgentActionSubmission;
+  submittedAt?: number;
+}
+
+function runtimeSnapshotKey(arenaId: string, agentId: string): string {
+  return `${AGENT_RUNTIME_SNAPSHOT_PREFIX}${arenaId}:${agentId}`;
+}
+
+function pendingTurnKey(arenaId: string, agentId: string): string {
+  return `${AGENT_PENDING_TURN_PREFIX}${arenaId}:${agentId}`;
+}
+
+export async function setAgentRuntimeSnapshot(snapshot: AgentRuntimeSnapshot): Promise<void> {
+  const redis = await getRedisClient();
+  await redis.set(
+    runtimeSnapshotKey(snapshot.arenaId, snapshot.agentId),
+    JSON.stringify(snapshot),
+    { EX: AGENT_RUNTIME_SNAPSHOT_TTL_SECONDS },
+  );
+}
+
+export async function getAgentRuntimeSnapshot(
+  arenaId: string,
+  agentId: string,
+): Promise<AgentRuntimeSnapshot | null> {
+  const redis = await getRedisClient();
+  const val = await redis.get(runtimeSnapshotKey(arenaId, agentId));
+  if (!val) return null;
+  try {
+    return JSON.parse(val) as AgentRuntimeSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+export async function clearAgentRuntimeSnapshot(arenaId: string, agentId: string): Promise<void> {
+  const redis = await getRedisClient();
+  await redis.del(runtimeSnapshotKey(arenaId, agentId));
+}
+
+export async function setAgentPendingTurn(turn: AgentTurnRequest): Promise<StoredAgentTurn> {
+  const redis = await getRedisClient();
+  const storedTurn: StoredAgentTurn = {
+    ...turn,
+    status: 'pending',
+    createdAt: Date.now(),
+  };
+  await redis.set(pendingTurnKey(turn.arenaId, turn.agentId), JSON.stringify(storedTurn), {
+    EX: AGENT_PENDING_TURN_TTL_SECONDS,
+  });
+  return storedTurn;
+}
+
+export async function getAgentPendingTurn(
+  arenaId: string,
+  agentId: string,
+): Promise<StoredAgentTurn | null> {
+  const redis = await getRedisClient();
+  const val = await redis.get(pendingTurnKey(arenaId, agentId));
+  if (!val) return null;
+  try {
+    return JSON.parse(val) as StoredAgentTurn;
+  } catch {
+    return null;
+  }
+}
+
+export async function submitAgentPendingTurn(
+  arenaId: string,
+  agentId: string,
+  submission: AgentActionSubmission,
+): Promise<StoredAgentTurn | null> {
+  const redis = await getRedisClient();
+  const key = pendingTurnKey(arenaId, agentId);
+  const val = await redis.get(key);
+  if (!val) return null;
+
+  let storedTurn: StoredAgentTurn;
+  try {
+    storedTurn = JSON.parse(val) as StoredAgentTurn;
+  } catch {
+    return null;
+  }
+
+  if (storedTurn.status !== 'pending' || storedTurn.turnId !== submission.turnId) {
+    return storedTurn;
+  }
+
+  const nextTurn: StoredAgentTurn = {
+    ...storedTurn,
+    status: 'submitted',
+    submittedAction: submission,
+    submittedAt: Date.now(),
+  };
+
+  await redis.set(key, JSON.stringify(nextTurn), {
+    EX: AGENT_PENDING_TURN_TTL_SECONDS,
+  });
+  return nextTurn;
+}
+
+export async function clearAgentPendingTurn(arenaId: string, agentId: string): Promise<void> {
+  const redis = await getRedisClient();
+  await redis.del(pendingTurnKey(arenaId, agentId));
 }

@@ -95,7 +95,7 @@ export default function AgentPlazaPage() {
       section="agents"
       title="Agent Plaza"
       eyebrow="Competition Roster"
-      description="A Paperclip-shaped ladder for agent identity, ranking, and long-run performance."
+      description="A control-surface ladder for agent identity, ranking, and long-run performance."
       actions={
         <Link href="/register" className="button-primary">
           Register Agent

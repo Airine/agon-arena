@@ -1,13 +1,19 @@
-import axios from 'axios';
 import { eq, sql } from 'drizzle-orm';
-import type { GameState, PlayerAction, ActionType, AAPActionRequest, AAPActionResponse } from '@agon/types';
+import type { GameState, PlayerAction, ActionType, AgentActionSubmission } from '@agon/types';
 import { createGame, processAction, getValidActions, getWinners, isHandOver, type GameConfig } from '../game/index.js';
 import { db, schema } from '../db/index.js';
 import { getIO } from './io.js';
-import { signWebhookPayload, verifyAgentSignature } from './webhook-crypto.js';
 import { generateCommit, verifyVRFCommit } from './vrf.js';
-import { setGameSnapshot } from './redis.js';
-import { dispatchToAll, type AgentEndpoint } from './webhook-dispatcher.js';
+import { clearAgentPendingTurn, setGameSnapshot } from './redis.js';
+import {
+  createPrivateView,
+  createSpectatorView,
+  createTurnRequest,
+  emitArenaEvent,
+  publishRuntimeSnapshot,
+  publishTurnRequest,
+  waitForSubmittedTurn,
+} from './agent-runtime.js';
 import { publishEvent } from './kafka.js';
 import { chipService } from './chip.js';
 import { resolveBotAction } from './bot.js';
@@ -20,8 +26,7 @@ interface SeatInfo {
   currentStack: number;
   agentId: string;
   agentName: string;
-  apiUrl: string;
-  webhookPublicKey: string | null;
+  apiUrl: string | null;
 }
 
 interface ArenaConfig {
@@ -48,13 +53,6 @@ export function startGame(arenaId: string, arena: ArenaConfig, seats: SeatInfo[]
 async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[]): Promise<void> {
   let dealerIndex = 0;
   const agentUrls = new Map(seats.map((s) => [s.agentId, s.apiUrl]));
-  const agentPublicKeys = new Map(seats.map((s) => [s.agentId, s.webhookPublicKey]));
-
-  const agentEndpoints: AgentEndpoint[] = seats.map((s) => ({
-    agentId: s.agentId,
-    apiUrl: s.apiUrl,
-    webhookPublicKey: s.webhookPublicKey,
-  }));
 
   // Track stacks across hands
   const stacks = new Map(seats.map((s) => [s.agentId, arena.startingStack]));
@@ -125,15 +123,6 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
       ts: Date.now(),
     });
 
-    // Dispatch hand:start to all agents (fire-and-forget)
-    dispatchToAll(agentEndpoints, (agentId) => ({
-      event: 'hand:start',
-      arenaId,
-      handNumber,
-      vrfCommit: vrf.commit,
-      state: createPrivateView(currentState, agentId),
-    }));
-
     // Broadcast VRF commitment — players can verify dealing was committed before cards were known
     getIO().to(`arena:${arenaId}`).emit('hand:vrf_commit', {
       arenaId,
@@ -146,6 +135,17 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
     // Play the hand
     let currentState = gameState;
     let sequenceNumber = 0;
+    await publishRuntimeSnapshot(arenaId, currentState);
+    await emitArenaEvent(
+      arenaId,
+      activePlayers.map((player) => player.agentId),
+      {
+        type: 'hand:start',
+        handId: handRecord!.id,
+        handNumber,
+        state: createSpectatorView(currentState),
+      },
+    );
 
     while (!isHandOver(currentState) && currentState.currentActorIndex !== null) {
       const actorIdx = currentState.currentActorIndex;
@@ -154,37 +154,43 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
 
       if (validActions.length === 0) break;
 
-      // Create private view for the agent (hide other players' hole cards)
-      const privateState = createPrivateView(currentState, actor.agentId);
-
-      const aapRequest: AAPActionRequest = {
-        gameId: arenaId,
-        handId: handRecord!.id,
-        agentId: actor.agentId,
-        state: privateState,
-        validActions,
-        timeoutMs: ACTION_TIMEOUT_MS,
-      };
-
-      // Request action from agent with Ed25519 signed webhook
+      // External runtimes now pull turns over Socket.IO + REST, while local
+      // bot:// seats still resolve actions in-process.
       const startTime = Date.now();
       let action: PlayerAction;
 
       try {
-        const agentUrl = agentUrls.get(actor.agentId)!;
-        if (agentUrl.startsWith('bot://')) {
+        const agentUrl = agentUrls.get(actor.agentId);
+        if (agentUrl?.startsWith('bot://')) {
           // Bot agent: resolve action locally (no HTTP)
           action = resolveBotAction(agentUrl, validActions, currentState);
         } else {
-          const publicKey = agentPublicKeys.get(actor.agentId) ?? null;
-          const response = await requestAgentAction(agentUrl, aapRequest, publicKey);
-          action = validateAction(response, validActions, currentState);
+          const turn = await createTurnRequest({
+            arenaId,
+            handId: handRecord!.id,
+            handNumber,
+            agentId: actor.agentId,
+            validActions,
+            deadlineMs: Date.now() + ACTION_TIMEOUT_MS,
+            state: currentState,
+          });
+          await publishTurnRequest(turn);
+          const submission = await waitForSubmittedTurn(
+            arenaId,
+            actor.agentId,
+            turn.turnId,
+            ACTION_TIMEOUT_MS,
+          );
+          action = submission
+            ? toPlayerAction(submission, validActions, currentState)
+            : { type: 'fold' };
         }
       } catch {
         // Timeout or error: auto-fold
         action = { type: 'fold' };
       }
       const responseTimeMs = Date.now() - startTime;
+      await clearAgentPendingTurn(arenaId, actor.agentId);
 
       // Process the action
       currentState = processAction(currentState, action, deck);
@@ -231,16 +237,19 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
         responseTimeMs,
         ts: Date.now(),
       });
-
-      // Dispatch hand:action to all agents (fire-and-forget)
-      dispatchToAll(agentEndpoints, (agentId) => ({
-        event: 'hand:action',
+      await publishRuntimeSnapshot(arenaId, currentState);
+      await emitArenaEvent(
         arenaId,
-        handNumber,
-        actorAgentId: actor.agentId,
-        action,
-        state: createPrivateView(currentState, agentId),
-      }));
+        currentState.players.map((player) => player.agentId),
+        {
+          type: 'hand:action',
+          handId: handRecord!.id,
+          handNumber,
+          actorAgentId: actor.agentId,
+          action,
+          state: spectatorState,
+        },
+      );
 
       // Cache snapshot for reconnecting spectators (fire-and-forget)
       setGameSnapshot(arenaId, {
@@ -339,16 +348,18 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
       vrfSeed: vrf.seed,
       ts: Date.now(),
     });
-
-    // Dispatch hand:end to all agents (fire-and-forget)
-    dispatchToAll(agentEndpoints, (agentId) => ({
-      event: 'hand:end',
+    await publishRuntimeSnapshot(arenaId, currentState);
+    await emitArenaEvent(
       arenaId,
-      handNumber,
-      winners,
-      vrfSeed: vrf.seed,
-      state: createSpectatorView(currentState),
-    }));
+      currentState.players.map((player) => player.agentId),
+      {
+        type: 'hand:end',
+        handId: handRecord!.id,
+        handNumber,
+        winners,
+        state: finalSpectatorState,
+      },
+    );
 
     // Cache snapshot for reconnecting spectators (fire-and-forget)
     setGameSnapshot(arenaId, {
@@ -369,6 +380,11 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
     .where(eq(schema.arenas.id, arenaId));
 
   getIO().to(`arena:${arenaId}`).emit('arena:finished', { arenaId });
+  await emitArenaEvent(
+    arenaId,
+    seats.map((seat) => seat.agentId),
+    { type: 'arena:finished' },
+  );
 
   publishEvent({
     eventType: 'arena_finished',
@@ -377,107 +393,30 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
   });
 }
 
-/**
- * Request an action from an agent via webhook (AAP protocol).
- * Signs the request with Ed25519 and verifies the agent's response signature.
- */
-async function requestAgentAction(
-  agentUrl: string,
-  request: AAPActionRequest,
-  agentPublicKeyHex: string | null,
-): Promise<AAPActionResponse> {
-  const bodyStr = JSON.stringify(request);
-
-  // Sign the webhook payload with platform Ed25519 key
-  const { signature, timestamp, nonce } = signWebhookPayload(bodyStr);
-
-  const response = await axios.post<AAPActionResponse>(
-    `${agentUrl}/action`,
-    request,
-    {
-      timeout: ACTION_TIMEOUT_MS,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Agon-Signature': signature,
-        'X-Agon-Timestamp': timestamp,
-        'X-Agon-Nonce': nonce,
-      },
-      // Prevent axios from following redirects (SSRF mitigation)
-      maxRedirects: 0,
-    },
-  );
-
-  // Verify agent response signature when agent registered a public key
-  if (agentPublicKeyHex) {
-    const agentSig = response.headers['x-agent-signature'] as string | undefined;
-    if (!agentSig) {
-      throw new Error(`Agent ${request.agentId} registered a public key but did not sign response`);
-    }
-
-    const responseBody = JSON.stringify(response.data);
-    const valid = verifyAgentSignature(responseBody, agentSig, agentPublicKeyHex);
-    if (!valid) {
-      throw new Error(`Invalid signature from agent ${request.agentId} — possible tampering`);
-    }
-  }
-
-  return response.data;
-}
-
-/**
- * Validate and normalize the agent's action response.
- */
-function validateAction(
-  response: AAPActionResponse,
+function toPlayerAction(
+  submission: AgentActionSubmission,
   validActions: ActionType[],
   state: GameState,
 ): PlayerAction {
-  if (!response?.action || !validActions.includes(response.action)) {
+  if (!submission?.action || !validActions.includes(submission.action)) {
     // Invalid action → fold
     return { type: 'fold' };
   }
 
-  const action: PlayerAction = { type: response.action };
+  const action: PlayerAction = { type: submission.action };
 
-  if (response.action === 'raise' && response.amount !== undefined) {
+  if (submission.action === 'raise' && submission.amount !== undefined) {
     const actor = state.players[state.currentActorIndex!]!;
     const maxBet = Math.max(...state.players.map((p) => p.bet));
     const toCall = maxBet - actor.bet;
 
     // Clamp raise amount between minRaise and (stack - toCall)
     const maxRaise = actor.stack - toCall;
-    const clampedAmount = Math.max(state.minRaise, Math.min(response.amount, maxRaise));
+    const clampedAmount = Math.max(state.minRaise, Math.min(submission.amount, maxRaise));
     action.amount = clampedAmount;
   }
 
   return action;
-}
-
-/**
- * Create a private view for a specific agent (only their own hole cards visible).
- */
-function createPrivateView(state: GameState, agentId: string): GameState {
-  return {
-    ...state,
-    players: state.players.map((p) => ({
-      ...p,
-      cards: p.agentId === agentId ? p.cards : [],
-    })),
-  };
-}
-
-/**
- * Create a spectator view (no hole cards unless showdown).
- */
-function createSpectatorView(state: GameState): GameState {
-  const isShowdown = state.stage === 'showdown' || state.stage === 'finished';
-  return {
-    ...state,
-    players: state.players.map((p) => ({
-      ...p,
-      cards: isShowdown && !p.isFolded ? p.cards : [],
-    })),
-  };
 }
 
 function sleep(ms: number): Promise<void> {

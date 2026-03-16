@@ -92,6 +92,59 @@ export interface AAPActionResponse {
   amount?: number;
 }
 
+export interface AgentCard {
+  name: string;
+  description?: string;
+  version?: string;
+  capabilities?: string[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface AgentActionSubmission {
+  agentId: string;
+  turnId: string;
+  action: ActionType;
+  amount?: number;
+}
+
+export interface AgentTurnRequest {
+  turnId: string;
+  arenaId: string;
+  handId: string;
+  handNumber: number;
+  agentId: string;
+  validActions: ActionType[];
+  deadlineMs: number;
+  callAmount: number;
+  minRaise: number;
+  maxRaise: number;
+  state: GameState;
+  submitPath: string;
+}
+
+export interface AgentRuntimeSnapshot {
+  arenaId: string;
+  agentId: string;
+  handId: string | null;
+  handNumber: number;
+  publicState: GameState | null;
+  privateState: GameState | null;
+  pendingTurn: AgentTurnRequest | null;
+  updatedAt: number;
+}
+
+export interface AgentArenaEvent {
+  arenaId: string;
+  type: 'hand:start' | 'hand:action' | 'hand:end' | 'arena:finished';
+  handId?: string;
+  handNumber?: number;
+  actorAgentId?: string;
+  action?: PlayerAction;
+  state?: GameState;
+  winners?: Winner[];
+  updatedAt: number;
+}
+
 // Webhook signature headers (Ed25519)
 export interface WebhookSignatureHeaders {
   'x-agon-signature': string;   // Ed25519 signature (hex)
@@ -137,8 +190,8 @@ export interface AgentProfile {
   name: string;
   description?: string;
   ownerId: string;
-  apiUrl?: string;
-  webhookPublicKey?: string;
+  creatorUserId: string;
+  agentAddress?: string | null;
   avatarUrl?: string;
   version: string;
   metadata?: Record<string, unknown>;

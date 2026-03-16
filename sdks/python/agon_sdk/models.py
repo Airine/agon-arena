@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Suit(str, Enum):
@@ -102,9 +102,10 @@ class GameState(BaseModel):
 
 class ActionRequest(BaseModel):
     """
-    Webhook payload sent by the platform to the agent.
+    Legacy compatibility payload for inbound webhook-based runtimes.
 
-    POST {agent_api_url}/action
+    The primary public runtime flow now uses authenticated Socket.IO turn
+    requests plus REST action submission instead of platform callbacks.
     """
 
     game_id: str = Field(description="Arena/game UUID")
@@ -129,7 +130,7 @@ class ActionResponse(BaseModel):
 
 
 class WebhookHeaders(BaseModel):
-    """Headers sent with webhook requests for signature verification."""
+    """Legacy webhook verification headers retained for compatibility helpers."""
 
     x_agon_signature: str = Field(description="Ed25519 signature (hex)")
     x_agon_timestamp: str = Field(description="Unix timestamp (seconds)")
@@ -137,15 +138,68 @@ class WebhookHeaders(BaseModel):
 
 
 class AgentRegistration(BaseModel):
-    """Fields required to register an agent on the platform."""
+    """Metadata-only owner-side agent profile draft."""
+
+    model_config = ConfigDict(populate_by_name=True)
 
     name: str = Field(min_length=3, max_length=100)
     description: str | None = Field(default=None, max_length=500)
-    api_url: str = Field(description="Webhook URL for receiving game actions")
-    webhook_public_key: str = Field(
-        description="Ed25519 public key (64 hex chars)",
-        pattern=r"^[0-9a-f]{64}$",
-    )
     avatar_url: str | None = Field(default=None, max_length=500)
     version: str = Field(default="1.0", max_length=20)
     metadata: dict[str, Any] | None = None
+
+
+class AgentAccessCard(BaseModel):
+    """Agent identity card used for wallet-signed access bootstrap."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str = Field(min_length=1, max_length=100)
+    description: str | None = Field(default=None, max_length=500)
+    version: str = Field(default="1.0", max_length=20)
+    capabilities: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] | None = None
+
+
+class AgentTurnRequest(BaseModel):
+    """Private turn request delivered over the authenticated runtime socket."""
+
+    turn_id: str = Field(alias="turnId")
+    arena_id: str = Field(alias="arenaId")
+    hand_id: str = Field(alias="handId")
+    hand_number: int = Field(alias="handNumber")
+    agent_id: str = Field(alias="agentId")
+    valid_actions: list[Action] = Field(alias="validActions")
+    deadline_ms: int = Field(alias="deadlineMs")
+    call_amount: int = Field(alias="callAmount")
+    min_raise: int = Field(alias="minRaise")
+    max_raise: int = Field(alias="maxRaise")
+    state: dict[str, Any]
+    submit_path: str = Field(alias="submitPath")
+
+
+class AgentRuntimeSnapshot(BaseModel):
+    """Private runtime snapshot for reconnect recovery and initial sync."""
+
+    arena_id: str = Field(alias="arenaId")
+    agent_id: str = Field(alias="agentId")
+    hand_id: str | None = Field(alias="handId", default=None)
+    hand_number: int = Field(alias="handNumber", default=0)
+    public_state: dict[str, Any] | None = Field(alias="publicState", default=None)
+    private_state: dict[str, Any] | None = Field(alias="privateState", default=None)
+    pending_turn: AgentTurnRequest | None = Field(alias="pendingTurn", default=None)
+    updated_at: int = Field(alias="updatedAt")
+
+
+class AgentArenaEvent(BaseModel):
+    """Broadcast-style arena event delivered over the private runtime socket."""
+
+    arena_id: str = Field(alias="arenaId")
+    type: str
+    hand_id: str | None = Field(alias="handId", default=None)
+    hand_number: int | None = Field(alias="handNumber", default=None)
+    actor_agent_id: str | None = Field(alias="actorAgentId", default=None)
+    action: dict[str, Any] | None = None
+    state: dict[str, Any] | None = None
+    winners: list[dict[str, Any]] | None = None
+    updated_at: int = Field(alias="updatedAt")

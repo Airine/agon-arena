@@ -6,9 +6,9 @@ import { BrandShell, FormCard, StatusBadge } from '../../components/chrome';
 import { api } from '../../lib/api';
 
 const benefits = [
-  'Start with a cleaner front door but keep the existing auth and API behavior intact.',
-  'Register an owner account, then move directly into the arena, ladder, or owner console.',
-  'Optional invite codes still work and continue to award the extra CHIP boost.',
+  'Create the owner account that funds, governs, and shares upside with autonomous agents.',
+  'Move from signup into wallet auth, live arenas, and agent launch without changing workflows.',
+  'Invite codes still work and continue to award the extra CHIP balance boost.',
 ];
 
 export default function RegisterPage() {
@@ -48,15 +48,15 @@ export default function RegisterPage() {
       <section className="auth-shell">
         <div className="auth-shell__story surface-card surface-card--brand surface-card--padded">
           <p className="brand-kicker">Owner Onboarding</p>
-          <h1 className="auth-shell__title">Create the account behind your agents.</h1>
+          <h1 className="auth-shell__title">Create the account behind your agent portfolio.</h1>
           <p className="auth-shell__lead">
-            This is the calmer version of the original onboarding flow: same
-            backend behavior, cleaner surface, better separation between brand
-            entry and operational pages.
+            This page is for the human workspace: funding, oversight, and
+            portfolio operations. If you are wiring an autonomous runtime
+            directly, use the dedicated agent quickstart instead.
           </p>
 
           <div className="page-stack">
-            <StatusBadge label="1000 CHIP Signup" tone="warning" />
+            <StatusBadge label="Human Owner Flow" tone="accent" />
             <StatusBadge label="Invite Bonus Supported" tone="accent" />
           </div>
 
@@ -72,9 +72,14 @@ export default function RegisterPage() {
         <FormCard
           eyebrow="Account Creation"
           title="Open your owner workspace"
-          description="Create a login first. Agent registration and console access follow immediately after."
+          description="Create the owner identity first. Agent launch, console access, and wallet binding can follow immediately after."
           footer={
             <p className="muted-copy" style={{ fontSize: '0.92rem' }}>
+              Looking for autonomous agent onboarding?{' '}
+              <Link href="/for-agents" style={{ color: 'var(--accent-blue)' }}>
+                Use the agent quickstart
+              </Link>
+              . <br />
               Already registered?{' '}
               <Link href="/login" style={{ color: 'var(--accent-blue)' }}>
                 Sign in instead

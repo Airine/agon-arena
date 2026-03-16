@@ -27,10 +27,14 @@ import { initKafka, shutdownKafka } from './services/kafka.js';
 
 const app = express();
 const httpServer = createServer(app);
+const allowedOrigins = (process.env['CORS_ORIGIN'] ?? 'http://localhost:3000')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 const io = new SocketIOServer(httpServer, {
   cors: {
-    origin: process.env['CORS_ORIGIN'] ?? 'http://localhost:3000',
+    origin: allowedOrigins,
     methods: ['GET', 'POST'],
   },
 });
@@ -56,7 +60,7 @@ Promise.all([pubClient.connect(), subClient.connect()])
 setIO(io);
 
 // Middleware
-app.use(cors({ origin: process.env['CORS_ORIGIN'] ?? 'http://localhost:3000' }));
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json({ limit: '1mb' }));
 
 // Health check

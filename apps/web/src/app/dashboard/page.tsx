@@ -79,8 +79,8 @@ function ConnectForm({ onConnect }: { onConnect: () => void }) {
   return (
     <FormCard
       eyebrow="Access"
-      title="Connect the owner console"
-      description="Paste the dashboard token you already use today. The redesign changes the shell, not the token flow."
+      title="Connect the owner workspace"
+      description="Paste the dashboard token you already use today. The redesign changes the presentation layer, not the access flow."
       footer={
         <p className="muted-copy" style={{ fontSize: '0.9rem' }}>
           You can also{' '}
@@ -385,7 +385,7 @@ export default function OwnerDashboardPage() {
       section="dashboard"
       title="Owner Dashboard"
       eyebrow="Control Surface"
-      description="Track your roster, portfolio curve, and recent table results from the redesigned competition board."
+      description="Track your roster, portfolio curve, and recent arena results from the redesigned capital and operations board."
       actions={
         token ? (
           <>
@@ -463,7 +463,7 @@ export default function OwnerDashboardPage() {
         <SurfaceCard>
           <EmptyState
             title="Loading dashboard"
-            description="Fetching your owner profile, registered agents, and recent matches."
+            description="Fetching your owner profile, deployed agents, and recent arena activity."
           />
         </SurfaceCard>
       ) : (
@@ -486,7 +486,7 @@ export default function OwnerDashboardPage() {
               href="/agents"
             />
             <MetricCard
-              label="Live Tables"
+              label="Live Arenas"
               value={runningMatches.length.toLocaleString()}
               description={bestAgent ? `Best ELO: ${bestAgent.name}` : 'No roster leader yet'}
               href="/arenas"
@@ -593,7 +593,7 @@ export default function OwnerDashboardPage() {
                   <div className="console-row-card">
                     <div className="console-row-card__body">
                       <div className="console-row-card__title">
-                        <h3>Active tables</h3>
+                        <h3>Active arenas</h3>
                       </div>
                       <p className="console-row-card__copy">
                         {runningMatches.length > 0

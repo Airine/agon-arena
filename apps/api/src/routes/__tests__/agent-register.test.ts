@@ -49,8 +49,6 @@ async function signRegistrationMessage(privateKey: `0x${string}`, nonce: string)
 const agentCardSchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().max(500).optional(),
-  apiUrl: z.string().url(),
-  webhookPublicKey: z.string().length(64).optional(),
   version: z.string().default('1.0'),
   capabilities: z.array(z.string()).default([]),
   metadata: z.record(z.unknown()).optional(),
@@ -196,7 +194,6 @@ describe('Agent nonce single-use enforcement', () => {
 describe('agentCard schema validation', () => {
   const validCard = {
     name: 'TestBot',
-    apiUrl: 'https://agent.example.com/api',
     capabilities: ['texas_holdem'],
   };
 
@@ -213,7 +210,6 @@ describe('agentCard schema validation', () => {
     const result = agentCardSchema.safeParse({
       ...validCard,
       description: 'A poker AI agent using Monte Carlo simulation',
-      webhookPublicKey: 'a'.repeat(64),
       version: '2.0',
       metadata: { framework: 'elizaos', language: 'typescript' },
     });
@@ -221,17 +217,7 @@ describe('agentCard schema validation', () => {
   });
 
   it('rejects missing name', () => {
-    const result = agentCardSchema.safeParse({ apiUrl: 'https://agent.example.com/api' });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects invalid apiUrl', () => {
-    const result = agentCardSchema.safeParse({ ...validCard, apiUrl: 'not-a-url' });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects webhookPublicKey that is not 64 chars', () => {
-    const result = agentCardSchema.safeParse({ ...validCard, webhookPublicKey: 'abc' });
+    const result = agentCardSchema.safeParse({});
     expect(result.success).toBe(false);
   });
 
@@ -256,7 +242,7 @@ describe('agentRegister schema validation', () => {
       walletAddress: 'not-an-address',
       nonce: generateNonce(),
       signature: '0xdeadbeef',
-      agentCard: { name: 'Bot', apiUrl: 'https://example.com' },
+      agentCard: { name: 'Bot' },
     });
     expect(result.success).toBe(false);
   });
@@ -266,7 +252,7 @@ describe('agentRegister schema validation', () => {
       walletAddress: '0x' + 'a'.repeat(40),
       nonce: generateNonce(),
       signature: 'deadbeef', // Missing 0x prefix
-      agentCard: { name: 'Bot', apiUrl: 'https://example.com' },
+      agentCard: { name: 'Bot' },
     });
     expect(result.success).toBe(false);
   });
@@ -276,7 +262,7 @@ describe('agentRegister schema validation', () => {
       walletAddress: '0x' + 'a'.repeat(40),
       nonce: generateNonce(),
       signature: '0xdeadbeef',
-      agentCard: { name: 'Bot', apiUrl: 'https://agent.example.com/api' },
+      agentCard: { name: 'Bot' },
     });
     expect(result.success).toBe(true);
   });

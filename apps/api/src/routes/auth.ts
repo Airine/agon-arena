@@ -7,8 +7,21 @@ import { eq } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import { signToken, requireAuth } from '../middleware/auth.js';
 import { issueTokenPair, rotateRefreshToken, revokeAccessToken } from '../services/jwt.js';
+import {
+  agentAccessHeaderSchema,
+  agentCardSchema,
+  verifyAgentAccessRequest,
+} from '../services/agent-access.js';
 import { getPlatformPublicKeyHex } from '../services/webhook-crypto.js';
-import { storeSiweNonce, consumeSiweNonce, storeAgentNonce, consumeAgentNonce, storeBindNonce, consumeBindNonce } from '../services/redis.js';
+import {
+  claimAgentAccessNonce,
+  storeSiweNonce,
+  consumeSiweNonce,
+  storeAgentNonce,
+  consumeAgentNonce,
+  storeBindNonce,
+  consumeBindNonce,
+} from '../services/redis.js';
 import { incrementFingerprintAccountCount } from '../middleware/rate-limit.js';
 import { verifyMessage } from 'viem';
 import { chipService } from '../services/chip.js';
@@ -262,6 +275,166 @@ authRouter.post('/login', async (req, res) => {
 // Agent auto-registration (EIP-191 wallet signature)
 // ---------------------------------------------------------------------------
 
+const agentAccessBodySchema = z.object({
+  agentCard: agentCardSchema.optional(),
+});
+
+/**
+ * POST /auth/agent/access
+ * Agent wallet bootstrap:
+ *  - verifies EIP-191 signed request headers
+ *  - creates user + agent on first access
+ *  - returns a JWT pair tied to the agent identity
+ */
+authRouter.post('/agent/access', async (req, res) => {
+  try {
+    const rawBody = req.body ?? {};
+    const headers = agentAccessHeaderSchema.parse({
+      address: req.get('X-Agent-Address'),
+      timestamp: req.get('X-Timestamp'),
+      nonce: req.get('X-Nonce'),
+      signature: req.get('X-Signature'),
+    });
+
+    const verification = await verifyAgentAccessRequest({
+      headers,
+      method: req.method,
+      path: `${req.baseUrl}${req.path}`,
+      body: rawBody,
+    });
+    if (!verification.ok) {
+      res.status(verification.status).json({ error: verification.error });
+      return;
+    }
+
+    const body = agentAccessBodySchema.parse(rawBody);
+
+    const nonceClaimed = await claimAgentAccessNonce(headers.nonce);
+    if (!nonceClaimed) {
+      res.status(401).json({ error: 'Nonce already used or expired' });
+      return;
+    }
+
+    let [user] = await db
+      .select({
+        id: schema.users.id,
+        username: schema.users.username,
+        walletAddress: schema.users.walletAddress,
+      })
+      .from(schema.users)
+      .where(eq(schema.users.walletAddress, verification.walletAddress))
+      .limit(1);
+
+    if (!user && !body.agentCard) {
+      res.status(400).json({ error: 'agentCard is required when registering a new agent' });
+      return;
+    }
+
+    let created = false;
+    if (!user) {
+      const shortAddr =
+        verification.walletAddress.slice(2, 6) + verification.walletAddress.slice(-4);
+      const username = `agent_${shortAddr}${randomBytes(2).toString('hex')}`;
+      [user] = await db
+        .insert(schema.users)
+        .values({ username, walletAddress: verification.walletAddress })
+        .returning({
+          id: schema.users.id,
+          username: schema.users.username,
+          walletAddress: schema.users.walletAddress,
+        });
+      created = true;
+      await chipService.allocateRegistrationBonus(user!.id);
+    }
+
+    let [agent] = await db
+      .select({
+        id: schema.agents.id,
+        ownerId: schema.agents.ownerId,
+        creatorUserId: schema.agents.creatorUserId,
+        agentAddress: schema.agents.agentAddress,
+        name: schema.agents.name,
+        description: schema.agents.description,
+        version: schema.agents.version,
+        metadata: schema.agents.metadata,
+      })
+      .from(schema.agents)
+      .where(eq(schema.agents.agentAddress, verification.walletAddress))
+      .limit(1);
+
+    if (!agent) {
+      if (!body.agentCard) {
+        res.status(400).json({ error: 'agentCard is required when registering a new agent' });
+        return;
+      }
+      const { capabilities, metadata: extraMeta, ...cardRest } = body.agentCard;
+      [agent] = await db
+        .insert(schema.agents)
+        .values({
+          ownerId: user!.id,
+          creatorUserId: user!.id,
+          agentAddress: verification.walletAddress,
+          name: cardRest.name,
+          description: cardRest.description ?? null,
+          apiUrl: null,
+          webhookPublicKey: null,
+          version: cardRest.version,
+          metadata: { capabilities, ...extraMeta },
+        })
+        .returning({
+          id: schema.agents.id,
+          ownerId: schema.agents.ownerId,
+          creatorUserId: schema.agents.creatorUserId,
+          agentAddress: schema.agents.agentAddress,
+          name: schema.agents.name,
+          description: schema.agents.description,
+          version: schema.agents.version,
+          metadata: schema.agents.metadata,
+        });
+      created = true;
+    } else if (agent.ownerId !== user!.id) {
+      res.status(409).json({ error: 'Agent identity is already bound to a different owner record' });
+      return;
+    }
+
+    const tokens = await issueTokenPair({
+      userId: user!.id,
+      username: user!.username,
+      walletAddress: user!.walletAddress ?? undefined,
+      agentId: agent!.id,
+      agentAddress: agent!.agentAddress ?? verification.walletAddress,
+      type: 'agent',
+    });
+
+    res.status(created ? 201 : 200).json({
+      ...tokens,
+      created,
+      user: {
+        id: user!.id,
+        username: user!.username,
+        walletAddress: user!.walletAddress,
+      },
+      agent: {
+        id: agent!.id,
+        ownerId: agent!.ownerId,
+        creatorUserId: agent!.creatorUserId,
+        agentAddress: agent!.agentAddress,
+        name: agent!.name,
+        description: agent!.description,
+        version: agent!.version,
+        metadata: agent!.metadata,
+      },
+    });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'Validation failed', details: err.errors });
+      return;
+    }
+    console.error('[Agent] Access error:', err);
+    res.status(500).json({ error: 'Agent access failed' });
+  }
+});
+
 /**
  * GET /auth/agent/nonce
  * Returns a fresh random nonce for agent registration. Single-use, TTL=5min.
@@ -274,16 +447,6 @@ authRouter.get('/agent/nonce', async (_req, res) => {
   } catch {
     res.status(500).json({ error: 'Failed to generate nonce' });
   }
-});
-
-const agentCardSchema = z.object({
-  name: z.string().min(1).max(100),
-  description: z.string().max(500).optional(),
-  apiUrl: z.string().url(),
-  webhookPublicKey: z.string().length(64).optional(), // Ed25519 public key hex
-  version: z.string().default('1.0'),
-  capabilities: z.array(z.string()).default([]),
-  metadata: z.record(z.unknown()).optional(),
 });
 
 const agentRegisterSchema = z.object({
@@ -363,9 +526,18 @@ authRouter.post('/agent/register', async (req, res) => {
 
     // Find or create agent record for this owner
     let [agent] = await db
-      .select({ id: schema.agents.id, name: schema.agents.name, apiUrl: schema.agents.apiUrl })
+      .select({
+        id: schema.agents.id,
+        ownerId: schema.agents.ownerId,
+        creatorUserId: schema.agents.creatorUserId,
+        agentAddress: schema.agents.agentAddress,
+        name: schema.agents.name,
+        description: schema.agents.description,
+        version: schema.agents.version,
+        metadata: schema.agents.metadata,
+      })
       .from(schema.agents)
-      .where(eq(schema.agents.ownerId, user!.id))
+      .where(eq(schema.agents.agentAddress, walletAddress))
       .limit(1);
 
     if (!agent) {
@@ -374,14 +546,28 @@ authRouter.post('/agent/register', async (req, res) => {
         .insert(schema.agents)
         .values({
           ownerId: user!.id,
+          creatorUserId: user!.id,
+          agentAddress: walletAddress,
           name: cardRest.name,
-          description: cardRest.description,
-          apiUrl: cardRest.apiUrl,
-          webhookPublicKey: cardRest.webhookPublicKey,
+          description: cardRest.description ?? null,
+          apiUrl: null,
+          webhookPublicKey: null,
           version: cardRest.version,
           metadata: { capabilities, ...extraMeta },
         })
-        .returning({ id: schema.agents.id, name: schema.agents.name, apiUrl: schema.agents.apiUrl });
+        .returning({
+          id: schema.agents.id,
+          ownerId: schema.agents.ownerId,
+          creatorUserId: schema.agents.creatorUserId,
+          agentAddress: schema.agents.agentAddress,
+          name: schema.agents.name,
+          description: schema.agents.description,
+          version: schema.agents.version,
+          metadata: schema.agents.metadata,
+        });
+    } else if (agent.ownerId !== user!.id) {
+      res.status(409).json({ error: 'Agent identity is already bound to a different owner record' });
+      return;
     }
 
     const tokens = await issueTokenPair({
@@ -389,13 +575,23 @@ authRouter.post('/agent/register', async (req, res) => {
       username: user!.username,
       walletAddress: user!.walletAddress ?? undefined,
       agentId: agent!.id,
+      agentAddress: agent!.agentAddress ?? walletAddress,
       type: 'agent',
     });
 
     res.status(201).json({
       ...tokens,
       user: { id: user!.id, username: user!.username, walletAddress: user!.walletAddress },
-      agent: { id: agent!.id, name: agent!.name, apiUrl: agent!.apiUrl },
+      agent: {
+        id: agent!.id,
+        ownerId: agent!.ownerId,
+        creatorUserId: agent!.creatorUserId,
+        agentAddress: agent!.agentAddress,
+        name: agent!.name,
+        description: agent!.description,
+        version: agent!.version,
+        metadata: agent!.metadata,
+      },
     });
   } catch (err) {
     if (err instanceof z.ZodError) {

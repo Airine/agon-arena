@@ -1,33 +1,85 @@
 """
-Simple Agon Arena agent — always calls or checks.
+Simple outbound Agon Arena runtime.
 
 Usage:
-    pip install -e .
+    export AGON_AGENT_WALLET_PRIVATE_KEY=0xabc123...
     python examples/simple_agent.py
 """
 
-from agon_sdk import AgonAgent, ActionRequest, ActionResponse, Action
+from __future__ import annotations
+
+import os
+import signal
+import sys
+import threading
+
+from agon_sdk import Action, ActionResponse, AgentAccessCard, AgentTurnRequest, AgonClient
 
 
-class SimpleCallAgent(AgonAgent):
-    """A basic agent that always calls or checks when possible."""
+def decide(turn: AgentTurnRequest) -> ActionResponse:
+    """Always check when free, otherwise call, otherwise fold."""
+    if Action.CHECK in turn.valid_actions:
+        return ActionResponse(action=Action.CHECK)
+    if Action.CALL in turn.valid_actions:
+        return ActionResponse(action=Action.CALL)
+    return ActionResponse(action=Action.FOLD)
 
-    def decide(self, request: ActionRequest) -> ActionResponse:
-        # Prefer check if available (free to stay in)
-        if Action.CHECK in request.valid_actions:
-            return ActionResponse(action=Action.CHECK)
 
-        # Otherwise call
-        if Action.CALL in request.valid_actions:
-            return ActionResponse(action=Action.CALL)
+def main() -> None:
+    wallet_private_key = os.getenv("AGON_AGENT_WALLET_PRIVATE_KEY")
+    if not wallet_private_key:
+        print("Set AGON_AGENT_WALLET_PRIVATE_KEY to enable agent bootstrap.")
+        sys.exit(1)
 
-        # Last resort: fold
-        return ActionResponse(action=Action.FOLD)
+    client = AgonClient(base_url=os.getenv("AGON_API_URL", "https://api.agon.win"))
+    session = client.agent_access(
+        wallet_private_key=wallet_private_key,
+        agent_card=AgentAccessCard(
+            name="SimpleCallBot",
+            description="Reference Python runtime for Agon Arena outbound arena play",
+            capabilities=["socket:runtime", "poker:no-limit-holdem"],
+            metadata={"framework": "python", "example": "simple-agent"},
+        ),
+    )
+
+    agent_id = session["agent"]["id"]
+    waiting = client.list_arenas(status="waiting")
+    arena = waiting[0] if waiting else None
+    if not arena:
+        print(f"Agent bootstrap complete: {agent_id}. No waiting arenas available yet.")
+        return
+
+    client.join_arena(arena["id"], agent_id)
+    print(f"Joined arena {arena['id']} with agent {agent_id}.")
+
+    stop_event = threading.Event()
+
+    def on_turn_request(turn: AgentTurnRequest) -> None:
+        response = decide(turn)
+        client.submit_action(
+            turn.arena_id,
+            agent_id=turn.agent_id,
+            turn_id=turn.turn_id,
+            action=response.action.value,
+            amount=response.amount,
+        )
+
+    socket = client.subscribe_runtime(
+        agent_id=agent_id,
+        arena_id=arena["id"],
+        on_turn_request=on_turn_request,
+    )
+
+    def _shutdown(_signum: int, _frame: object) -> None:
+        stop_event.set()
+        socket.disconnect()
+
+    signal.signal(signal.SIGINT, _shutdown)
+    signal.signal(signal.SIGTERM, _shutdown)
+
+    print("Runtime connected. Waiting for turn requests...")
+    stop_event.wait()
 
 
 if __name__ == "__main__":
-    agent = SimpleCallAgent(
-        name="SimpleCallBot",
-        verify_signatures=False,  # Set True in production with platform_public_key
-    )
-    agent.run(port=8080)
+    main()

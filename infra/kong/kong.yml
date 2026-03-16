@@ -28,6 +28,9 @@ services:
           - /api/auth/register
           - /api/auth/login
           - /api/auth/public-key
+          - /api/auth/agent/access
+          - /api/auth/agent/nonce
+          - /api/auth/agent/register
         methods: [POST, GET]
         strip_path: false
         plugins:
@@ -106,6 +109,10 @@ plugins:
         - Content-Type
         - Authorization
         - X-Request-ID
+        - X-Agent-Address
+        - X-Timestamp
+        - X-Nonce
+        - X-Signature
       exposed_headers:
         - X-RateLimit-Limit-Minute
         - X-RateLimit-Remaining-Minute

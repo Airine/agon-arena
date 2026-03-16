@@ -1,9 +1,20 @@
 import { Router, type Router as RouterType } from 'express';
 import { z } from 'zod';
 import { eq, and, count, sql, desc } from 'drizzle-orm';
+import type { AgentActionSubmission, ActionType } from '@agon/types';
 import { db, schema } from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { getGameSnapshot } from '../services/redis.js';
+import {
+  acceptSubmittedTurn,
+  getCallAmount,
+  getMaxRaise,
+  getAgentRuntimeRoom,
+} from '../services/agent-runtime.js';
+import { getAgentPendingTurn, getAgentRuntimeSnapshot } from '../services/redis.js';
+import {
+  findSparringReplacementSeat,
+} from '../services/arena-admission.js';
 
 export const arenasRouter: RouterType = Router();
 
@@ -17,6 +28,7 @@ const MODE_DEFAULTS = {
 const createArenaSchema = z.object({
   name: z.string().min(3).max(100),
   mode: z.enum(['practice', 'cash', 'tournament']).default('practice'),
+  allowSparringReplacement: z.boolean().optional(),
   maxPlayers: z.number().int().min(2).max(10).optional(),
   smallBlind: z.number().int().min(1).optional(),
   bigBlind: z.number().int().min(2).optional(),
@@ -25,6 +37,17 @@ const createArenaSchema = z.object({
   maxHands: z.number().int().min(0).max(10000).optional(),
   // buyInAmount: CHIP cost to join; must be 0 for practice
   buyInAmount: z.number().int().min(0).optional(),
+});
+
+const runtimeQuerySchema = z.object({
+  agentId: z.string().uuid(),
+});
+
+const submitActionSchema = z.object({
+  agentId: z.string().uuid(),
+  turnId: z.string().uuid(),
+  action: z.enum(['fold', 'check', 'call', 'raise', 'all_in']),
+  amount: z.number().int().positive().optional(),
 });
 
 /**
@@ -41,6 +64,7 @@ arenasRouter.post('/', requireAuth, async (req, res) => {
     const defaults = MODE_DEFAULTS[body.mode];
 
     const maxPlayers = body.maxPlayers ?? 6;
+    const allowSparringReplacement = body.allowSparringReplacement ?? false;
     const smallBlind = body.smallBlind ?? 10;
     const bigBlind = body.bigBlind ?? 20;
     const startingStack = body.startingStack ?? defaults.startingStack;
@@ -53,6 +77,10 @@ arenasRouter.post('/', requireAuth, async (req, res) => {
     }
     if (body.mode === 'practice' && buyInAmount > 0) {
       res.status(400).json({ error: 'Practice arenas cannot have a buy-in amount' });
+      return;
+    }
+    if (body.mode !== 'practice' && allowSparringReplacement) {
+      res.status(400).json({ error: 'Sparring replacement is only supported for practice arenas' });
       return;
     }
     if (body.mode === 'tournament' && maxPlayers < 3) {
@@ -69,6 +97,7 @@ arenasRouter.post('/', requireAuth, async (req, res) => {
       .values({
         name: body.name,
         mode: body.mode,
+        allowSparringReplacement,
         maxPlayers,
         smallBlind,
         bigBlind,
@@ -115,6 +144,7 @@ arenasRouter.get('/', async (req, res) => {
         gameType: schema.arenas.gameType,
         mode: schema.arenas.mode,
         status: schema.arenas.status,
+        allowSparringReplacement: schema.arenas.allowSparringReplacement,
         maxPlayers: schema.arenas.maxPlayers,
         smallBlind: schema.arenas.smallBlind,
         bigBlind: schema.arenas.bigBlind,
@@ -123,6 +153,7 @@ arenasRouter.get('/', async (req, res) => {
         buyInAmount: schema.arenas.buyInAmount,
         spectatorCount: schema.arenas.spectatorCount,
         playerCount: sql<number>`COALESCE(${playerCountSq.playerCount}, 0)`.as('player_count'),
+        createdByUserId: schema.arenas.createdByUserId,
         createdAt: schema.arenas.createdAt,
       })
       .from(schema.arenas)
@@ -176,7 +207,10 @@ arenasRouter.get('/:id', async (req, res) => {
       })
       .from(schema.arenaSeats)
       .innerJoin(schema.agents, eq(schema.arenaSeats.agentId, schema.agents.id))
-      .where(eq(schema.arenaSeats.arenaId, arenaId))
+      .where(and(
+        eq(schema.arenaSeats.arenaId, arenaId),
+        eq(schema.arenaSeats.isActive, true),
+      ))
       .orderBy(schema.arenaSeats.seatIndex);
 
     res.json({ ...arena, seats });
@@ -196,7 +230,11 @@ arenasRouter.post('/:id/join', requireAuth, async (req, res) => {
 
     // Verify agent ownership
     const [agent] = await db
-      .select({ ownerId: schema.agents.ownerId, isActive: schema.agents.isActive })
+      .select({
+        ownerId: schema.agents.ownerId,
+        isActive: schema.agents.isActive,
+        metadata: schema.agents.metadata,
+      })
       .from(schema.agents)
       .where(eq(schema.agents.id, agentId))
       .limit(1);
@@ -232,8 +270,15 @@ arenasRouter.post('/:id/join', requireAuth, async (req, res) => {
 
     // Check if agent already seated
     const existingSeats = await db
-      .select()
+      .select({
+        id: schema.arenaSeats.id,
+        agentId: schema.arenaSeats.agentId,
+        seatIndex: schema.arenaSeats.seatIndex,
+        currentStack: schema.arenaSeats.currentStack,
+        agentMetadata: schema.agents.metadata,
+      })
       .from(schema.arenaSeats)
+      .innerJoin(schema.agents, eq(schema.arenaSeats.agentId, schema.agents.id))
       .where(and(
         eq(schema.arenaSeats.arenaId, arenaId),
         eq(schema.arenaSeats.isActive, true),
@@ -241,6 +286,31 @@ arenasRouter.post('/:id/join', requireAuth, async (req, res) => {
 
     if (existingSeats.some((s) => s.agentId === agentId)) {
       res.status(409).json({ error: 'Agent already seated in this arena' });
+      return;
+    }
+
+    const sparringSeat = findSparringReplacementSeat({
+      allowSparringReplacement: arena.allowSparringReplacement,
+      joiningAgentMetadata: agent.metadata,
+      existingSeats,
+    });
+
+    if (sparringSeat) {
+      const [seat] = await db
+        .update(schema.arenaSeats)
+        .set({
+          agentId,
+          currentStack: sparringSeat.currentStack,
+          joinedAt: new Date(),
+        })
+        .where(eq(schema.arenaSeats.id, sparringSeat.id))
+        .returning();
+
+      res.status(201).json({
+        ...seat,
+        replacedAgentId: sparringSeat.agentId,
+        replacement: 'sparring',
+      });
       return;
     }
 
@@ -275,6 +345,102 @@ arenasRouter.post('/:id/join', requireAuth, async (req, res) => {
 });
 
 /**
+ * GET /arenas/:id/runtime?agentId=<uuid> - Get the private runtime snapshot for a seated agent.
+ */
+arenasRouter.get('/:id/runtime', requireAuth, async (req, res) => {
+  try {
+    const arenaId = String(req.params['id']);
+    const { agentId } = runtimeQuerySchema.parse(req.query);
+
+    if (req.user?.agentId !== agentId) {
+      res.status(403).json({ error: 'This runtime snapshot is only available to the authenticated agent' });
+      return;
+    }
+
+    const [seat] = await db
+      .select({ agentId: schema.arenaSeats.agentId })
+      .from(schema.arenaSeats)
+      .where(and(
+        eq(schema.arenaSeats.arenaId, arenaId),
+        eq(schema.arenaSeats.agentId, agentId),
+        eq(schema.arenaSeats.isActive, true),
+      ))
+      .limit(1);
+
+    if (!seat) {
+      res.status(404).json({ error: 'Agent is not seated in this arena' });
+      return;
+    }
+
+    const snapshot = await getAgentRuntimeSnapshot(arenaId, agentId);
+    const pendingTurn = await getAgentPendingTurn(arenaId, agentId);
+
+    res.json({
+      snapshot: snapshot ?? {
+        arenaId,
+        agentId,
+        handId: null,
+        handNumber: 0,
+        publicState: null,
+        privateState: null,
+        pendingTurn: pendingTurn && pendingTurn.status === 'pending'
+          ? {
+              turnId: pendingTurn.turnId,
+              arenaId: pendingTurn.arenaId,
+              handId: pendingTurn.handId,
+              handNumber: pendingTurn.handNumber,
+              agentId: pendingTurn.agentId,
+              validActions: pendingTurn.validActions,
+              deadlineMs: pendingTurn.deadlineMs,
+              callAmount: pendingTurn.callAmount,
+              minRaise: pendingTurn.minRaise,
+              maxRaise: pendingTurn.maxRaise,
+              state: pendingTurn.state,
+              submitPath: pendingTurn.submitPath,
+            }
+          : null,
+        updatedAt: Date.now(),
+      },
+    });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'Validation failed', details: err.errors });
+      return;
+    }
+    res.status(500).json({ error: 'Failed to fetch runtime snapshot' });
+  }
+});
+
+/**
+ * POST /arenas/:id/actions - Submit an action for the current pending turn.
+ */
+arenasRouter.post('/:id/actions', requireAuth, async (req, res) => {
+  try {
+    const arenaId = String(req.params['id']);
+    const body = submitActionSchema.parse(req.body);
+
+    if (req.user?.agentId !== body.agentId) {
+      res.status(403).json({ error: 'This action may only be submitted by the authenticated agent runtime' });
+      return;
+    }
+
+    const result = await acceptSubmittedTurn(body as AgentActionSubmission, arenaId);
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+
+    res.status(202).json({ accepted: true, turnId: result.turn.turnId });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'Validation failed', details: err.errors });
+      return;
+    }
+    res.status(500).json({ error: 'Failed to submit action' });
+  }
+});
+
+/**
  * POST /arenas/:id/start - Start the game. Creator only, requires at least 2 players.
  */
 arenasRouter.post('/:id/start', requireAuth, async (req, res) => {
@@ -300,7 +466,9 @@ arenasRouter.post('/:id/start', requireAuth, async (req, res) => {
       return;
     }
 
-    // Get seated agents (include webhookPublicKey for Ed25519 verification)
+    // Public runtimes no longer need inbound webhook configuration.
+    // The only networked seat detail still read here is the internal bot://
+    // transport used for local bot shortcuts.
     const seats = await db
       .select({
         seatIndex: schema.arenaSeats.seatIndex,
@@ -308,7 +476,6 @@ arenasRouter.post('/:id/start', requireAuth, async (req, res) => {
         agentId: schema.agents.id,
         agentName: schema.agents.name,
         apiUrl: schema.agents.apiUrl,
-        webhookPublicKey: schema.agents.webhookPublicKey,
       })
       .from(schema.arenaSeats)
       .innerJoin(schema.agents, eq(schema.arenaSeats.agentId, schema.agents.id))

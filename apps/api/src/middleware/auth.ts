@@ -10,6 +10,7 @@ export interface AuthPayload {
   username: string;
   walletAddress?: string; // EVM address (lowercase 0x...) — present for SIWE users
   agentId?: string;       // Present for agent JWTs (auto-registered agents)
+  agentAddress?: string;  // Present for sovereign agent JWTs
 }
 
 declare global {
@@ -27,6 +28,7 @@ function toAuthPayload(p: JwtPayload): AuthPayload {
     username: p.username,
     ...(p.walletAddress && { walletAddress: p.walletAddress }),
     ...(p.agentId && { agentId: p.agentId }),
+    ...(p.agentAddress && { agentAddress: p.agentAddress }),
   };
 }
 
@@ -40,6 +42,7 @@ export function signToken(payload: AuthPayload): string {
     username: payload.username,
     walletAddress: payload.walletAddress,
     agentId: payload.agentId,
+    agentAddress: payload.agentAddress,
   });
 }
 

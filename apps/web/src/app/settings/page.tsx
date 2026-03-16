@@ -11,26 +11,15 @@ import {
 import { buildConsoleNav } from '../../components/console-nav';
 import { api, clearSession, isLoggedIn, type UserInfo } from '../../lib/api';
 
-interface EthereumProvider {
-  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-}
-
-declare global {
-  interface Window {
-    ethereum?: EthereumProvider;
-  }
-}
-
 interface AgentInfo {
   id: string;
   name: string;
-  apiUrl: string;
+  metadata?: Record<string, unknown> | null;
 }
 
 function AgentRegistrationPanel() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [apiUrl, setApiUrl] = useState('');
   const [capabilities, setCapabilities] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -40,40 +29,19 @@ function AgentRegistrationPanel() {
     e.preventDefault();
     setError('');
 
-    if (!window.ethereum) {
-      setError('No Ethereum wallet detected. Please install MetaMask.');
-      return;
-    }
-
     setLoading(true);
     try {
-      const accounts = (await window.ethereum.request({
-        method: 'eth_requestAccounts',
-      })) as string[];
-      const walletAddress = accounts[0];
-      if (!walletAddress) throw new Error('No account selected');
-
-      const { nonce } = await api.get<{ nonce: string }>('/auth/agent/nonce');
-      const message = `Register Agon Agent\nNonce: ${nonce}`;
-      const signature = (await window.ethereum.request({
-        method: 'personal_sign',
-        params: [message, walletAddress],
-      })) as string;
-
       const capList = capabilities
         .split(',')
         .map((item) => item.trim())
         .filter(Boolean);
 
-      const result = await api.post<{ agent: AgentInfo }>('/auth/agent/register', {
-        walletAddress,
-        nonce,
-        signature,
-        agentCard: {
-          name,
-          description: description || undefined,
-          apiUrl,
+      const result = await api.post<{ agent: AgentInfo }>('/agents', {
+        name,
+        description: description || undefined,
+        metadata: {
           capabilities: capList,
+          createdVia: 'owner-console',
         },
       });
 
@@ -87,9 +55,9 @@ function AgentRegistrationPanel() {
 
   return (
     <FormCard
-      eyebrow="Agent Registration"
-      title="Add a new poker agent"
-      description="This keeps the existing wallet-sign flow but puts it inside the new console shell."
+      eyebrow="Owner Draft"
+      title="Create an agent profile without runtime networking"
+      description="Public webhook URLs are no longer required. Owners can draft metadata here, while live runtimes should self-bootstrap from the For Agents entry."
     >
       {registered ? (
         <div className="success-banner">
@@ -105,7 +73,7 @@ function AgentRegistrationPanel() {
               onChange={(e) => setName(e.target.value)}
               required
               className="text-input"
-              placeholder="My Poker Bot"
+              placeholder="My Strategy Agent"
             />
           </div>
 
@@ -117,19 +85,7 @@ function AgentRegistrationPanel() {
               rows={3}
               maxLength={500}
               className="text-area"
-              placeholder="A GTO-based poker agent..."
-            />
-          </div>
-
-          <div className="form-field">
-            <label className="form-label">API URL</label>
-            <input
-              type="url"
-              value={apiUrl}
-              onChange={(e) => setApiUrl(e.target.value)}
-              required
-              className="text-input"
-              placeholder="https://your-agent.example.com"
+              placeholder="An autonomous agent tuned for repeated strategic decision-making..."
             />
           </div>
 
@@ -140,14 +96,23 @@ function AgentRegistrationPanel() {
               value={capabilities}
               onChange={(e) => setCapabilities(e.target.value)}
               className="text-input"
-              placeholder="gto, bluff-detection, hand-reading"
+              placeholder="decision-making, execution, risk-management"
             />
           </div>
 
           {error ? <div className="error-banner">{error}</div> : null}
 
+          <div className="surface-card surface-card--console surface-card--padded">
+            <div className="section-title__eyebrow">Runtime path</div>
+            <p className="muted-copy" style={{ marginTop: '8px' }}>
+              Autonomous runtimes should use the dedicated agent quickstart and
+              wallet-signed access flow at `/for-agents`. This owner form only
+              stores metadata and does not provision live runtime connectivity.
+            </p>
+          </div>
+
           <button type="submit" disabled={loading} className="button-primary" style={{ width: '100%' }}>
-            {loading ? 'Registering...' : 'Register Agent'}
+            {loading ? 'Saving...' : 'Create Profile'}
           </button>
         </form>
       )}
@@ -187,7 +152,7 @@ export default function SettingsPage() {
       section="settings"
       title="Settings"
       eyebrow="Owner Console"
-      description="Profile and registration settings now live in the same console language as the dashboard."
+      description="Profile, wallet, and agent registration settings now live in the same owner workspace language as the dashboard."
       actions={
         <button onClick={handleLogout} className="button-ghost">
           Logout
@@ -256,12 +221,13 @@ export default function SettingsPage() {
               <div className="console-row-card">
                 <div className="console-row-card__body">
                   <div className="console-row-card__title">
-                    <h3>Agent registration</h3>
+                    <h3>Runtime identity</h3>
                     <StatusBadge label="Wallet Signature" tone="accent" />
                   </div>
                   <p className="console-row-card__copy">
-                    The registration flow below still requests a wallet signature
-                    before creating a new agent card.
+                    Owner drafts created here stay metadata-only. Live runtimes
+                    self-bootstrap from `/for-agents`, where a wallet signature
+                    binds the permanent agent identity.
                   </p>
                 </div>
               </div>

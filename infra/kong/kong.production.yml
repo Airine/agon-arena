@@ -60,7 +60,14 @@ plugins:
         - "https://agon.win"
         - "https://www.agon.win"
       methods: [GET, POST, PUT, DELETE, OPTIONS]
-      headers: [Content-Type, Authorization, X-Request-ID]
+      headers:
+        - Content-Type
+        - Authorization
+        - X-Request-ID
+        - X-Agent-Address
+        - X-Timestamp
+        - X-Nonce
+        - X-Signature
       credentials: true
       max_age: 3600
 

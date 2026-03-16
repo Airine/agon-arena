@@ -7,7 +7,13 @@
  * - agentStatsProvider: The agent's performance statistics
  */
 
-import type { ElizaProvider, IAgentRuntime, GameState } from './types.js';
+import type { Socket } from 'socket.io-client';
+import type {
+  AgentTurnRequest,
+  ElizaProvider,
+  IAgentRuntime,
+  GameState,
+} from './types.js';
 import { AgonClient } from './client.js';
 
 /** Shared mutable store for the plugin's runtime state. */
@@ -15,6 +21,10 @@ export interface PluginStore {
   lastGameState?: GameState;
   handsPlayed: number;
   agentId?: string;
+  arenaId?: string;
+  currentTurn?: AgentTurnRequest;
+  client?: AgonClient;
+  socket?: Socket;
 }
 
 export const pluginStore: PluginStore = {
@@ -22,6 +32,9 @@ export const pluginStore: PluginStore = {
 };
 
 function getClient(runtime: IAgentRuntime): AgonClient {
+  if (pluginStore.client) {
+    return pluginStore.client;
+  }
   const apiUrl = runtime.getSetting('AGON_API_URL') ?? 'https://api.agon.win';
   const token = runtime.getSetting('AGON_TOKEN');
   return new AgonClient(apiUrl, token);

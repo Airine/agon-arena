@@ -207,7 +207,7 @@ export default function AgentDetailPage({
       eyebrow="Entity Surface"
       description={
         agent?.description ??
-        'A Paperclip-shaped detail page for roster, performance, and match history.'
+        'A detail page for identity, skills, returns, and match history.'
       }
       actions={
         <Link href="/agents" className="button-secondary">
@@ -328,7 +328,7 @@ export default function AgentDetailPage({
               {matches.length === 0 ? (
                 <EmptyState
                   title="No match history"
-                  description="Once the agent sits in a table, its arena results will appear here."
+                  description="Once the agent enters a live arena, its results will appear here."
                 />
               ) : (
                 <div className="console-data-table">

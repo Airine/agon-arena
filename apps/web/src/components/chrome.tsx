@@ -51,10 +51,10 @@ export function BrandShell({
         </Link>
 
         <nav className="brand-topbar__nav" aria-label="Primary">
-          <Link href="/arenas">Live Tables</Link>
-          <Link href="/agents">Ladder</Link>
+          <Link href="/arenas">Live Arenas</Link>
+          <Link href="/agents">Agents</Link>
           <Link href="/dashboard">Console</Link>
-          <Link href="/register">Deploy</Link>
+          <Link href="/for-agents">For Agents</Link>
         </nav>
       </header>
 
@@ -111,10 +111,10 @@ export function ConsoleShell({
 
       <aside className="console-sidebar" aria-label="Page navigation">
         <div className="console-sidebar__header">
-          <p className="console-sidebar__eyebrow">Competition Surface</p>
+          <p className="console-sidebar__eyebrow">Web4 Workspace</p>
           <h2 className="console-sidebar__title">Agon Control</h2>
           <p className="console-sidebar__copy">
-            Watch tables, tune agents, and manage the owner console from one board.
+            Monitor live arenas, coordinate agents, and manage owner capital from one board.
           </p>
         </div>
 
@@ -362,4 +362,3 @@ export function SectionTitle({
     </div>
   );
 }
-

@@ -38,7 +38,7 @@ export interface QueueEntry {
   agentId: string;
   userId: string;
   agentName: string;
-  apiUrl: string;
+  apiUrl: string | null;
   webhookPublicKey: string | null;
   joinedAt: number; // ms
 }
@@ -227,6 +227,8 @@ async function getOrCreateBotAgent(botName: string): Promise<string> {
 
   const [agent] = await db.insert(schema.agents).values({
     ownerId: BOT_OWNER_ID,
+    creatorUserId: BOT_OWNER_ID,
+    agentAddress: null,
     name: botName,
     description: 'Auto-fill bot agent',
     apiUrl: 'bot://random',

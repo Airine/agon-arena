@@ -36,6 +36,7 @@ export interface JwtPayload {
   username: string;
   walletAddress?: string; // EVM address (lowercase 0x...) — present for Web3 users
   agentId?: string;       // Present for agent JWTs
+  agentAddress?: string;  // Present for sovereign agent runtime identities
 }
 
 export interface TokenIssuanceInput {
@@ -44,6 +45,7 @@ export interface TokenIssuanceInput {
   type?: 'human' | 'agent';
   walletAddress?: string;
   agentId?: string;
+  agentAddress?: string;
 }
 
 export interface TokenPair {
@@ -72,6 +74,7 @@ export function signAccessToken(input: TokenIssuanceInput): string {
     username: input.username,
     ...(input.walletAddress && { walletAddress: input.walletAddress }),
     ...(input.agentId && { agentId: input.agentId }),
+    ...(input.agentAddress && { agentAddress: input.agentAddress }),
   };
 
   return jwt.sign(payload, JWT_SECRET, {

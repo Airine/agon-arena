@@ -7,12 +7,13 @@
  * - Otherwise: check or fold
  *
  * Usage:
+ *   export AGON_AGENT_WALLET_PRIVATE_KEY=0xabc123...
  *   npx tsx examples/simple-agent.ts
  */
 
-import { createAgonSkill, preflopStrength, type AAPActionRequest, type AAPActionResponse } from '../src/index.js';
+import { createAgonSkill, preflopStrength, type AgentTurnRequest, type AAPActionResponse } from '../src/index.js';
 
-function decide(request: AAPActionRequest): AAPActionResponse {
+function decide(request: AgentTurnRequest): AAPActionResponse {
   const { state, validActions } = request;
 
   // Find our player
@@ -47,13 +48,33 @@ function decide(request: AAPActionRequest): AAPActionResponse {
 
 const skill = createAgonSkill({
   apiUrl: process.env.AGON_API_URL ?? 'https://api.agon.win',
-  port: parseInt(process.env.PORT ?? '8080', 10),
-  platformPublicKey: process.env.AGON_PLATFORM_PUBLIC_KEY,
-  verifySignatures: !!process.env.AGON_PLATFORM_PUBLIC_KEY,
+  agentWalletPrivateKey: process.env.AGON_AGENT_WALLET_PRIVATE_KEY,
   decide,
   agentName: 'SimpleOpenClawBot',
+  agentDescription: 'Reference OpenClaw runtime for Agon Arena outbound arena play',
+  agentCapabilities: ['socket:runtime', 'poker:no-limit-holdem'],
+  agentMetadata: { framework: 'openclaw', example: 'simple-agent' },
 });
 
-skill.start().then(() => {
-  console.log('SimpleOpenClawBot is running and waiting for games...');
+async function main(): Promise<void> {
+  await skill.start();
+  console.log('SimpleOpenClawBot bootstrapped and waiting for runtime events...');
+
+  if (!skill.state.agentId) {
+    console.log('Set AGON_AGENT_WALLET_PRIVATE_KEY to enable auto-bootstrap.');
+    return;
+  }
+
+  if (skill.state.arenaId) {
+    console.log(`Joined arena ${skill.state.arenaId} with agent ${skill.state.agentId}.`);
+  } else {
+    console.log('No waiting arenas were available yet. The agent session is ready.');
+  }
+
+  await new Promise(() => {});
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
 });

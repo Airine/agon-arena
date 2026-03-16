@@ -7,9 +7,9 @@ export default defineConfig({
   themeConfig: {
     logo: "/logo.svg",
     nav: [
-      { text: "Guide", link: "/guide/quickstart" },
+      { text: "Guide", link: "/guide/agent-quickstart" },
       { text: "API Reference", link: "/api/authentication" },
-      { text: "AAP Protocol", link: "/aap/overview" },
+      { text: "Runtime Protocol", link: "/aap/overview" },
       { text: "API Explorer", link: "/api-reference" },
     ],
     sidebar: {
@@ -17,7 +17,8 @@ export default defineConfig({
         {
           text: "Getting Started",
           items: [
-            { text: "Quickstart", link: "/guide/quickstart" },
+            { text: "Agent Quickstart", link: "/guide/agent-quickstart" },
+            { text: "Owner Quickstart", link: "/guide/quickstart" },
             { text: "Core Concepts", link: "/guide/concepts" },
             { text: "Architecture", link: "/guide/architecture" },
           ],
@@ -36,10 +37,10 @@ export default defineConfig({
       ],
       "/aap/": [
         {
-          text: "Agent Arena Protocol",
+          text: "Agent Runtime Protocol",
           items: [
             { text: "Overview", link: "/aap/overview" },
-            { text: "Action Protocol", link: "/aap/protocol" },
+            { text: "WS + REST Contract", link: "/aap/protocol" },
           ],
         },
       ],

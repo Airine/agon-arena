@@ -13,6 +13,7 @@ import {
   uniqueIndex,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
+import type { Card, GameState, Winner } from '@agon/types';
 
 // Enums
 export const arenaStatusEnum = pgEnum('arena_status', ['waiting', 'running', 'finished', 'cancelled']);
@@ -53,7 +54,15 @@ export const users = pgTable('users', {
 // Agents table
 export const agents = pgTable('agents', {
   id: uuid('id').primaryKey().defaultRandom(),
+  // ownerId: current economic beneficiary / controller for this agent
   ownerId: uuid('owner_id').notNull().references(() => users.id),
+  // creatorUserId: the user who originally created this record. For wallet-self-
+  // bootstrapped agents this starts as the same user as ownerId, but it is kept
+  // separate so creator/owner relationships can diverge later.
+  creatorUserId: uuid('creator_user_id').notNull().references(() => users.id),
+  // agentAddress: sovereign runtime identity. Null for owner-side draft agents
+  // and internal bots, unique when present.
+  agentAddress: varchar('agent_address', { length: 42 }),
   // ownerAgentId: the parent agent in the ownership chain (null = top-level agent)
   // Max chain depth is 5. Self-referential FK uses AnyPgColumn to avoid circular type issues.
   ownerAgentId: uuid('owner_agent_id').references((): AnyPgColumn => agents.id),
@@ -61,7 +70,7 @@ export const agents = pgTable('agents', {
   ownerShareRate: integer('owner_share_rate').notNull().default(90),
   name: varchar('name', { length: 100 }).notNull(),
   description: text('description'),
-  apiUrl: varchar('api_url', { length: 500 }).notNull(),
+  apiUrl: varchar('api_url', { length: 500 }),
   apiKeyHash: varchar('api_key_hash', { length: 255 }), // For verifying agent identity
   webhookPublicKey: varchar('webhook_public_key', { length: 128 }), // Ed25519 public key (hex)
   avatarUrl: varchar('avatar_url', { length: 500 }),
@@ -76,6 +85,8 @@ export const agents = pgTable('agents', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 }, (t) => [
   index('agents_owner_idx').on(t.ownerId),
+  index('agents_creator_idx').on(t.creatorUserId),
+  uniqueIndex('agents_agent_address_idx').on(t.agentAddress),
   index('agents_elo_idx').on(t.eloRating),
 ]);
 
@@ -86,6 +97,9 @@ export const arenas = pgTable('arenas', {
   gameType: gameTypeEnum('game_type').notNull().default('texas_holdem'),
   mode: arenaModeEnum('mode').notNull().default('practice'),
   status: arenaStatusEnum('status').notNull().default('waiting'),
+  // allowSparringReplacement: whether a waiting self-built practice arena may
+  // swap out its hosted-skill sparring seat when a new real runtime joins.
+  allowSparringReplacement: boolean('allow_sparring_replacement').notNull().default(false),
   maxPlayers: integer('max_players').notNull().default(6),
   smallBlind: integer('small_blind').notNull().default(10),
   bigBlind: integer('big_blind').notNull().default(20),
@@ -125,10 +139,10 @@ export const gameHands = pgTable('game_hands', {
   arenaId: uuid('arena_id').notNull().references(() => arenas.id),
   handNumber: integer('hand_number').notNull(),
   stage: gameStageEnum('stage').notNull().default('pre_flop'),
-  stateSnapshot: jsonb('state_snapshot'), // Full GameState JSON for replay
-  communityCards: jsonb('community_cards'), // Card[]
+  stateSnapshot: jsonb('state_snapshot').$type<GameState>(), // Full GameState JSON for replay
+  communityCards: jsonb('community_cards').$type<Card[]>(), // Card[]
   potAmount: integer('pot_amount').notNull().default(0),
-  winnersJson: jsonb('winners_json'), // Winner[]
+  winnersJson: jsonb('winners_json').$type<Winner[]>(), // Winner[]
   dealerIndex: integer('dealer_index').notNull(),
   vrfCommit: varchar('vrf_commit', { length: 64 }),   // SHA-256 commitment (published pre-deal)
   vrfSeed: varchar('vrf_seed', { length: 64 }),        // Random seed (revealed post-hand)

@@ -98,6 +98,22 @@ export function useArenaSocket(arenaId: string): UseArenaSocketResult {
     [scheduledFlush],
   );
 
+  const hydrateFromSnapshot = useCallback(() => {
+    fetch(buildApiUrl(`/arenas/${arenaId}/snapshot`))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { snapshot: { gameState: GameState } | null; arenaStatus?: string } | null) => {
+        if (data?.snapshot?.gameState) {
+          startTransition(() => setGameState(data.snapshot!.gameState));
+        }
+        if (data?.arenaStatus === 'finished') {
+          startTransition(() => setArenaFinished(true));
+        }
+      })
+      .catch(() => {
+        // Network error — wait for WS traffic to restore state
+      });
+  }, [arenaId]);
+
   useEffect(() => {
     if (typeof window === 'undefined') return; // SSR guard
 
@@ -172,19 +188,11 @@ export function useArenaSocket(arenaId: string): UseArenaSocketResult {
     };
 
     socketManager.joinArena(arenaId, listener);
+    hydrateFromSnapshot();
 
     // Fetch snapshot on reconnect to restore state immediately
     const unsubReconnect = socketManager.onReconnect(() => {
-      fetch(buildApiUrl(`/arenas/${arenaId}/snapshot`))
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data: { snapshot: { gameState: GameState } | null } | null) => {
-          if (data?.snapshot?.gameState) {
-            startTransition(() => setGameState(data.snapshot!.gameState));
-          }
-        })
-        .catch(() => {
-          // Network error — wait for next WS event to restore state
-        });
+      hydrateFromSnapshot();
     });
 
     return () => {
@@ -193,7 +201,7 @@ export function useArenaSocket(arenaId: string): UseArenaSocketResult {
       socketManager.leaveArena(arenaId, listener);
       unsubReconnect();
     };
-  }, [arenaId, enqueue]);
+  }, [arenaId, enqueue, hydrateFromSnapshot]);
 
   return { gameState, actions, chipSnapshots, connected, arenaFinished };
 }

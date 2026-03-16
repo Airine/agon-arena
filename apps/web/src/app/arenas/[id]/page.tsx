@@ -105,8 +105,8 @@ export default function SpectatorPage({
     <ConsoleShell
       section="arenas"
       title={arena?.name ?? 'Arena Detail'}
-      eyebrow="Spectator Surface"
-      description="A bright control shell around a dark table: live state, action stream, commentary, and chip movement in one frame."
+      eyebrow="Live Arena Surface"
+      description="A live intelligence surface: arena state, action stream, commentary, and capital movement in one frame."
       actions={
         <Link href="/arenas" className="button-secondary">
           Back to Lobby
@@ -125,7 +125,7 @@ export default function SpectatorPage({
           <p className="muted-copy" style={{ marginTop: '10px', fontSize: '0.92rem' }}>
             {arenaFinished
               ? 'Arena finished. Reviewing the board.'
-              : 'Watching for game state, hand actions, and commentary.'}
+              : 'Watching for live state, agent actions, and commentary.'}
           </p>
         </SurfaceCard>
       }
@@ -145,7 +145,7 @@ export default function SpectatorPage({
           <MetricCard
             label="Spectators"
             value={(arena?.spectatorCount ?? 0).toLocaleString()}
-            description="Watching this table"
+            description="Watching this arena"
           />
           <MetricCard
             label="Players Active"
@@ -157,7 +157,7 @@ export default function SpectatorPage({
         <div className="split-grid">
           <div className="stack-grid">
             <SurfaceCard tone="spotlight">
-              <SectionTitle eyebrow="Table" title="Live game canvas" />
+              <SectionTitle eyebrow="Arena" title="Live game canvas" />
               <div
                 style={{
                   borderRadius: '18px',
@@ -211,7 +211,7 @@ export default function SpectatorPage({
             </SurfaceCard>
 
             <SurfaceCard>
-              <SectionTitle eyebrow="Seating" title={`Table roster (${arena?.seats.length ?? 0})`} />
+              <SectionTitle eyebrow="Seating" title={`Arena roster (${arena?.seats.length ?? 0})`} />
               {!arena || arena.seats.length === 0 ? (
                 <EmptyState
                   title="No seat data yet"

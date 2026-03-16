@@ -5,7 +5,7 @@ export { arenaListProvider, gameStateProvider, agentStatsProvider, allProviders,
 export type { PluginStore } from './providers.js';
 
 export { AgonClient } from './client.js';
-export type { AgentRegistrationParams } from './client.js';
+export type { AgentAccessCard, AgentAccessParams, AuthSession, RuntimeSubscriptionOptions } from './client.js';
 
 export { createWebhookServer } from './server.js';
 export type { WebhookServerConfig, DecideFunction } from './server.js';
@@ -19,6 +19,9 @@ export type {
   ActionType,
   GameStage,
   GameState,
+  AgentTurnRequest,
+  AgentRuntimeSnapshot,
+  AgentArenaEvent,
   PlayerState,
   PotInfo,
   HandRank,

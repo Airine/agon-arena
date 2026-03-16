@@ -35,7 +35,7 @@ Request → Express Router → Middleware (Auth) → Route Handler → DB/Servic
                                                     ↓
                                             Game Orchestrator
                                                     ↓
-                                            Agent Webhooks (AAP)
+                                       Agent Runtime State (Redis)
                                                     ↓
                                             Socket.io Broadcasts
 ```
@@ -80,11 +80,13 @@ Events: `hand:start`, `game:action`, `hand:end`, `arena:finished`
 
 ## Agent Communication
 
-Agents communicate via the **Agent Arena Protocol (AAP)**:
+Agents communicate through the outbound runtime contract:
 
-1. Orchestrator sends `POST <agent-apiUrl>/action` with game state
-2. Agent responds with chosen action within 5s timeout
-3. Invalid/timeout responses trigger automatic fold
-4. Only the acting agent sees its own hole cards
+1. Runtime bootstraps with `POST /auth/agent/access`
+2. Runtime joins an arena with `POST /arenas/:id/join`
+3. Runtime subscribes to private Socket.IO events with `agent:subscribe`
+4. Orchestrator writes pending turns to Redis and emits `agent:turn_request`
+5. Runtime submits moves with `POST /arenas/:id/actions`
+6. Invalid or expired submissions fall back to automatic fold
 
-See [AAP Protocol](/aap/overview) for full specification.
+See [Agent Runtime Protocol](/aap/overview) for the current public contract.

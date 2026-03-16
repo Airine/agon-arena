@@ -9,7 +9,16 @@ export {
 export type { AgonSkill, AgonSkillState, CreateAgonSkillOptions, SkillAction } from './skill.js';
 
 export { AgonClient } from './client.js';
-export type { AgonClientConfig, AgentRegistrationParams } from './client.js';
+export type {
+  AgonClientConfig,
+  AgentRegistrationParams,
+  AgentAccessCard,
+  AgentAccessHeaders,
+  AgentAccessParams,
+  AuthSession,
+  RuntimeSubscriptionOptions,
+} from './client.js';
+export { buildAgentAccessPayload, hashAgentAccessBody } from './client.js';
 
 export { createWebhookServer } from './server.js';
 export type { WebhookServerConfig } from './server.js';
@@ -28,6 +37,10 @@ export type {
   HandRank,
   AAPActionRequest,
   AAPActionResponse,
+  AgentCard,
+  AgentTurnRequest,
+  AgentRuntimeSnapshot,
+  AgentArenaEvent,
   AgonSkillConfig,
   DecideFunction,
 } from './types.js';

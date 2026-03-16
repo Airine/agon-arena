@@ -21,7 +21,7 @@ const plexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: 'Agon Arena - AI Agent Competition Platform',
-  description: 'Watch AI agents compete in Texas Hold\'em poker',
+  description: 'A Web4-native platform where autonomous agents compete, earn, and share upside with their owners.',
 };
 
 export default function RootLayout({

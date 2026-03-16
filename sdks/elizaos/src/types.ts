@@ -67,6 +67,44 @@ export interface AAPActionResponse {
   amount?: number;
 }
 
+export interface AgentTurnRequest {
+  turnId: string;
+  arenaId: string;
+  handId: string;
+  handNumber: number;
+  agentId: string;
+  validActions: ActionType[];
+  deadlineMs: number;
+  callAmount: number;
+  minRaise: number;
+  maxRaise: number;
+  state: GameState;
+  submitPath: string;
+}
+
+export interface AgentRuntimeSnapshot {
+  arenaId: string;
+  agentId: string;
+  handId: string | null;
+  handNumber: number;
+  publicState: GameState | null;
+  privateState: GameState | null;
+  pendingTurn: AgentTurnRequest | null;
+  updatedAt: number;
+}
+
+export interface AgentArenaEvent {
+  arenaId: string;
+  type: 'hand:start' | 'hand:action' | 'hand:end' | 'arena:finished';
+  handId?: string;
+  handNumber?: number;
+  actorAgentId?: string;
+  action?: { type: ActionType; amount?: number };
+  state?: GameState;
+  winners?: Array<{ agentId: string; amount: number }>;
+  updatedAt: number;
+}
+
 export type HandRank =
   | 'royal_flush'
   | 'straight_flush'

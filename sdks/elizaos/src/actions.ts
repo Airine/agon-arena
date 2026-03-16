@@ -4,16 +4,73 @@
  * Actions define things the agent can DO:
  * - browseArenas: List available poker arenas
  * - joinArena: Join a specific arena
- * - playPoker: Make a poker decision during a game
+ * - playPoker: Inspect the decision that would be made for the current turn
  */
 
-import type { ElizaAction, IAgentRuntime, AAPActionRequest, AAPActionResponse, Card } from './types.js';
+import type {
+  AgentArenaEvent,
+  AgentRuntimeSnapshot,
+  AgentTurnRequest,
+  ElizaAction,
+  IAgentRuntime,
+  AAPActionResponse,
+  Card,
+} from './types.js';
 import { AgonClient } from './client.js';
+import { pluginStore } from './providers.js';
 
 function getClient(runtime: IAgentRuntime): AgonClient {
+  if (pluginStore.client) {
+    return pluginStore.client;
+  }
   const apiUrl = runtime.getSetting('AGON_API_URL') ?? 'https://api.agon.win';
   const token = runtime.getSetting('AGON_TOKEN');
   return new AgonClient(apiUrl, token);
+}
+
+export function attachRuntimeSubscription(client: AgonClient, agentId: string, arenaId: string): void {
+  pluginStore.agentId = agentId;
+  pluginStore.arenaId = arenaId;
+  pluginStore.client = client;
+  pluginStore.socket?.disconnect();
+  pluginStore.socket = client.subscribeRuntime({
+    agentId,
+    arenaId,
+    onSnapshot: (snapshot) => {
+      syncSnapshot(snapshot);
+    },
+    onTurnRequest: async (turn) => {
+      pluginStore.currentTurn = turn;
+      pluginStore.lastGameState = turn.state;
+      const response = makeDecision(turn);
+      await client.submitAction(turn.arenaId, {
+        agentId: turn.agentId,
+        turnId: turn.turnId,
+        action: response.action,
+        amount: response.amount,
+      });
+    },
+    onArenaEvent: (event) => {
+      syncArenaEvent(event);
+    },
+  });
+}
+
+function syncSnapshot(snapshot: AgentRuntimeSnapshot): void {
+  pluginStore.lastGameState = snapshot.privateState ?? snapshot.publicState ?? undefined;
+  pluginStore.currentTurn = snapshot.pendingTurn ?? undefined;
+  if (snapshot.handNumber > pluginStore.handsPlayed) {
+    pluginStore.handsPlayed = snapshot.handNumber;
+  }
+}
+
+function syncArenaEvent(event: AgentArenaEvent): void {
+  if (event.state) {
+    pluginStore.lastGameState = event.state;
+  }
+  if (typeof event.handNumber === 'number' && event.handNumber > pluginStore.handsPlayed) {
+    pluginStore.handsPlayed = event.handNumber;
+  }
 }
 
 /** Action: Browse available poker arenas. */
@@ -73,7 +130,7 @@ export const joinArenaAction: ElizaAction = {
   ],
 
   validate: async (runtime) => {
-    return !!runtime.getSetting('AGON_TOKEN') && !!runtime.getSetting('AGON_AGENT_ID');
+    return !!pluginStore.agentId || (!!runtime.getSetting('AGON_TOKEN') && !!runtime.getSetting('AGON_AGENT_ID'));
   },
 
   handler: async (runtime, message, _state, options, callback) => {
@@ -92,8 +149,9 @@ export const joinArenaAction: ElizaAction = {
       }
 
       await client.joinArena(arenaId, agentId);
+      attachRuntimeSubscription(client, agentId, arenaId);
       callback({
-        text: `Successfully joined arena ${arenaId}. Waiting for the game to start...`,
+        text: `Successfully joined arena ${arenaId}. Runtime subscription is now active.`,
         action: 'JOIN_ARENA',
       });
     } catch (e) {
@@ -102,7 +160,7 @@ export const joinArenaAction: ElizaAction = {
   },
 };
 
-/** Action: Make a poker decision (used by the webhook handler). */
+/** Action: Preview the decision for the current private turn request. */
 export const playPokerAction: ElizaAction = {
   name: 'PLAY_POKER',
   description: 'Make a poker decision during an active Agon Arena game',
@@ -117,9 +175,9 @@ export const playPokerAction: ElizaAction = {
   validate: async () => true,
 
   handler: async (_runtime, _message, state, _options, callback) => {
-    const request = state.agonActionRequest as AAPActionRequest | undefined;
+    const request = (state.agonTurnRequest as AgentTurnRequest | undefined) ?? pluginStore.currentTurn;
     if (!request) {
-      callback({ text: 'No active poker game state. This action is triggered automatically during games.' });
+      callback({ text: 'No active private turn request is available right now.' });
       return;
     }
 
@@ -132,7 +190,7 @@ export const playPokerAction: ElizaAction = {
 };
 
 /** Simple poker decision logic. */
-export function makeDecision(request: AAPActionRequest): AAPActionResponse {
+export function makeDecision(request: AgentTurnRequest): AAPActionResponse {
   const { state, validActions, agentId } = request;
   const me = state.players.find((p) => p.agentId === agentId);
   if (!me || !me.cards.length) {

@@ -1,15 +1,15 @@
 /**
- * OpenClaw Skill definition for Agon Arena poker integration.
+ * OpenClaw Skill definition for Agon Arena runtime integration.
  *
- * This module exports a skill factory that wraps the Agon Arena AAP protocol
- * into the OpenClaw skill interface (actions, conditions, lifecycle hooks).
+ * This module exports a skill factory that wraps the Agon Arena outbound
+ * runtime protocol into the OpenClaw skill interface.
  *
  * Usage:
  *   import { createAgonSkill } from '@agon/openclaw-skill';
  *
  *   const skill = createAgonSkill({
  *     apiUrl: 'https://api.agon.win',
- *     decide: (request) => {
+ *     decide: (turn) => {
  *       // your poker strategy
  *       return { action: 'call' };
  *     },
@@ -18,23 +18,25 @@
 
 import type {
   AgonSkillConfig,
-  AAPActionRequest,
   AAPActionResponse,
   DecideFunction,
   ActionType,
   GameState,
   Card,
+  AgentTurnRequest,
 } from './types.js';
 import { AgonClient } from './client.js';
-import { createWebhookServer } from './server.js';
+import type { Socket } from 'socket.io-client';
 
 /** Skill state maintained across the skill lifecycle. */
 export interface AgonSkillState {
   client: AgonClient;
   agentId?: string;
+  arenaId?: string;
   isRunning: boolean;
   handsPlayed: number;
   lastGameState?: GameState;
+  socket?: Socket;
 }
 
 /** Full config for creating an Agon OpenClaw skill. */
@@ -61,10 +63,10 @@ export interface AgonSkill {
   /** Skill actions that the agent can invoke. */
   actions: Record<string, SkillAction>;
 
-  /** Start the webhook server and prepare for games. */
+  /** Bootstrap the agent runtime. */
   start: () => Promise<void>;
 
-  /** Stop the webhook server. */
+  /** Stop the runtime subscription. */
   stop: () => Promise<void>;
 
   /** Current skill state. */
@@ -77,19 +79,18 @@ export interface AgonSkill {
  * The skill exposes the following actions:
  * - `listArenas`: Browse available poker arenas
  * - `joinArena`: Join an arena with the registered agent
- * - `getGameState`: Get the latest game state from the last webhook
+ * - `getGameState`: Get the latest private runtime state
  * - `getStats`: Get the agent's performance statistics
- *
- * The webhook server runs in the background, automatically responding to
- * action requests from the Agon platform using the provided `decide` function.
  */
 export function createAgonSkill(options: CreateAgonSkillOptions): AgonSkill {
   const {
     apiUrl,
-    port = 8080,
-    host = '0.0.0.0',
-    platformPublicKey,
-    verifySignatures = true,
+    agentWalletPrivateKey,
+    agentDescription,
+    agentVersion,
+    agentCapabilities,
+    agentMetadata,
+    autoJoinArenaId,
     decide,
     agentName = 'OpenClawAgent',
   } = options;
@@ -103,22 +104,15 @@ export function createAgonSkill(options: CreateAgonSkillOptions): AgonSkill {
   };
 
   // Wrap decide to track state
-  const wrappedDecide: DecideFunction = async (request: AAPActionRequest) => {
+  const wrappedDecide: DecideFunction = async (request: AgentTurnRequest) => {
     state.lastGameState = request.state;
     state.handsPlayed++;
     return decide(request);
   };
 
-  const server = createWebhookServer({
-    decide: wrappedDecide,
-    platformPublicKey,
-    verifySignatures,
-    name: agentName,
-  });
-
   const skill: AgonSkill = {
     name: 'agon-arena',
-    description: 'Compete in Texas Hold\'em poker on Agon Arena against other AI agents',
+    description: 'Compete in live Agon Arena matches through the outbound agent runtime contract',
     version: '0.1.0',
 
     state,
@@ -141,6 +135,24 @@ export function createAgonSkill(options: CreateAgonSkillOptions): AgonSkill {
           const arenaId = params.arenaId as string;
           if (!state.agentId) throw new Error('Agent not registered. Call start() first.');
           const result = await client.joinArena(arenaId, state.agentId);
+          state.arenaId = arenaId;
+          state.socket?.disconnect();
+          state.socket = client.subscribeRuntime({
+            agentId: state.agentId,
+            arenaId,
+            onSnapshot: (snapshot) => {
+              state.lastGameState = snapshot.privateState ?? snapshot.publicState ?? undefined;
+            },
+            onTurnRequest: async (turn) => {
+              const response = await wrappedDecide(turn);
+              await client.submitAction(arenaId, {
+                agentId: turn.agentId,
+                turnId: turn.turnId,
+                action: response.action,
+                amount: response.amount,
+              });
+            },
+          });
           return result;
         },
       },
@@ -169,13 +181,37 @@ export function createAgonSkill(options: CreateAgonSkillOptions): AgonSkill {
     },
 
     start: async () => {
-      await server.listen({ port, host });
       state.isRunning = true;
-      server.log.info(`Agon Arena skill started — webhook listening on ${host}:${port}`);
+
+      if (!agentWalletPrivateKey) {
+        console.warn('Skipping agent bootstrap because AGON_AGENT_WALLET_PRIVATE_KEY is missing.');
+        return;
+      }
+
+      const session = await client.agentAccess({
+        walletPrivateKey: agentWalletPrivateKey,
+        agentCard: {
+          name: agentName,
+          description: agentDescription,
+          version: agentVersion,
+          capabilities: agentCapabilities,
+          metadata: agentMetadata,
+        },
+      });
+
+      const agent = session.agent as { id?: string } | undefined;
+      state.agentId = agent?.id;
+
+      const waiting = await client.listArenas('waiting');
+      const nextArenaId = autoJoinArenaId
+        ?? waiting.arenas.find((arena) => typeof arena?.id === 'string')?.id;
+      if (state.agentId && typeof nextArenaId === 'string') {
+        await skill.actions.joinArena.execute({ arenaId: nextArenaId });
+      }
     },
 
     stop: async () => {
-      await server.close();
+      state.socket?.disconnect();
       state.isRunning = false;
     },
   };
