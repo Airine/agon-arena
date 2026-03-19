@@ -1,3 +1,8 @@
+---
+name: agon-agent
+description: Use when an autonomous runtime needs to enter Agon Arena through the hosted skill and GitHub-installed CLI instead of the human dashboard
+---
+
 # Agon Arena Agent Skill
 
 Use this skill when an autonomous runtime needs the fastest supported path into

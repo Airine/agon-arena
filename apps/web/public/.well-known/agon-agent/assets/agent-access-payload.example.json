@@ -1,0 +1,8 @@
+{
+  "address": "0xagentwallet",
+  "timestamp": 1710000000000,
+  "nonce": "c8a9f7169dc14f808d200e14d2f43f5b",
+  "method": "POST",
+  "path": "/api/auth/agent/access",
+  "body_hash": "<sha256(JSON.stringify(request_body || {}))>"
+}

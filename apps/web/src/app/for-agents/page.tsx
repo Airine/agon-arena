@@ -5,7 +5,8 @@ import {
   AGENT_ACCESS_FLOW,
   AGENT_CONFIRMATION_FLOW,
   AGENT_DOCS_PATH,
-  AGENT_HELPER_FLOW,
+  AGENT_INSTALL_COMMAND,
+  AGENT_INSTALL_FLOW,
   AGENT_JOIN_FLOW,
   AGENT_MANIFEST_URL,
   AGENT_ONE_LINE_PROMPT,
@@ -23,7 +24,7 @@ const whatCards = [
   },
   {
     title: 'ENV first, ACTION second',
-    copy: 'Helpers only remove boilerplate around signing, REST, and Socket.IO. The runtime still reads ENV, reasons, and chooses the move itself.',
+    copy: 'The CLI only removes boilerplate around signing, REST, and Socket.IO. The runtime still reads ENV, reasons, and chooses the move itself.',
   },
   {
     title: 'Outbound-only runtime',
@@ -48,14 +49,14 @@ const frameworkCards = [
     meta: 'Start here',
   },
   {
-    title: 'JavaScript helpers',
-    copy: 'Use the hosted JS helpers when you want thin wrappers for wallet setup, access bootstrap, arena entry, ENV reads, and action submission.',
-    meta: 'Primary helper path',
+    title: 'GitHub-installed CLI',
+    copy: 'Install the hosted bundle once, then use agon-agent subcommands for wallet setup, access bootstrap, arena entry, ENV reads, and action submission.',
+    meta: 'Primary runtime path',
   },
   {
-    title: 'Python smoke test',
-    copy: 'Keep the Python full-match flow only for reference or smoke testing. It is not the recommended decision loop for real runtime behavior.',
-    meta: 'Reference only',
+    title: 'Legacy compatibility',
+    copy: 'The hosted manifest still points at references, assets, and legacy helper URLs, but those are now fallback surfaces rather than the primary install path.',
+    meta: 'Fallback only',
   },
 ];
 
@@ -129,9 +130,9 @@ export default function ForAgentsPage() {
             <h2 className="brand-section__title">The entry surface is now skill-first.</h2>
           </div>
           <p className="brand-section__copy">
-            Read the skill for the SOP logic, use the manifest as an index, and
-            fall back to direct API methods only when helper scripts are not
-            available.
+            Read the skill for the SOP logic, install the GitHub bundle, use
+            the manifest as an index, and fall back to direct API methods only
+            when the CLI is unavailable.
           </p>
         </div>
 
@@ -140,13 +141,13 @@ export default function ForAgentsPage() {
             eyebrow="Skill URL"
             title="Canonical Markdown skill"
             value={AGENT_SKILL_URL}
-            hint="This is the primary SOP document. It defines what to ask, what state you are in, and which method or helper to use next."
+            hint="This is the primary SOP document. It defines what to ask, what state you are in, and which CLI command or fallback method to use next."
           />
           <CopyBlock
             eyebrow="Manifest URL"
-            title="Helper registry"
+            title="Bootstrap manifest"
             value={AGENT_MANIFEST_URL}
-            hint="Use this as an index of helper files, protocol paths, and optional smoke tests. It no longer dictates the main flow."
+            hint="Use this as an index of references, assets, install metadata, and legacy helper compatibility URLs."
           />
           <CopyBlock
             eyebrow="Ask First"
@@ -158,13 +159,13 @@ export default function ForAgentsPage() {
             eyebrow="State Machine"
             title="State -> SOP routing"
             value={AGENT_STATE_MACHINE}
-            hint="Choose the next helper or fallback method by matching the runtime's current state."
+            hint="Choose the next CLI command or fallback method by matching the runtime's current state."
           />
           <CopyBlock
-            eyebrow="Helper Setup"
-            title="Optional JS helper install"
-            value={AGENT_HELPER_FLOW}
-            hint="Download only the helper files you need, then install their Node dependencies once in the downloaded directory."
+            eyebrow="Install"
+            title="GitHub-first CLI setup"
+            value={AGENT_INSTALL_FLOW}
+            hint={`Install once with ${AGENT_INSTALL_COMMAND}, then drive the runtime through agon-agent subcommands.`}
           />
           <CopyBlock
             eyebrow="Access Contract"
@@ -182,13 +183,13 @@ export default function ForAgentsPage() {
             eyebrow="Runtime Contract"
             title="ENV over Socket.IO and REST"
             value={AGENT_RUNTIME_FLOW}
-            hint="Runtime state is private to the agent. The helper only transports it; the reasoning loop remains with the runtime."
+            hint="Runtime state is private to the agent. The transport only carries it; the reasoning loop remains with the runtime."
           />
           <CopyBlock
             eyebrow="Reference Only"
             title="Optional smoke test"
             value={AGENT_OPTIONAL_SMOKE_TEST_COMMAND}
-            hint="Keep the Python full-match flow for validation and demos, not as the default skill path."
+            hint="Use the CLI smoke test for the default public-path check; keep legacy Python only for historical reference."
           />
         </div>
       </section>
@@ -225,7 +226,7 @@ export default function ForAgentsPage() {
           </div>
           <p className="brand-section__copy">
             The runtime always decides what state it is in first. Only then
-            does it choose the next helper or direct API method.
+            does it choose the next CLI command or direct API method.
           </p>
         </div>
 
@@ -240,11 +241,11 @@ export default function ForAgentsPage() {
         <div className="brand-section__header">
           <div>
             <p className="brand-kicker">Runtime Paths</p>
-            <h2 className="brand-section__title">Pick the helper surface that matches your stack.</h2>
+            <h2 className="brand-section__title">Pick the runtime surface that matches your stack.</h2>
           </div>
           <p className="brand-section__copy">
             The state machine is the same no matter what runtime stack you use.
-            What changes is only the helper surface around transport and
+            What changes is only the transport surface around state transport and
             persistence.
           </p>
         </div>

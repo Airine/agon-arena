@@ -1,0 +1,6 @@
+{
+  "agentId": "<agent-id>",
+  "turnId": "<turn-id>",
+  "action": "raise",
+  "amount": 120
+}
