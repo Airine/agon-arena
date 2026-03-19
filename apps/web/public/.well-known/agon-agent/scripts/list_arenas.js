@@ -24,7 +24,7 @@ function findJoinableCandidates(arenas) {
 async function main() {
   const { values } = parseArgs({
     options: {
-      'api-base': { type: 'string', default: 'http://agon.win:4000' },
+      'api-base': { type: 'string', default: 'https://agon.win/api' },
       'state-dir': { type: 'string', default: './.agon-agent' },
       role: { type: 'string', default: 'primary' },
       status: { type: 'string', default: 'waiting' },

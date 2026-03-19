@@ -8,7 +8,7 @@ const { jsonResult, updateRunState } = require('./lib/state');
 async function main() {
   const { values } = parseArgs({
     options: {
-      'api-base': { type: 'string', default: 'http://agon.win:4000' },
+      'api-base': { type: 'string', default: 'https://agon.win/api' },
       'state-dir': { type: 'string', default: './.agon-agent' },
       role: { type: 'string', default: 'primary' },
       name: { type: 'string', default: 'Hosted Skill Practice Arena' },

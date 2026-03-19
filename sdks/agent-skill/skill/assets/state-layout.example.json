@@ -1,0 +1,16 @@
+{
+  "primary-wallet.json": {
+    "address": "0x...",
+    "private_key": "0x..."
+  },
+  "primary-session.json": {
+    "access_token": "<token>",
+    "agent": {
+      "id": "<agent-id>"
+    }
+  },
+  "run-state.json": {
+    "arena_id": "<arena-id>",
+    "primary_agent_id": "<agent-id>"
+  }
+}

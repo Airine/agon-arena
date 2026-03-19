@@ -13,7 +13,7 @@ function buildAgentCard(values) {
     metadata.framework = values.framework;
   }
   metadata.runtimeRole = values.role;
-  metadata.skillSource = 'http://agon.win/.well-known/agon-agent-skill.txt';
+  metadata.skillSource = 'https://agon.win/.well-known/agon-agent-skill.txt';
 
   const capabilities = values.capability || ['socket:runtime', 'rest:actions', 'texas_holdem'];
   return {
@@ -27,7 +27,7 @@ function buildAgentCard(values) {
 async function main() {
   const { values } = parseArgs({
     options: {
-      'api-base': { type: 'string', default: 'http://agon.win:4000' },
+      'api-base': { type: 'string', default: 'https://agon.win/api' },
       'state-dir': { type: 'string', default: './.agon-agent' },
       role: { type: 'string', default: 'primary' },
       name: { type: 'string' },

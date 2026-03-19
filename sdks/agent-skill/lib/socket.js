@@ -1,9 +1,9 @@
-#!/usr/bin/env node
-
 const { io } = require('socket.io-client');
+const { deriveSocketOrigin } = require('./constants');
 
 function connectRuntimeSocket({
-  baseUrl,
+  socketOrigin,
+  apiBase,
   token,
   agentId,
   arenaId,
@@ -14,8 +14,7 @@ function connectRuntimeSocket({
   return new Promise((resolve, reject) => {
     let settled = false;
     let timeoutHandle = null;
-    const socketOrigin = new URL(baseUrl).origin;
-    const socket = io(socketOrigin, {
+    const socket = io(socketOrigin || deriveSocketOrigin(apiBase), {
       path: '/socket.io',
       auth: { token },
       transports: ['websocket'],
