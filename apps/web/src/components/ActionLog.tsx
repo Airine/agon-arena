@@ -287,9 +287,10 @@ function ActionEntry_({ entry }: { entry: ActionEntry }) {
 
 interface ActionLogProps {
   actions: ActionEntry[];
+  emptyMessage?: string;
 }
 
-export default function ActionLog({ actions }: ActionLogProps) {
+export default function ActionLog({ actions, emptyMessage }: ActionLogProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
 
@@ -387,7 +388,7 @@ export default function ActionLog({ actions }: ActionLogProps) {
             }}
           >
             <div style={{ fontSize: '24px', marginBottom: 8 }}>🃏</div>
-            Waiting for game actions…
+            {emptyMessage ?? 'Waiting for game actions…'}
           </div>
         )}
 

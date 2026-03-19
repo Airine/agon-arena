@@ -8,6 +8,8 @@ interface PokerTableProps {
   gameState: GameState | null;
   width?: number;
   height?: number;
+  emptyLabel?: string;
+  isTerminalEmptyState?: boolean;
 }
 
 // Seat positions relative to table center (for 6 players)
@@ -42,6 +44,64 @@ const ACTION_COLORS: Record<string, string> = {
   all_in: '#fc8181',
 };
 
+type CardPlacement = 'above' | 'below' | 'left' | 'right';
+
+interface TableVisualLayout {
+  seatWidth: number;
+  seatHeight: number;
+  holeCardWidth: number;
+  holeCardHeight: number;
+  holeCardGap: number;
+}
+
+function getVisualLayout(tableWidth: number): TableVisualLayout {
+  const compact = tableWidth < 480;
+  const medium = tableWidth < 720;
+
+  if (compact) {
+    return {
+      seatWidth: 112,
+      seatHeight: 64,
+      holeCardWidth: 28,
+      holeCardHeight: 40,
+      holeCardGap: 5,
+    };
+  }
+
+  if (medium) {
+    return {
+      seatWidth: 124,
+      seatHeight: 68,
+      holeCardWidth: 30,
+      holeCardHeight: 44,
+      holeCardGap: 6,
+    };
+  }
+
+  return {
+    seatWidth: 132,
+    seatHeight: 74,
+    holeCardWidth: 32,
+    holeCardHeight: 46,
+    holeCardGap: 6,
+  };
+}
+
+function truncateLabel(label: string, maxChars: number): string {
+  if (label.length <= maxChars) {
+    return label;
+  }
+  return `${label.slice(0, Math.max(1, maxChars - 1))}…`;
+}
+
+function getCardPlacement(px: number, py: number, width: number, height: number): CardPlacement {
+  if (py < height * 0.3) return 'below';
+  if (py > height * 0.74) return 'above';
+  if (px < width * 0.22) return 'right';
+  if (px > width * 0.78) return 'left';
+  return 'below';
+}
+
 function drawCard(
   layer: Konva.Layer,
   KonvaLib: typeof Konva,
@@ -70,36 +130,39 @@ function drawCard(
   if (card) {
     const color = SUIT_COLORS[card.suit] ?? '#333';
     const symbol = SUIT_SYMBOLS[card.suit] ?? '';
+    const cornerRankSize = Math.max(11, Math.floor(w * 0.34));
+    const cornerSuitSize = Math.max(10, Math.floor(w * 0.28));
+    const centerSuitSize = Math.max(15, Math.floor(w * 0.44));
 
     const rankText = new KonvaLib.Text({
       text: card.rank,
-      fontSize: 13,
+      fontSize: cornerRankSize,
       fontStyle: 'bold',
       fill: color,
-      x: 3,
-      y: 3,
+      x: 4,
+      y: 2,
     });
     group.add(rankText);
 
-    const suitText = new KonvaLib.Text({
+    const cornerSuit = new KonvaLib.Text({
       text: symbol,
-      fontSize: 18,
+      fontSize: cornerSuitSize,
       fill: color,
-      x: w / 2 - 9,
-      y: h / 2 - 11,
+      x: 4,
+      y: 14,
     });
-    group.add(suitText);
+    group.add(cornerSuit);
 
-    const rankBottom = new KonvaLib.Text({
-      text: card.rank,
-      fontSize: 13,
-      fontStyle: 'bold',
+    const centerSuit = new KonvaLib.Text({
+      text: symbol,
+      fontSize: centerSuitSize,
       fill: color,
-      x: w - 16,
-      y: h - 18,
-      rotation: 180,
+      x: 0,
+      y: h / 2 - centerSuitSize / 2 - 2,
+      width: w,
+      align: 'center',
     });
-    group.add(rankBottom);
+    group.add(centerSuit);
   } else {
     // Card back pattern
     const pattern = new KonvaLib.Rect({
@@ -122,12 +185,18 @@ function drawSeat(
   player: PlayerState,
   px: number,
   py: number,
+  tableWidth: number,
+  tableHeight: number,
+  layout: TableVisualLayout,
   isActive: boolean,
   isDealer: boolean
 ): void {
-  const group = new KonvaLib.Group({ x: px - 60, y: py - 40 });
-  const W = 120;
-  const H = 70;
+  const W = layout.seatWidth;
+  const H = layout.seatHeight;
+  const seatX = px - W / 2;
+  const seatY = py - H / 2;
+  const group = new KonvaLib.Group({ x: seatX, y: seatY });
+  const cornerRadius = 10;
 
   // Seat background
   const bg = new KonvaLib.Rect({
@@ -136,7 +205,7 @@ function drawSeat(
     fill: isActive ? '#1a3a5c' : '#1a1a2e',
     stroke: isActive ? '#63b3ed' : '#2d3748',
     strokeWidth: isActive ? 2 : 1,
-    cornerRadius: 8,
+    cornerRadius,
     shadowColor: isActive ? '#63b3ed' : 'transparent',
     shadowBlur: isActive ? 12 : 0,
   });
@@ -145,9 +214,9 @@ function drawSeat(
   // Dealer button
   if (isDealer) {
     const dealer = new KonvaLib.Circle({
-      x: W - 10,
-      y: 10,
-      radius: 8,
+      x: W - 14,
+      y: 14,
+      radius: 10,
       fill: '#f6e05e',
       stroke: '#d69e2e',
       strokeWidth: 1,
@@ -155,34 +224,35 @@ function drawSeat(
     group.add(dealer);
     const d = new KonvaLib.Text({
       text: 'D',
-      fontSize: 8,
+      fontSize: 9,
       fontStyle: 'bold',
       fill: '#744210',
-      x: W - 14,
-      y: 6,
+      x: W - 18,
+      y: 9,
     });
     group.add(d);
   }
 
   // Agent name
+  const reservedRightSpace = isDealer ? 30 : 12;
   const nameText = new KonvaLib.Text({
-    text: player.agentName.length > 14 ? player.agentName.slice(0, 14) + '…' : player.agentName,
-    fontSize: 12,
+    text: truncateLabel(player.agentName, W < 120 ? 12 : 15),
+    fontSize: W < 120 ? 11 : 12,
     fontStyle: 'bold',
     fill: '#e2e8f0',
     x: 8,
     y: 8,
-    width: W - 20,
+    width: W - reservedRightSpace,
   });
   group.add(nameText);
 
   // Stack chips
   const stackText = new KonvaLib.Text({
     text: `$${player.stack.toLocaleString()}`,
-    fontSize: 11,
+    fontSize: W < 120 ? 10 : 11,
     fill: '#68d391',
     x: 8,
-    y: 26,
+    y: 28,
   });
   group.add(stackText);
 
@@ -190,10 +260,10 @@ function drawSeat(
   if (player.bet > 0) {
     const betText = new KonvaLib.Text({
       text: `Bet: $${player.bet}`,
-      fontSize: 10,
+      fontSize: W < 120 ? 10 : 11,
       fill: '#f6ad55',
       x: 8,
-      y: 42,
+      y: 45,
     });
     group.add(betText);
   }
@@ -202,44 +272,68 @@ function drawSeat(
   if (player.isFolded) {
     const foldBadge = new KonvaLib.Rect({
       x: W - 44,
-      y: 26,
+      y: H - 22,
       width: 36,
       height: 16,
       fill: '#4a5568',
       cornerRadius: 4,
     });
     group.add(foldBadge);
-    group.add(new KonvaLib.Text({ text: 'FOLD', fontSize: 9, fill: '#a0aec0', x: W - 41, y: 30 }));
+    group.add(new KonvaLib.Text({ text: 'FOLD', fontSize: 9, fill: '#a0aec0', x: W - 41, y: H - 18 }));
   }
 
   if (player.isAllIn) {
     const allInBadge = new KonvaLib.Rect({
       x: W - 46,
-      y: 26,
+      y: H - 22,
       width: 38,
       height: 16,
       fill: '#742a2a',
       cornerRadius: 4,
     });
     group.add(allInBadge);
-    group.add(new KonvaLib.Text({ text: 'ALL-IN', fontSize: 9, fill: '#fc8181', x: W - 43, y: 30 }));
-  }
-
-  // Hole cards
-  const cards = player.cards;
-  if (cards.length === 2) {
-    drawCard(layer, KonvaLib, cards[0]!, px - 14, py + 32, 30, 44);
-    drawCard(layer, KonvaLib, cards[1]!, px + 4, py + 32, 30, 44);
-  } else if (!player.isFolded) {
-    // Face down
-    drawCard(layer, KonvaLib, null, px - 14, py + 32, 30, 44);
-    drawCard(layer, KonvaLib, null, px + 4, py + 32, 30, 44);
+    group.add(new KonvaLib.Text({ text: 'ALL-IN', fontSize: 9, fill: '#fc8181', x: W - 43, y: H - 18 }));
   }
 
   layer.add(group);
+
+  // Hole cards
+  const cards = player.cards;
+  const holeCardW = layout.holeCardWidth;
+  const holeCardH = layout.holeCardHeight;
+  const holeCardGap = layout.holeCardGap;
+  const cardsWidth = holeCardW * 2 + holeCardGap;
+  const cardPlacement = getCardPlacement(px, py, tableWidth, tableHeight);
+  let cardStartX = px - cardsWidth / 2;
+  let cardY = seatY + H + 8;
+
+  if (cardPlacement === 'above') {
+    cardY = seatY - holeCardH - 8;
+  } else if (cardPlacement === 'left') {
+    cardStartX = seatX - cardsWidth - 8;
+    cardY = py - holeCardH / 2;
+  } else if (cardPlacement === 'right') {
+    cardStartX = seatX + W + 8;
+    cardY = py - holeCardH / 2;
+  }
+
+  if (cards.length === 2) {
+    drawCard(layer, KonvaLib, cards[0]!, cardStartX, cardY, holeCardW, holeCardH);
+    drawCard(layer, KonvaLib, cards[1]!, cardStartX + holeCardW + holeCardGap, cardY, holeCardW, holeCardH);
+  } else if (!player.isFolded) {
+    // Face down
+    drawCard(layer, KonvaLib, null, cardStartX, cardY, holeCardW, holeCardH);
+    drawCard(layer, KonvaLib, null, cardStartX + holeCardW + holeCardGap, cardY, holeCardW, holeCardH);
+  }
 }
 
-export default function PokerTable({ gameState, width = 800, height = 540 }: PokerTableProps) {
+export default function PokerTable({
+  gameState,
+  width = 800,
+  height = 540,
+  emptyLabel,
+  isTerminalEmptyState = false,
+}: PokerTableProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage | null>(null);
 
@@ -269,6 +363,7 @@ export default function PokerTable({ gameState, width = 800, height = 540 }: Pok
       const cy = height / 2;
       const tableRx = width * 0.38;
       const tableRy = height * 0.36;
+      const layout = getVisualLayout(width);
 
       // Table shadow
       layer.add(
@@ -312,12 +407,14 @@ export default function PokerTable({ gameState, width = 800, height = 540 }: Pok
       if (!gameState) {
         layer.add(
           new KonvaLib.Text({
-            x: cx - 100,
+            x: 0,
             y: cy - 14,
-            text: 'Waiting for game...',
-            fontSize: 20,
-            fill: '#68d391',
-            fontStyle: 'italic',
+            width,
+            align: 'center',
+            text: emptyLabel ?? 'Waiting for game...',
+            fontSize: isTerminalEmptyState ? 18 : 20,
+            fill: isTerminalEmptyState ? '#d8dde8' : '#68d391',
+            fontStyle: isTerminalEmptyState ? 'normal' : 'italic',
           })
         );
         layer.draw();
@@ -325,17 +422,18 @@ export default function PokerTable({ gameState, width = 800, height = 540 }: Pok
       }
 
       const { players, communityCards, pots, currentActorIndex, dealerIndex, stage: gameStage } = gameState;
+      const endedBeforeFlop = gameStage === 'finished' && communityCards.length === 0;
 
       // Community cards
       const numCommunity = communityCards.length;
       if (numCommunity > 0) {
-        const cardW = 40;
-        const cardH = 58;
-        const cardGap = 6;
+        const cardW = width < 520 ? 36 : 42;
+        const cardH = width < 520 ? 54 : 62;
+        const cardGap = width < 520 ? 5 : 7;
         const totalW = numCommunity * cardW + (numCommunity - 1) * cardGap;
         let startX = cx - totalW / 2;
         for (const card of communityCards) {
-          drawCard(layer, KonvaLib, card, startX, cy - cardH / 2 - 8, cardW, cardH);
+          drawCard(layer, KonvaLib, card, startX, cy - cardH / 2 - 2, cardW, cardH);
           startX += cardW + cardGap;
         }
       }
@@ -343,13 +441,15 @@ export default function PokerTable({ gameState, width = 800, height = 540 }: Pok
       // Pot display
       const totalPot = pots.reduce((sum, p) => sum + p.amount, 0);
       if (totalPot > 0) {
-        const potY = numCommunity > 0 ? cy + 44 : cy - 14;
+        const potY = numCommunity > 0 ? cy + 58 : cy - 14;
         layer.add(
           new KonvaLib.Text({
-            x: cx - 50,
+            x: 0,
             y: potY,
+            width,
+            align: 'center',
             text: `Pot: $${totalPot.toLocaleString()}`,
-            fontSize: 14,
+            fontSize: width < 520 ? 13 : 14,
             fontStyle: 'bold',
             fill: '#f6e05e',
           })
@@ -360,12 +460,28 @@ export default function PokerTable({ gameState, width = 800, height = 540 }: Pok
       if (gameStage && gameStage !== 'waiting') {
         layer.add(
           new KonvaLib.Text({
-            x: cx - 30,
-            y: cy - 60,
+            x: 0,
+            y: cy - 78,
+            width,
+            align: 'center',
             text: gameStage.replace('_', ' ').toUpperCase(),
             fontSize: 11,
             fill: '#a0aec0',
             letterSpacing: 2,
+          })
+        );
+      }
+
+      if (endedBeforeFlop) {
+        layer.add(
+          new KonvaLib.Text({
+            x: 0,
+            y: cy - 24,
+            width,
+            align: 'center',
+            text: 'Hand ended before the flop. No community cards were dealt.',
+            fontSize: 13,
+            fill: '#d8dde8',
           })
         );
       }
@@ -379,7 +495,7 @@ export default function PokerTable({ gameState, width = 800, height = 540 }: Pok
         const py = pos.y * height;
         const isActive = currentActorIndex !== null && players[currentActorIndex]?.agentId === player.agentId;
         const isDealer = dealerIndex === i;
-        drawSeat(layer, KonvaLib, player, px, py, isActive, isDealer);
+        drawSeat(layer, KonvaLib, player, px, py, width, height, layout, isActive, isDealer);
       }
 
       // Last action indicator
@@ -405,7 +521,7 @@ export default function PokerTable({ gameState, width = 800, height = 540 }: Pok
 
       layer.draw();
     });
-  }, [gameState, width, height]);
+  }, [emptyLabel, gameState, height, isTerminalEmptyState, width]);
 
   // Cleanup on unmount
   useEffect(() => {

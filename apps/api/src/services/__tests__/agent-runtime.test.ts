@@ -140,7 +140,7 @@ describe('agent-runtime helpers', () => {
       handNumber: 7,
       agentId: 'agent-b',
       validActions: ['fold', 'call', 'raise'],
-      deadlineMs: 1_710_000_000_000,
+      deadlineMs: null,
       state: makeState(),
     });
 
@@ -159,7 +159,7 @@ describe('acceptSubmittedTurn', () => {
     vi.clearAllMocks();
   });
 
-  function makePendingTurn(overrides: Partial<AgentTurnRequest & { deadlineMs: number }> = {}): AgentTurnRequest {
+  function makePendingTurn(overrides: Partial<AgentTurnRequest & { deadlineMs: number | null }> = {}): AgentTurnRequest {
     return {
       turnId: 'turn-123',
       arenaId: 'arena-123',
@@ -167,7 +167,7 @@ describe('acceptSubmittedTurn', () => {
       handNumber: 7,
       agentId: 'agent-b',
       validActions: ['fold', 'call', 'raise'],
-      deadlineMs: Date.now() + 5_000,
+      deadlineMs: null,
       callAmount: 10,
       minRaise: 40,
       maxRaise: 980,
@@ -310,7 +310,7 @@ describe('publishTurnRequest', () => {
       handNumber: 7,
       agentId: 'agent-b',
       validActions: ['fold', 'call', 'raise'],
-      deadlineMs: Date.now() + 5_000,
+      deadlineMs: null,
       callAmount: 10,
       minRaise: 40,
       maxRaise: 980,

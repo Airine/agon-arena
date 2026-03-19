@@ -39,6 +39,7 @@ def ensure_practice_arena(
     arena_name: str,
     allow_sparring_replacement: bool,
     max_players: int,
+    max_hands: int,
 ) -> Dict[str, Any]:
     primary_session = load_session(state_dir, "primary")
     if not primary_session:
@@ -92,6 +93,7 @@ def ensure_practice_arena(
         name=arena_name,
         allow_sparring_replacement=allow_sparring_replacement,
         max_players=max_players,
+        max_hands=max_hands,
     )
     client.join_arena(created["id"], primary_agent_id)
     update_run_state(
@@ -118,6 +120,7 @@ def main() -> None:
     parser.add_argument("--arena-name", default="Hosted Skill Practice Arena")
     parser.add_argument("--allow-sparring-replacement", choices=["true", "false"], default="true")
     parser.add_argument("--max-players", type=int, default=2)
+    parser.add_argument("--max-hands", type=int, default=1)
     args = parser.parse_args()
 
     result = ensure_practice_arena(
@@ -127,6 +130,7 @@ def main() -> None:
         arena_name=args.arena_name,
         allow_sparring_replacement=args.allow_sparring_replacement == "true",
         max_players=args.max_players,
+        max_hands=args.max_hands,
     )
     print(json.dumps(result, indent=2))
 

@@ -4,7 +4,6 @@ import { eq, and, count, sql, desc } from 'drizzle-orm';
 import type { AgentActionSubmission, ActionType } from '@agon/types';
 import { db, schema } from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
-import { getGameSnapshot } from '../services/redis.js';
 import {
   acceptSubmittedTurn,
   getCallAmount,
@@ -15,6 +14,11 @@ import { getAgentPendingTurn, getAgentRuntimeSnapshot } from '../services/redis.
 import {
   findSparringReplacementSeat,
 } from '../services/arena-admission.js';
+import {
+  getResolvedArenaSnapshot,
+  maybeFinalizeOrphanedRunningArena,
+} from '../services/arena-lifecycle.js';
+import { advanceHostedPracticeArena } from '../services/hosted-practice.js';
 
 export const arenasRouter: RouterType = Router();
 
@@ -196,6 +200,8 @@ arenasRouter.get('/:id', async (req, res) => {
       return;
     }
 
+    const reconciledArena = await maybeFinalizeOrphanedRunningArena(arena);
+
     const seats = await db
       .select({
         seatIndex: schema.arenaSeats.seatIndex,
@@ -213,7 +219,7 @@ arenasRouter.get('/:id', async (req, res) => {
       ))
       .orderBy(schema.arenaSeats.seatIndex);
 
-    res.json({ ...arena, seats });
+    res.json({ ...reconciledArena, seats });
   } catch {
     res.status(500).json({ error: 'Failed to fetch arena' });
   }
@@ -306,6 +312,8 @@ arenasRouter.post('/:id/join', requireAuth, async (req, res) => {
         .where(eq(schema.arenaSeats.id, sparringSeat.id))
         .returning();
 
+      await advanceHostedPracticeArena(arenaId);
+
       res.status(201).json({
         ...seat,
         replacedAgentId: sparringSeat.agentId,
@@ -333,6 +341,8 @@ arenasRouter.post('/:id/join', requireAuth, async (req, res) => {
         currentStack: arena.startingStack,
       })
       .returning();
+
+    await advanceHostedPracticeArena(arenaId);
 
     res.status(201).json(seat);
   } catch (err) {
@@ -515,7 +525,13 @@ arenasRouter.get('/:id/snapshot', async (req, res) => {
     const arenaId = String(req.params['id']);
 
     const [arena] = await db
-      .select({ id: schema.arenas.id, status: schema.arenas.status })
+      .select({
+        id: schema.arenas.id,
+        status: schema.arenas.status,
+        currentHandNumber: schema.arenas.currentHandNumber,
+        startedAt: schema.arenas.startedAt,
+        finishedAt: schema.arenas.finishedAt,
+      })
       .from(schema.arenas)
       .where(eq(schema.arenas.id, arenaId))
       .limit(1);
@@ -525,13 +541,14 @@ arenasRouter.get('/:id/snapshot', async (req, res) => {
       return;
     }
 
-    if (arena.status === 'waiting') {
+    const { arena: reconciledArena, snapshot } = await getResolvedArenaSnapshot(arena);
+
+    if (reconciledArena.status === 'waiting') {
       res.json({ snapshot: null, arenaStatus: 'waiting' });
       return;
     }
 
-    const snapshot = await getGameSnapshot(arenaId);
-    res.json({ snapshot, arenaStatus: arena.status });
+    res.json({ snapshot, arenaStatus: reconciledArena.status });
   } catch {
     res.status(500).json({ error: 'Failed to fetch snapshot' });
   }

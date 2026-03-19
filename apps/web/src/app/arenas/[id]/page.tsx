@@ -99,7 +99,29 @@ export default function SpectatorPage({
     return () => window.removeEventListener('resize', syncTableWidth);
   }, []);
 
+  const arenaIsFinished = arenaFinished || arena?.status === 'finished';
+  const hasRecoveredState = Boolean(gameState);
+  const endedBeforeFlop = Boolean(
+    gameState &&
+    gameState.stage === 'finished' &&
+    gameState.communityCards.length === 0,
+  );
   const livePlayers = gameState?.players.filter((player) => player.isActive).length ?? arena?.seats.length ?? 0;
+  const tableEmptyLabel = arenaIsFinished
+    ? 'Arena ended before live state could be recovered.'
+    : 'Waiting for game...';
+  const actionLogEmptyMessage = arenaIsFinished
+    ? endedBeforeFlop
+      ? 'This recovered hand ended pre-flop, so no board cards were dealt.'
+      : 'No live actions were recovered for this arena.'
+    : 'Waiting for game actions…';
+  const playerActivityDescription = gameState
+    ? `Hand #${gameState.handNumber}`
+    : arenaIsFinished
+      ? hasRecoveredState
+        ? 'Recovered final board state'
+        : 'Arena finished before state recovery'
+      : 'Waiting for the first state';
 
   return (
     <ConsoleShell
@@ -123,8 +145,10 @@ export default function SpectatorPage({
             {connected ? 'Socket live' : 'Disconnected'}
           </h3>
           <p className="muted-copy" style={{ marginTop: '10px', fontSize: '0.92rem' }}>
-            {arenaFinished
-              ? 'Arena finished. Reviewing the board.'
+            {arenaIsFinished
+              ? hasRecoveredState
+                ? 'Arena finished. Reviewing the last recoverable board state.'
+                : 'Arena finished before live state could be recovered.'
               : 'Watching for live state, agent actions, and commentary.'}
           </p>
         </SurfaceCard>
@@ -134,7 +158,7 @@ export default function SpectatorPage({
         <div className="metric-grid">
           <MetricCard
             label="Status"
-            value={<StatusBadge label={arenaFinished ? 'finished' : arena?.status ?? 'loading'} tone={arenaFinished ? 'danger' : arena?.status === 'running' ? 'success' : 'accent'} />}
+            value={<StatusBadge label={arenaIsFinished ? 'finished' : arena?.status ?? 'loading'} tone={arenaIsFinished ? 'danger' : arena?.status === 'running' ? 'success' : 'accent'} />}
             description="Arena lifecycle"
           />
           <MetricCard
@@ -150,7 +174,7 @@ export default function SpectatorPage({
           <MetricCard
             label="Players Active"
             value={livePlayers.toLocaleString()}
-            description={gameState ? `Hand #${gameState.handNumber}` : 'Waiting for the first state'}
+            description={playerActivityDescription}
           />
         </div>
 
@@ -172,6 +196,8 @@ export default function SpectatorPage({
                       gameState={gameState}
                       width={tableWidth}
                       height={Math.round(tableWidth * 0.62)}
+                      emptyLabel={tableEmptyLabel}
+                      isTerminalEmptyState={arenaIsFinished}
                     />
                     <CommentaryBubble commentary={commentary} />
                   </div>
@@ -191,6 +217,7 @@ export default function SpectatorPage({
                     <span>Hand #{gameState.handNumber}</span>
                     <span>{gameState.stage.replace('_', ' ')}</span>
                     <span>{gameState.players.filter((player) => player.isActive).length} players active</span>
+                    {endedBeforeFlop ? <span>No board dealt before showdown</span> : null}
                   </div>
                 ) : null}
               </div>
@@ -206,7 +233,7 @@ export default function SpectatorPage({
             <SurfaceCard>
               <SectionTitle eyebrow="Actions" title="Live action log" />
               <div style={{ height: '540px' }}>
-                <ActionLog actions={actions} />
+                <ActionLog actions={actions} emptyMessage={actionLogEmptyMessage} />
               </div>
             </SurfaceCard>
 

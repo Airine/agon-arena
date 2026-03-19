@@ -2,6 +2,8 @@ import { and, desc, eq } from 'drizzle-orm';
 import type { GameState } from '@agon/types';
 import { db, schema } from '../db/index.js';
 import {
+  clearGameSnapshot,
+  getArenaLoopHeartbeat,
   getAgentPendingTurn,
   getGameSnapshot,
   setGameSnapshot,
@@ -18,12 +20,25 @@ interface ArenaRowLike {
   finishedAt: Date | null;
 }
 
-interface HandSnapshotRow {
-  handNumber: number;
-  stage: string;
-  stateSnapshot: GameState | null;
-  startedAt: Date;
-  endedAt: Date | null;
+function asGameState(value: unknown): GameState | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const candidate = value as Partial<GameState>;
+  if (
+    typeof candidate.arenaId !== 'string' ||
+    typeof candidate.handId !== 'string' ||
+    typeof candidate.handNumber !== 'number' ||
+    typeof candidate.stage !== 'string' ||
+    !Array.isArray(candidate.players) ||
+    !Array.isArray(candidate.communityCards) ||
+    !Array.isArray(candidate.pots)
+  ) {
+    return null;
+  }
+
+  return candidate as GameState;
 }
 
 export async function maybeFinalizeOrphanedRunningArena<T extends ArenaRowLike>(arena: T): Promise<T> {
@@ -32,9 +47,6 @@ export async function maybeFinalizeOrphanedRunningArena<T extends ArenaRowLike>(
   }
 
   const liveSnapshot = await getGameSnapshot(arena.id);
-  if (liveSnapshot) {
-    return arena;
-  }
 
   const [latestHand] = await db
     .select({
@@ -49,29 +61,40 @@ export async function maybeFinalizeOrphanedRunningArena<T extends ArenaRowLike>(
     .orderBy(desc(schema.gameHands.handNumber))
     .limit(1);
 
-  if (!latestHand) {
-    return arena;
-  }
-
-  const [seats] = await Promise.all([
-    db
-      .select({ agentId: schema.arenaSeats.agentId })
-      .from(schema.arenaSeats)
-      .where(and(
-        eq(schema.arenaSeats.arenaId, arena.id),
-        eq(schema.arenaSeats.isActive, true),
-      )),
-  ]);
+  const seats = await db
+    .select({ agentId: schema.arenaSeats.agentId })
+    .from(schema.arenaSeats)
+    .where(and(
+      eq(schema.arenaSeats.arenaId, arena.id),
+      eq(schema.arenaSeats.isActive, true),
+    ));
 
   const pendingTurns = await Promise.all(
     seats.map((seat) => getAgentPendingTurn(arena.id, seat.agentId)),
   );
 
   const hasPendingTurn = pendingTurns.some(Boolean);
-  const lastActivityAt = latestHand.endedAt ?? latestHand.startedAt;
+  const loopHeartbeatAt = await getArenaLoopHeartbeat(arena.id);
+  const lastActivityCandidates = [
+    latestHand?.endedAt?.getTime() ?? null,
+    latestHand?.startedAt?.getTime() ?? null,
+    loopHeartbeatAt,
+    liveSnapshot?.updatedAt ?? null,
+    arena.startedAt?.getTime() ?? null,
+  ].filter((value): value is number => value !== null);
+  const lastActivityAt = lastActivityCandidates.length > 0
+    ? new Date(Math.max(...lastActivityCandidates))
+    : null;
+  if (!lastActivityAt) {
+    return arena;
+  }
   const isStale = Date.now() - lastActivityAt.getTime() > ORPHANED_RUNNING_ARENA_TIMEOUT_MS;
 
   if (!hasPendingTurn && isStale) {
+    if (liveSnapshot) {
+      await clearGameSnapshot(arena.id);
+    }
+
     const finishedAt = new Date();
     await db
       .update(schema.arenas)
@@ -82,7 +105,11 @@ export async function maybeFinalizeOrphanedRunningArena<T extends ArenaRowLike>(
       ...arena,
       status: 'finished',
       finishedAt,
-    };
+    } as T;
+  }
+
+  if (liveSnapshot) {
+    return arena;
   }
 
   return arena;
@@ -105,13 +132,14 @@ export async function buildFallbackArenaSnapshot(arenaId: string): Promise<Arena
     .orderBy(desc(schema.gameHands.handNumber))
     .limit(1);
 
-  if (!hand?.stateSnapshot) {
+  const gameState = asGameState(hand?.stateSnapshot);
+  if (!hand || !gameState) {
     return null;
   }
 
   const snapshot: ArenaSnapshot = {
     arenaId,
-    gameState: hand.stateSnapshot,
+    gameState,
     handNumber: hand.handNumber,
     updatedAt: (hand.endedAt ?? hand.startedAt).getTime(),
   };
@@ -125,16 +153,16 @@ export async function getResolvedArenaSnapshot<T extends ArenaRowLike>(arena: T)
   snapshot: ArenaSnapshot | null;
 }> {
   const reconciledArena = await maybeFinalizeOrphanedRunningArena(arena);
-  const liveSnapshot = await getGameSnapshot(arena.id);
+  const liveSnapshot = await getGameSnapshot(reconciledArena.id);
   if (liveSnapshot) {
     return { arena: reconciledArena, snapshot: liveSnapshot };
   }
 
-  if (reconciledArena.status === 'waiting') {
+  if (reconciledArena.status !== 'finished') {
     return { arena: reconciledArena, snapshot: null };
   }
 
-  const fallback = await buildFallbackArenaSnapshot(arena.id);
+  const fallback = await buildFallbackArenaSnapshot(reconciledArena.id);
   return { arena: reconciledArena, snapshot: fallback };
 }
 

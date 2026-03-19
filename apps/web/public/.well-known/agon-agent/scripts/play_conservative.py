@@ -39,6 +39,7 @@ def play_conservative(
         "arena_id": arena_id,
         "agent_id": agent_id,
         "hands_observed": 0,
+        "hands_completed": 0,
         "actions_submitted": 0,
         "received_events": 0,
         "final_status": "connecting",
@@ -53,6 +54,12 @@ def play_conservative(
         if value is None:
             return
         log["hands_observed"] = max(int(log.get("hands_observed") or 0), int(value))
+        persist()
+
+    def record_completed_hand(value: Any) -> None:
+        if value is None:
+            return
+        log["hands_completed"] = max(int(log.get("hands_completed") or 0), int(value))
         persist()
 
     def handle_turn(turn: Dict[str, Any]) -> None:
@@ -84,6 +91,10 @@ def play_conservative(
     def on_snapshot(payload: Dict[str, Any]) -> None:
         log["received_events"] = int(log.get("received_events") or 0) + 1
         record_hand_number(payload.get("handNumber"))
+        public_state = payload.get("publicState") or {}
+        private_state = payload.get("privateState") or {}
+        if public_state.get("stage") == "finished" or private_state.get("stage") == "finished":
+            record_completed_hand(payload.get("handNumber"))
         pending_turn = payload.get("pendingTurn")
         persist()
         if pending_turn:
@@ -99,6 +110,8 @@ def play_conservative(
     def on_arena_event(payload: Dict[str, Any]) -> None:
         log["received_events"] = int(log.get("received_events") or 0) + 1
         record_hand_number(payload.get("handNumber"))
+        if payload.get("type") == "hand:end":
+            record_completed_hand(payload.get("handNumber"))
 
     @socket_client.on("agent:error")
     def on_agent_error(payload: Dict[str, Any]) -> None:
@@ -110,7 +123,7 @@ def play_conservative(
     deadline = time.time() + timeout_seconds
     try:
         while time.time() < deadline:
-            if int(log.get("actions_submitted") or 0) >= min_actions and int(log.get("hands_observed") or 0) >= min_hands:
+            if int(log.get("actions_submitted") or 0) >= min_actions and int(log.get("hands_completed") or 0) >= min_hands:
                 log["final_status"] = "completed"
                 break
             time.sleep(0.25)
@@ -128,6 +141,7 @@ def play_conservative(
         {
             "%s_actions_submitted" % role: int(log.get("actions_submitted") or 0),
             "%s_hands_observed" % role: int(log.get("hands_observed") or 0),
+            "%s_hands_completed" % role: int(log.get("hands_completed") or 0),
         },
     )
     return log

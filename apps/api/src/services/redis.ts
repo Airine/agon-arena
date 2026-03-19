@@ -230,6 +230,11 @@ export async function getGameSnapshot(arenaId: string): Promise<ArenaSnapshot | 
   }
 }
 
+export async function clearGameSnapshot(arenaId: string): Promise<void> {
+  const redis = await getRedisClient();
+  await redis.del(`${GAME_SNAPSHOT_PREFIX}${arenaId}`);
+}
+
 // ---------------------------------------------------------------------------
 // Agent runtime snapshot + pending turn cache
 // ---------------------------------------------------------------------------
@@ -237,7 +242,8 @@ export async function getGameSnapshot(arenaId: string): Promise<ArenaSnapshot | 
 const AGENT_RUNTIME_SNAPSHOT_PREFIX = 'agent:runtime:snapshot:';
 const AGENT_RUNTIME_SNAPSHOT_TTL_SECONDS = 3600;
 const AGENT_PENDING_TURN_PREFIX = 'agent:runtime:turn:';
-const AGENT_PENDING_TURN_TTL_SECONDS = 300;
+const ARENA_LOOP_HEARTBEAT_PREFIX = 'arena:loop:heartbeat:';
+const ARENA_LOOP_HEARTBEAT_TTL_SECONDS = 20;
 
 export interface StoredAgentTurn extends AgentTurnRequest {
   status: 'pending' | 'submitted';
@@ -252,6 +258,10 @@ function runtimeSnapshotKey(arenaId: string, agentId: string): string {
 
 function pendingTurnKey(arenaId: string, agentId: string): string {
   return `${AGENT_PENDING_TURN_PREFIX}${arenaId}:${agentId}`;
+}
+
+function arenaLoopHeartbeatKey(arenaId: string): string {
+  return `${ARENA_LOOP_HEARTBEAT_PREFIX}${arenaId}`;
 }
 
 export async function setAgentRuntimeSnapshot(snapshot: AgentRuntimeSnapshot): Promise<void> {
@@ -289,9 +299,7 @@ export async function setAgentPendingTurn(turn: AgentTurnRequest): Promise<Store
     status: 'pending',
     createdAt: Date.now(),
   };
-  await redis.set(pendingTurnKey(turn.arenaId, turn.agentId), JSON.stringify(storedTurn), {
-    EX: AGENT_PENDING_TURN_TTL_SECONDS,
-  });
+  await redis.set(pendingTurnKey(turn.arenaId, turn.agentId), JSON.stringify(storedTurn));
   return storedTurn;
 }
 
@@ -337,13 +345,31 @@ export async function submitAgentPendingTurn(
     submittedAt: Date.now(),
   };
 
-  await redis.set(key, JSON.stringify(nextTurn), {
-    EX: AGENT_PENDING_TURN_TTL_SECONDS,
-  });
+  await redis.set(key, JSON.stringify(nextTurn));
   return nextTurn;
 }
 
 export async function clearAgentPendingTurn(arenaId: string, agentId: string): Promise<void> {
   const redis = await getRedisClient();
   await redis.del(pendingTurnKey(arenaId, agentId));
+}
+
+export async function touchArenaLoopHeartbeat(arenaId: string): Promise<void> {
+  const redis = await getRedisClient();
+  await redis.set(arenaLoopHeartbeatKey(arenaId), String(Date.now()), {
+    EX: ARENA_LOOP_HEARTBEAT_TTL_SECONDS,
+  });
+}
+
+export async function getArenaLoopHeartbeat(arenaId: string): Promise<number | null> {
+  const redis = await getRedisClient();
+  const val = await redis.get(arenaLoopHeartbeatKey(arenaId));
+  if (!val) return null;
+  const parsed = Number(val);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export async function clearArenaLoopHeartbeat(arenaId: string): Promise<void> {
+  const redis = await getRedisClient();
+  await redis.del(arenaLoopHeartbeatKey(arenaId));
 }

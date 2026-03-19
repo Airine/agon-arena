@@ -15,6 +15,22 @@ from typing import Any, Dict, List, Tuple
 DEFAULT_MANIFEST_URL = "http://agon.win/.well-known/agon-agent/manifest.json"
 DEFAULT_API_BASE = "http://agon.win:4000"
 DEFAULT_STATE_DIR = "./.agon-agent"
+PYTHON_BUNDLE_FILES = [
+    "run_full_match.py",
+    "bootstrap_env.py",
+    "bootstrap_identity.py",
+    "ensure_practice_arena.py",
+    "ensure_sparring_agent.py",
+    "start_match.py",
+    "play_conservative.py",
+    "report_result.py",
+    "requirements.txt",
+    "lib/__init__.py",
+    "lib/client.py",
+    "lib/models.py",
+    "lib/policy.py",
+    "lib/state.py",
+]
 
 
 def fetch_json(url: str) -> Dict[str, Any]:
@@ -32,8 +48,19 @@ def sync_bundle(manifest_url: str, state_dir: str) -> Tuple[Dict[str, Any], Path
     download_root = Path(state_dir).resolve() / "downloaded"
     download_root.mkdir(parents=True, exist_ok=True)
 
-    root_url = manifest["scripts"]["root"].rstrip("/")
-    for relative_path in manifest["scripts"]["files"]:
+    helpers = manifest.get("helpers") or manifest.get("scripts") or {}
+    root_url = str(helpers.get("root") or "").rstrip("/")
+    if not root_url:
+        raise RuntimeError("Hosted skill manifest is missing helpers.root.")
+
+    helper_files: List[str] = []
+    for entry in helpers.get("files", []):
+        if isinstance(entry, str):
+            helper_files.append(entry)
+        elif isinstance(entry, dict) and entry.get("file"):
+            helper_files.append(str(entry["file"]))
+
+    for relative_path in sorted(set(PYTHON_BUNDLE_FILES + helper_files)):
         content = fetch_text(root_url + "/" + relative_path)
         destination = download_root / relative_path
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -106,6 +133,8 @@ def reexec_inside_venv(args: argparse.Namespace) -> None:
         args.allow_sparring_replacement,
         "--max-players",
         str(args.max_players),
+        "--max-hands",
+        str(args.max_hands),
         "--timeout-seconds",
         str(args.timeout_seconds),
     ]
@@ -131,6 +160,7 @@ def run_inside_venv(args: argparse.Namespace) -> Dict[str, Any]:
         arena_name=args.arena_name,
         allow_sparring_replacement=args.allow_sparring_replacement == "true",
         max_players=args.max_players,
+        max_hands=args.max_hands,
     )
     ensure_sparring_agent(args.api_base, args.state_dir)
     start_match(args.api_base, args.state_dir)
@@ -189,6 +219,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--arena-name", default="Hosted Skill Practice Arena")
     parser.add_argument("--allow-sparring-replacement", choices=["true", "false"], default="true")
     parser.add_argument("--max-players", type=int, default=2)
+    parser.add_argument("--max-hands", type=int, default=1)
     parser.add_argument("--timeout-seconds", type=int, default=90)
     return parser.parse_args()
 

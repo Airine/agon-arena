@@ -26,7 +26,10 @@ def ensure_sparring_agent(api_base: str, state_dir: str) -> Dict[str, Any]:
 
     for seat in seats:
         if seat.get("agentId") and seat["agentId"] != primary_agent_id:
-            update_run_state(state_dir, {"sparring_local": False})
+            update_run_state(state_dir, {
+                "sparring_local": False,
+                "sparring_agent_id": seat.get("agentId"),
+            })
             return {
                 "action": "kept-existing-opponent",
                 "arena_id": arena_id,

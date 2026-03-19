@@ -170,7 +170,7 @@ class AgentTurnRequest(BaseModel):
     hand_number: int = Field(alias="handNumber")
     agent_id: str = Field(alias="agentId")
     valid_actions: list[Action] = Field(alias="validActions")
-    deadline_ms: int = Field(alias="deadlineMs")
+    deadline_ms: int | None = Field(alias="deadlineMs")
     call_amount: int = Field(alias="callAmount")
     min_raise: int = Field(alias="minRaise")
     max_raise: int = Field(alias="maxRaise")

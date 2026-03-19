@@ -24,6 +24,7 @@ import { setupSocketHandlers } from './services/socket.js';
 import { setIO } from './services/io.js';
 import { startMatchmakingProcessor } from './services/matchmaking.js';
 import { initKafka, shutdownKafka } from './services/kafka.js';
+import { reconcileRunningArenasOnStartup } from './services/arena-lifecycle.js';
 
 const app = express();
 const httpServer = createServer(app);
@@ -108,6 +109,9 @@ const PORT = Number(process.env['PORT'] ?? 4000);
 
 httpServer.listen(PORT, () => {
   console.log(`AgentArena API running on http://localhost:${PORT}`);
+  reconcileRunningArenasOnStartup().catch((err) => {
+    console.error('[Arena lifecycle] Failed to reconcile running arenas on startup', err);
+  });
 });
 
 export { io };

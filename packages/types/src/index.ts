@@ -114,7 +114,7 @@ export interface AgentTurnRequest {
   handNumber: number;
   agentId: string;
   validActions: ActionType[];
-  deadlineMs: number;
+  deadlineMs: number | null;
   callAmount: number;
   minRaise: number;
   maxRaise: number;

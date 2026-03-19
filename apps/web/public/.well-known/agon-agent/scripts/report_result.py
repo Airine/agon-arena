@@ -17,10 +17,20 @@ def build_report(state_dir: str) -> Dict[str, Any]:
         int(primary_log.get("hands_observed") or 0),
         int(sparring_log.get("hands_observed") or 0),
     )
+    hands_completed = max(
+        int(run_state.get("primary_hands_completed") or 0),
+        int(run_state.get("sparring_hands_completed") or 0),
+        int(primary_log.get("hands_completed") or 0),
+        int(sparring_log.get("hands_completed") or 0),
+    )
+    sparring_local = bool(run_state.get("sparring_local"))
     completed = (
         int(primary_log.get("actions_submitted") or 0) >= 1
-        and int(sparring_log.get("actions_submitted") or 0) >= 1
-        and hands_observed >= 1
+        and (
+            not sparring_local
+            or int(sparring_log.get("actions_submitted") or 0) >= 1
+        )
+        and hands_completed >= 1
     )
 
     if completed:

@@ -105,7 +105,7 @@ export async function createTurnRequest(input: {
   handNumber: number;
   agentId: string;
   validActions: PlayerAction['type'][];
-  deadlineMs: number;
+  deadlineMs: number | null;
   state: GameState;
 }): Promise<AgentTurnRequest> {
   return {
@@ -145,11 +145,18 @@ export async function waitForSubmittedTurn(
   arenaId: string,
   agentId: string,
   turnId: string,
-  timeoutMs: number,
+  options?: {
+    onHeartbeat?: () => Promise<void> | void;
+  },
 ): Promise<AgentActionSubmission | null> {
-  const deadlineMs = Date.now() + timeoutMs;
+  let lastHeartbeatAt = 0;
 
-  while (Date.now() < deadlineMs) {
+  while (true) {
+    if (options?.onHeartbeat && Date.now() - lastHeartbeatAt >= 1_000) {
+      await options.onHeartbeat();
+      lastHeartbeatAt = Date.now();
+    }
+
     const turn = await getAgentPendingTurn(arenaId, agentId);
     if (!turn) return null;
     if (turn.turnId !== turnId) return null;
@@ -158,8 +165,6 @@ export async function waitForSubmittedTurn(
     }
     await sleep(TURN_POLL_INTERVAL_MS);
   }
-
-  return null;
 }
 
 export async function acceptSubmittedTurn(
@@ -186,7 +191,7 @@ export async function acceptSubmittedTurn(
     return { ok: false, status: 409, error: 'This turn has already been submitted' };
   }
 
-  if (Date.now() > pending.deadlineMs) {
+  if (pending.deadlineMs !== null && Date.now() > pending.deadlineMs) {
     return { ok: false, status: 410, error: 'This turn has already expired' };
   }
 

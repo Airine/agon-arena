@@ -4,7 +4,12 @@ import { createGame, processAction, getValidActions, getWinners, isHandOver, typ
 import { db, schema } from '../db/index.js';
 import { getIO } from './io.js';
 import { generateCommit, verifyVRFCommit } from './vrf.js';
-import { clearAgentPendingTurn, setGameSnapshot } from './redis.js';
+import {
+  clearAgentPendingTurn,
+  clearArenaLoopHeartbeat,
+  setGameSnapshot,
+  touchArenaLoopHeartbeat,
+} from './redis.js';
 import {
   createPrivateView,
   createSpectatorView,
@@ -18,7 +23,7 @@ import { publishEvent } from './kafka.js';
 import { chipService } from './chip.js';
 import { resolveBotAction } from './bot.js';
 
-const ACTION_TIMEOUT_MS = 5000;
+const DEFAULT_ACTION_ROUND_MIN_MS = 5_000;
 const MAX_HANDS = 100; // Max hands per arena session
 
 interface SeatInfo {
@@ -33,6 +38,16 @@ interface ArenaConfig {
   smallBlind: number;
   bigBlind: number;
   startingStack: number;
+  maxHands?: number;
+}
+
+export function resolveArenaHandLimit(arena: ArenaConfig): number {
+  return arena.maxHands && arena.maxHands > 0 ? arena.maxHands : MAX_HANDS;
+}
+
+export function resolveActionRoundMinMs(): number {
+  const raw = Number(process.env['ACTION_ROUND_MIN_MS']);
+  return Number.isInteger(raw) && raw > 0 ? raw : DEFAULT_ACTION_ROUND_MIN_MS;
 }
 
 /**
@@ -42,6 +57,7 @@ export function startGame(arenaId: string, arena: ArenaConfig, seats: SeatInfo[]
   runGameLoop(arenaId, arena, seats).catch((err) => {
     console.error(`[Orchestrator] Arena ${arenaId} game loop crashed:`, err);
     // Mark arena as finished on unrecoverable error
+    clearArenaLoopHeartbeat(arenaId).catch(() => {});
     db.update(schema.arenas)
       .set({ status: 'finished', finishedAt: new Date() })
       .where(eq(schema.arenas.id, arenaId))
@@ -53,11 +69,13 @@ export function startGame(arenaId: string, arena: ArenaConfig, seats: SeatInfo[]
 async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[]): Promise<void> {
   let dealerIndex = 0;
   const agentUrls = new Map(seats.map((s) => [s.agentId, s.apiUrl]));
+  const handLimit = resolveArenaHandLimit(arena);
+  const actionRoundMinMs = resolveActionRoundMinMs();
 
   // Track stacks across hands
   const stacks = new Map(seats.map((s) => [s.agentId, arena.startingStack]));
 
-  for (let handNumber = 1; handNumber <= MAX_HANDS; handNumber++) {
+  for (let handNumber = 1; handNumber <= handLimit; handNumber++) {
     // Build active player list (agents with chips)
     const activePlayers = seats.filter((s) => (stacks.get(s.agentId) ?? 0) > 0);
     if (activePlayers.length < 2) break;
@@ -135,6 +153,7 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
     // Play the hand
     let currentState = gameState;
     let sequenceNumber = 0;
+    let roundStartedAt = Date.now();
     await publishRuntimeSnapshot(arenaId, currentState);
     await emitArenaEvent(
       arenaId,
@@ -159,40 +178,40 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
       const startTime = Date.now();
       let action: PlayerAction;
 
-      try {
-        const agentUrl = agentUrls.get(actor.agentId);
-        if (agentUrl?.startsWith('bot://')) {
-          // Bot agent: resolve action locally (no HTTP)
-          action = resolveBotAction(agentUrl, validActions, currentState);
-        } else {
-          const turn = await createTurnRequest({
-            arenaId,
-            handId: handRecord!.id,
-            handNumber,
-            agentId: actor.agentId,
-            validActions,
-            deadlineMs: Date.now() + ACTION_TIMEOUT_MS,
-            state: currentState,
-          });
-          await publishTurnRequest(turn);
-          const submission = await waitForSubmittedTurn(
-            arenaId,
-            actor.agentId,
-            turn.turnId,
-            ACTION_TIMEOUT_MS,
-          );
-          action = submission
-            ? toPlayerAction(submission, validActions, currentState)
-            : { type: 'fold' };
+      const agentUrl = agentUrls.get(actor.agentId);
+      if (agentUrl?.startsWith('bot://')) {
+        // Bot agent: resolve action locally (no HTTP)
+        action = resolveBotAction(agentUrl, validActions, currentState);
+      } else {
+        const turn = await createTurnRequest({
+          arenaId,
+          handId: handRecord!.id,
+          handNumber,
+          agentId: actor.agentId,
+          validActions,
+          deadlineMs: null,
+          state: currentState,
+        });
+        await publishTurnRequest(turn);
+        await touchArenaLoopHeartbeat(arenaId);
+        const submission = await waitForSubmittedTurn(
+          arenaId,
+          actor.agentId,
+          turn.turnId,
+          {
+            onHeartbeat: () => touchArenaLoopHeartbeat(arenaId),
+          },
+        );
+        if (!submission) {
+          throw new Error(`Pending turn disappeared before submission for agent ${actor.agentId}`);
         }
-      } catch {
-        // Timeout or error: auto-fold
-        action = { type: 'fold' };
+        action = toPlayerAction(submission, validActions, currentState);
       }
       const responseTimeMs = Date.now() - startTime;
       await clearAgentPendingTurn(arenaId, actor.agentId);
 
       // Process the action
+      const stageBeforeAction = currentState.stage;
       currentState = processAction(currentState, action, deck);
       sequenceNumber++;
 
@@ -258,6 +277,11 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
         handNumber: currentState.handNumber,
         updatedAt: Date.now(),
       }).catch(() => {});
+
+      if (currentState.stage !== stageBeforeAction || isHandOver(currentState)) {
+        await ensureRoundMinimumDuration(roundStartedAt, actionRoundMinMs);
+        roundStartedAt = Date.now();
+      }
     }
 
     // Hand is over - determine winners
@@ -378,6 +402,7 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
     .update(schema.arenas)
     .set({ status: 'finished', finishedAt: new Date() })
     .where(eq(schema.arenas.id, arenaId));
+  await clearArenaLoopHeartbeat(arenaId);
 
   getIO().to(`arena:${arenaId}`).emit('arena:finished', { arenaId });
   await emitArenaEvent(
@@ -421,6 +446,14 @@ function toPlayerAction(
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function ensureRoundMinimumDuration(roundStartedAt: number, roundMinMs: number): Promise<void> {
+  const elapsedMs = Date.now() - roundStartedAt;
+  if (elapsedMs >= roundMinMs) {
+    return;
+  }
+  await sleep(roundMinMs - elapsedMs);
 }
 
 // ---------------------------------------------------------------------------

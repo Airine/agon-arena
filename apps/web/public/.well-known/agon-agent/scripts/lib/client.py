@@ -131,6 +131,7 @@ class AgonHostedClient:
     name: str,
     allow_sparring_replacement: bool = True,
     max_players: int = 2,
+    max_hands: int = 1,
   ) -> Dict[str, Any]:
     return self.request_json(
       "POST",
@@ -139,6 +140,7 @@ class AgonHostedClient:
         "name": name,
         "mode": "practice",
         "maxPlayers": max_players,
+        "maxHands": max_hands,
         "allowSparringReplacement": allow_sparring_replacement,
       },
     )
