@@ -1,4 +1,4 @@
-const { parseArgs } = require('node:util');
+const { parseBaseOptions, wantsHelp } = require('../lib/cli');
 const { requestJson } = require('../lib/api');
 const {
   DEFAULT_API_BASE,
@@ -7,10 +7,6 @@ const {
 } = require('../lib/constants');
 const { getSessionForRole } = require('../lib/session');
 const { jsonResult, loadRunState, updateRunState } = require('../lib/state');
-
-function wantsHelp(argv) {
-  return argv.includes('--help') || argv.includes('-h');
-}
 
 function asInt(value) {
   return Number.parseInt(String(value || 0), 10) || 0;
@@ -67,21 +63,8 @@ function help(subcommand) {
   ].join('\n');
 }
 
-function parseBaseOptions(args, extras = {}) {
-  return parseArgs({
-    args,
-    options: {
-      'api-base': { type: 'string', default: DEFAULT_API_BASE },
-      'state-dir': { type: 'string', default: DEFAULT_STATE_DIR },
-      role: { type: 'string', default: 'primary' },
-      ...extras,
-    },
-  });
-}
-
 function findJoinableCandidates(arenas) {
   return arenas
-    .filter((arena) => arena.mode === 'practice' && arena.status === 'waiting')
     .filter((arena) => Boolean(arena.allowSparringReplacement) || asInt(arena.playerCount) < asInt(arena.maxPlayers))
     .sort((left, right) => {
       if (Boolean(left.allowSparringReplacement) !== Boolean(right.allowSparringReplacement)) {

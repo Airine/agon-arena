@@ -12,7 +12,7 @@ function requestPath(baseUrl, routePath) {
   const base = new URL(baseUrl);
   const basePath = base.pathname.endsWith('/') ? base.pathname.slice(0, -1) : base.pathname;
   const normalized = routePath.startsWith('/') ? routePath : `/${routePath}`;
-  return `${basePath}${normalized}` || '/';
+  return `${basePath}${normalized}`;
 }
 
 async function buildAgentAccessHeaders({

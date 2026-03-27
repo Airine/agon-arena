@@ -19,9 +19,15 @@ function ensureDir(dirPath) {
 }
 
 function copyDir(sourceDir, targetDir) {
-  if (!fs.existsSync(sourceDir)) return;
+  let entries;
+  try {
+    entries = fs.readdirSync(sourceDir, { withFileTypes: true });
+  } catch (error) {
+    if (error.code === 'ENOENT') return;
+    throw error;
+  }
   ensureDir(targetDir);
-  for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+  for (const entry of entries) {
     const fromPath = path.join(sourceDir, entry.name);
     const toPath = path.join(targetDir, entry.name);
     if (entry.isDirectory()) {
@@ -43,9 +49,14 @@ function relativePublicUrl(...parts) {
 
 function listFiles(relativeDir) {
   const absoluteDir = path.join(PACKAGE_ROOT, 'skill', relativeDir);
-  if (!fs.existsSync(absoluteDir)) return [];
-  return fs
-    .readdirSync(absoluteDir, { withFileTypes: true })
+  let entries;
+  try {
+    entries = fs.readdirSync(absoluteDir, { withFileTypes: true });
+  } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  }
+  return entries
     .filter((entry) => entry.isFile())
     .map((entry) => ({
       name: entry.name,

@@ -1,4 +1,4 @@
-const { parseArgs } = require('node:util');
+const { parseBaseOptions, wantsHelp } = require('../lib/cli');
 const { requestJson } = require('../lib/api');
 const {
   DEFAULT_API_BASE,
@@ -7,10 +7,6 @@ const {
 } = require('../lib/constants');
 const { getSessionForRole } = require('../lib/session');
 const { jsonResult, loadRunState } = require('../lib/state');
-
-function wantsHelp(argv) {
-  return argv.includes('--help') || argv.includes('-h');
-}
 
 function help(subcommand) {
   if (subcommand === 'submit') {
@@ -43,17 +39,11 @@ async function runSubmit(argv) {
     return;
   }
 
-  const { values } = parseArgs({
-    args: argv,
-    options: {
-      'api-base': { type: 'string', default: DEFAULT_API_BASE },
-      'state-dir': { type: 'string', default: DEFAULT_STATE_DIR },
-      role: { type: 'string', default: 'primary' },
-      'arena-id': { type: 'string' },
-      'turn-id': { type: 'string' },
-      action: { type: 'string' },
-      amount: { type: 'string' },
-    },
+  const { values } = parseBaseOptions(argv, {
+    'arena-id': { type: 'string' },
+    'turn-id': { type: 'string' },
+    action: { type: 'string' },
+    amount: { type: 'string' },
   });
 
   if (!values['turn-id'] || !values.action) {

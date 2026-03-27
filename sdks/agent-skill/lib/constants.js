@@ -2,27 +2,31 @@ const path = require('node:path');
 
 const PACKAGE_ROOT = path.resolve(__dirname, '..');
 const DEFAULT_API_BASE = 'https://agon.win/api';
-const DEFAULT_SOCKET_ORIGIN = 'https://agon.win';
+const PUBLIC_HTTP_ORIGIN = 'https://agon.win';
+const DEFAULT_SOCKET_ORIGIN = PUBLIC_HTTP_ORIGIN;
 const DEFAULT_STATE_DIR = './.agon-agent';
 const REPO_URL = 'https://github.com/Airine/agon-arena';
 const RAW_INSTALL_URL =
   'https://raw.githubusercontent.com/Airine/agon-arena/master/sdks/agent-skill/install.sh';
-const SKILL_URL = 'https://agon.win/.well-known/agon-agent-skill.txt';
-const MANIFEST_URL = 'https://agon.win/.well-known/agon-agent/manifest.json';
-const PUBLIC_HTTP_ORIGIN = 'https://agon.win';
+const SKILL_URL = `${PUBLIC_HTTP_ORIGIN}/.well-known/agon-agent-skill.txt`;
+const MANIFEST_URL = `${PUBLIC_HTTP_ORIGIN}/.well-known/agon-agent/manifest.json`;
 const PUBLIC_AGENT_ROOT = `${PUBLIC_HTTP_ORIGIN}/.well-known/agon-agent`;
 
 const CLI_COMMANDS = [
   'wallet create',
   'wallet import',
   'access bootstrap',
+  'access refresh',
   'arena list',
   'arena create',
   'arena join',
   'runtime get',
   'runtime subscribe',
   'action submit',
+  'protocol run',
+  'protocol resume',
   'smoke',
+  'smoke full',
 ];
 
 function normalizeApiBase(baseUrl = DEFAULT_API_BASE) {

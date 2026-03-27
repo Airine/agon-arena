@@ -15,6 +15,7 @@ function persistSession(stateDir, role, payload) {
   const session = {
     access_token: payload.accessToken,
     refresh_token: payload.refreshToken || null,
+    expires_at: payload.expiresAt || null,
     created: Boolean(payload.created),
     user: payload.user || {},
     agent: payload.agent || {},

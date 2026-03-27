@@ -12,6 +12,7 @@ import {
   clearAgentRuntimeSnapshot,
   getAgentPendingTurn,
   getAgentRuntimeSnapshot,
+  setAgentLastProcessedTurnId,
   setAgentPendingTurn,
   setAgentRuntimeSnapshot,
   submitAgentPendingTurn,
@@ -209,6 +210,7 @@ export async function acceptSubmittedTurn(
   }
 
   await submitAgentPendingTurn(arenaId, submission.agentId, submission);
+  await setAgentLastProcessedTurnId(arenaId, submission.agentId, submission.turnId);
   return { ok: true, turn: pending };
 }
 

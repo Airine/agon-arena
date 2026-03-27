@@ -16,6 +16,8 @@ function loadCommandGroup(name) {
       return require('../commands/action');
     case 'smoke':
       return require('../commands/smoke');
+    case 'protocol':
+      return require('../commands/protocol');
     default:
       return null;
   }
@@ -42,6 +44,8 @@ function printRootHelp() {
     '  runtime subscribe',
     '  action submit',
     '  smoke',
+    '  protocol run',
+    '  protocol resume',
     '',
     'Examples:',
     '  agon-agent wallet create --state-dir ./.agon-agent',

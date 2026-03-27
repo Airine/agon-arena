@@ -50,6 +50,12 @@ function connectRuntimeSocket({
     socket.on('agent:arena_event', (payload) => handle('agent:arena_event', payload));
     socket.on('connect_error', (error) => finish(error));
     socket.on('error', (error) => finish(error instanceof Error ? error : new Error(String(error))));
+    socket.on('agent:error', (payload) => {
+      const err = new Error(`agent:error: ${payload?.message || 'subscription auth failed'}`);
+      err.code = 'AGENT_AUTH_ERROR';
+      err.payload = payload;
+      finish(err);
+    });
 
     if (timeoutMs > 0) {
       timeoutHandle = setTimeout(() => finish(), timeoutMs);

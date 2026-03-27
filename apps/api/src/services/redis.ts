@@ -354,6 +354,34 @@ export async function clearAgentPendingTurn(arenaId: string, agentId: string): P
   await redis.del(pendingTurnKey(arenaId, agentId));
 }
 
+// ---------------------------------------------------------------------------
+// Last processed turn ID (for agent deduplication / crash recovery)
+// ---------------------------------------------------------------------------
+
+const AGENT_LAST_PROCESSED_TURN_PREFIX = 'agent:last_turn:';
+const AGENT_LAST_PROCESSED_TURN_TTL_SECONDS = 86400; // 24 hours
+
+export async function setAgentLastProcessedTurnId(
+  arenaId: string,
+  agentId: string,
+  turnId: string,
+): Promise<void> {
+  const redis = await getRedisClient();
+  await redis.set(
+    `${AGENT_LAST_PROCESSED_TURN_PREFIX}${arenaId}:${agentId}`,
+    turnId,
+    { EX: AGENT_LAST_PROCESSED_TURN_TTL_SECONDS },
+  );
+}
+
+export async function getAgentLastProcessedTurnId(
+  arenaId: string,
+  agentId: string,
+): Promise<string | null> {
+  const redis = await getRedisClient();
+  return await redis.get(`${AGENT_LAST_PROCESSED_TURN_PREFIX}${arenaId}:${agentId}`);
+}
+
 export async function touchArenaLoopHeartbeat(arenaId: string): Promise<void> {
   const redis = await getRedisClient();
   await redis.set(arenaLoopHeartbeatKey(arenaId), String(Date.now()), {

@@ -25,6 +25,7 @@ import { setIO } from './services/io.js';
 import { startMatchmakingProcessor } from './services/matchmaking.js';
 import { initKafka, shutdownKafka } from './services/kafka.js';
 import { reconcileRunningArenasOnStartup } from './services/arena-lifecycle.js';
+import { startSmokeCleanup } from './services/smoke-cleanup.js';
 
 const app = express();
 const httpServer = createServer(app);
@@ -99,6 +100,7 @@ setupSocketHandlers(io);
 // Background services
 startMatchmakingProcessor();
 initKafka().catch(console.error);
+startSmokeCleanup();
 
 process.on('SIGTERM', async () => {
   await shutdownKafka();

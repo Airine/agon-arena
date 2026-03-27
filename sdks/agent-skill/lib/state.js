@@ -12,20 +12,24 @@ function ensureStateLayout(stateDir) {
 }
 
 function walletPath(stateDir, role) {
-  return path.join(ensureStateLayout(stateDir).root, `${role}-wallet.json`);
+  return path.join(path.resolve(stateDir), `${role}-wallet.json`);
 }
 
 function sessionPath(stateDir, role) {
-  return path.join(ensureStateLayout(stateDir).root, `${role}-session.json`);
+  return path.join(path.resolve(stateDir), `${role}-session.json`);
 }
 
 function runStatePath(stateDir) {
-  return path.join(ensureStateLayout(stateDir).root, 'run-state.json');
+  return path.join(path.resolve(stateDir), 'run-state.json');
 }
 
 function loadJson(filePath, fallback = {}) {
-  if (!fs.existsSync(filePath)) return fallback;
-  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (error) {
+    if (error.code === 'ENOENT') return fallback;
+    throw error;
+  }
 }
 
 function saveJson(filePath, payload) {
@@ -53,15 +57,32 @@ function loadRunState(stateDir) {
   return loadJson(runStatePath(stateDir), {});
 }
 
+function mergeDeep(target, source) {
+  const result = { ...target };
+  for (const [key, value] of Object.entries(source)) {
+    if (
+      value !== null &&
+      value !== undefined &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      target[key] !== null &&
+      target[key] !== undefined &&
+      typeof target[key] === 'object' &&
+      !Array.isArray(target[key])
+    ) {
+      result[key] = mergeDeep(target[key], value);
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
 function updateRunState(stateDir, patch) {
   const filteredPatch = Object.fromEntries(
     Object.entries(patch).filter(([, value]) => value !== undefined),
   );
-  const next = {
-    ...loadRunState(stateDir),
-    ...filteredPatch,
-    updated_at: Date.now(),
-  };
+  const next = mergeDeep(loadRunState(stateDir), { ...filteredPatch, updated_at: Date.now() });
   saveJson(runStatePath(stateDir), next);
   return next;
 }

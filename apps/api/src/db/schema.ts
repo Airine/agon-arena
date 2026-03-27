@@ -108,6 +108,8 @@ export const arenas = pgTable('arenas', {
   maxHands: integer('max_hands').notNull().default(0),
   // buyInAmount: CHIP cost to join (0 = free, used for practice mode)
   buyInAmount: integer('buy_in_amount').notNull().default(0),
+  // isSmoke: true for smoke-test arenas (auto-cleaned after 10 min, filtered from public list)
+  isSmoke: boolean('is_smoke').notNull().default(false),
   currentHandNumber: integer('current_hand_number').notNull().default(0),
   spectatorCount: integer('spectator_count').notNull().default(0),
   createdByUserId: uuid('created_by_user_id').references(() => users.id),

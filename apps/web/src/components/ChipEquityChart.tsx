@@ -8,10 +8,10 @@ interface Props {
   height?: number;
 }
 
-// Color palette for up to 10 players
+// Color palette — landing page dark theme
 const COLORS = [
-  '#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de',
-  '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc', '#6e7074',
+  '#E8A020', '#00C8F0', '#9B7FFF', '#22DD88', '#FF4455',
+  '#FF8844', '#F5C050', '#7FDDFF', '#C4AAFF', '#66EEB4',
 ];
 
 export default function ChipEquityChart({ snapshots, height = 200 }: Props) {
@@ -52,18 +52,18 @@ export default function ChipEquityChart({ snapshots, height = 200 }: Props) {
           legend: {
             show: series.length <= 6,
             top: 0,
-            textStyle: { color: '#67604f', fontSize: 10 },
+            textStyle: { color: '#8888AA', fontSize: 10 },
           },
           xAxis: {
             type: 'category',
             data: xData,
-            axisLabel: { color: '#7d7666', fontSize: 10 },
-            axisLine: { lineStyle: { color: '#d8cfbf' } },
+            axisLabel: { color: '#555570', fontSize: 10 },
+            axisLine: { lineStyle: { color: '#252540' } },
           },
           yAxis: {
             type: 'value',
-            axisLabel: { color: '#7d7666', fontSize: 10 },
-            splitLine: { lineStyle: { color: '#ebe4d6' } },
+            axisLabel: { color: '#555570', fontSize: 10 },
+            splitLine: { lineStyle: { color: '#1A1A30' } },
           },
           series,
         },
@@ -87,8 +87,15 @@ export default function ChipEquityChart({ snapshots, height = 200 }: Props) {
   if (snapshots.length === 0) {
     return (
       <div
-        style={{ height }}
-        className="flex items-center justify-center text-gray-500 text-sm"
+        style={{
+          height,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#555570',
+          fontSize: '13px',
+          fontFamily: 'JetBrains Mono, monospace',
+        }}
       >
         Waiting for first hand to complete…
       </div>

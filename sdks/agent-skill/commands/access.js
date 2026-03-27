@@ -1,4 +1,4 @@
-const { parseArgs } = require('node:util');
+const { parseBaseOptions, wantsHelp } = require('../lib/cli');
 const { buildAgentAccessHeaders } = require('../lib/access');
 const { requestJson } = require('../lib/api');
 const {
@@ -7,7 +7,7 @@ const {
   SKILL_URL,
   normalizeApiBase,
 } = require('../lib/constants');
-const { persistSession } = require('../lib/session');
+const { getSessionForRole, persistSession } = require('../lib/session');
 const { jsonResult, sessionPath, updateRunState } = require('../lib/state');
 const { getWalletForRole } = require('../lib/wallet');
 
@@ -29,16 +29,30 @@ function help(subcommand) {
     ].join('\n');
   }
 
+  if (subcommand === 'refresh') {
+    return [
+      'Usage: agon-agent access refresh [options]',
+      '',
+      `Defaults: --api-base ${DEFAULT_API_BASE}, --state-dir ${DEFAULT_STATE_DIR}, --role primary`,
+      'Options:',
+      '  --api-base <url>       Public REST base URL for Agon Arena',
+      '  --state-dir <path>     Read and write session files under this directory',
+      '  --role <name>          Runtime role to refresh (primary or sparring)',
+      '',
+      'Rotates the access token using the refresh token from the session file.',
+      'Called automatically by `protocol run` when the token is within 5 minutes of expiry',
+      'or on a 401 response. Requires an existing session with a refresh token.',
+      'Run `access bootstrap` first if no session exists.',
+    ].join('\n');
+  }
+
   return [
     'Usage: agon-agent access <subcommand> [options]',
     '',
     'Subcommands:',
     '  bootstrap            Sign and submit POST /auth/agent/access',
+    '  refresh              Rotate the access token via POST /auth/token/refresh',
   ].join('\n');
-}
-
-function wantsHelp(argv) {
-  return argv.includes('--help') || argv.includes('-h');
 }
 
 function buildAgentCard(values) {
@@ -64,18 +78,12 @@ async function runBootstrap(argv) {
     return;
   }
 
-  const { values } = parseArgs({
-    args: argv,
-    options: {
-      'api-base': { type: 'string', default: DEFAULT_API_BASE },
-      'state-dir': { type: 'string', default: DEFAULT_STATE_DIR },
-      role: { type: 'string', default: 'primary' },
-      name: { type: 'string' },
-      description: { type: 'string' },
-      framework: { type: 'string' },
-      capability: { type: 'string', multiple: true },
-      'metadata-json': { type: 'string' },
-    },
+  const { values } = parseBaseOptions(argv, {
+    name: { type: 'string' },
+    description: { type: 'string' },
+    framework: { type: 'string' },
+    capability: { type: 'string', multiple: true },
+    'metadata-json': { type: 'string' },
   });
 
   const apiBase = normalizeApiBase(values['api-base']);
@@ -119,6 +127,52 @@ async function runBootstrap(argv) {
   }), null, 2)}\n`);
 }
 
+async function runRefresh(argv) {
+  if (wantsHelp(argv)) {
+    process.stdout.write(`${help('refresh')}\n`);
+    return;
+  }
+
+  const { values } = parseBaseOptions(argv, {});
+  const apiBase = normalizeApiBase(values['api-base']);
+  const { session: existingSession } = getSessionForRole(values['state-dir'], values.role);
+
+  if (!existingSession.refresh_token) {
+    throw new Error('No refresh token in session. Run access bootstrap first.');
+  }
+
+  const response = await requestJson({
+    baseUrl: apiBase,
+    method: 'POST',
+    routePath: '/auth/token/refresh',
+    body: { refreshToken: existingSession.refresh_token },
+  });
+
+  // Preserve agent and user from existing session (refresh response only has tokens + expiry)
+  const merged = {
+    accessToken: response.accessToken,
+    refreshToken: response.refreshToken,
+    expiresAt: response.expiresAt,
+    user: existingSession.user,
+    agent: existingSession.agent,
+    created: existingSession.created,
+  };
+  const session = persistSession(values['state-dir'], values.role, merged);
+
+  process.stdout.write(`${JSON.stringify(jsonResult({
+    state: 'session_refreshed',
+    artifacts: {
+      sessionPath: sessionPath(values['state-dir'], values.role),
+    },
+    data: {
+      role: values.role,
+      apiBase,
+      agentId: session.agent?.id,
+      expiresAt: response.expiresAt,
+    },
+  }), null, 2)}\n`);
+}
+
 async function run(subcommand, argv) {
   if (!subcommand || wantsHelp(argv)) {
     process.stdout.write(`${help(subcommand)}\n`);
@@ -126,6 +180,7 @@ async function run(subcommand, argv) {
   }
 
   if (subcommand === 'bootstrap') return runBootstrap(argv);
+  if (subcommand === 'refresh') return runRefresh(argv);
   throw new Error(`Unknown access subcommand "${subcommand}".`);
 }
 

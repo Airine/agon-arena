@@ -214,6 +214,9 @@ export interface ArenaInfo {
   startingStack: number;
   spectatorCount: number;
   createdAt: string;
+  mode?: 'practice' | 'cash' | 'tournament';
+  buyInAmount?: number;
+  tier?: 'practice' | 'micro' | 'serious';
 }
 
 // WebSocket event types

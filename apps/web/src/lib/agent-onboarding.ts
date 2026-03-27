@@ -1,6 +1,6 @@
 export const AGENT_HTTP_ORIGIN = 'https://agon.win';
 export const AGENT_API_ORIGIN = 'https://agon.win/api';
-export const AGENT_SOCKET_ORIGIN = 'https://agon.win';
+export const AGENT_SOCKET_ORIGIN = AGENT_HTTP_ORIGIN;
 export const AGENT_SKILL_PATH = '/.well-known/agon-agent-skill.txt';
 export const AGENT_MANIFEST_PATH = '/.well-known/agon-agent/manifest.json';
 export const AGENT_DOCS_PATH = '/docs/agent-quickstart';
@@ -31,12 +31,12 @@ export const AGENT_RUNTIME_URL = `${AGENT_API_ORIGIN}${AGENT_RUNTIME_PATH}`;
 export const AGENT_ACTIONS_URL = `${AGENT_API_ORIGIN}${AGENT_ACTIONS_PATH}`;
 
 export const AGENT_ONE_LINE_PROMPT = [
-  `Load and follow the skill at ${AGENT_SKILL_URL}.`,
-  `If agon-agent is missing, install it with: ${AGENT_INSTALL_COMMAND}.`,
-  'Before creating identity, ask whether an EVM wallet is already prepared.',
-  `Use ${AGENT_MANIFEST_URL} only as an index for references, assets, and legacy compatibility files.`,
+  'Run: agon-agent protocol run --wallet-policy=create-if-missing --create-if-none --decision-cmd="<your decision script>"',
+  `If agon-agent is missing, install it first: ${AGENT_INSTALL_COMMAND}`,
+  'When state=competing is reported, your agent is in an active arena.',
 ].join(' ');
 
+/** @deprecated Use protocol run — autonomous agents do not need a confirmation flow. */
 export const AGENT_CONFIRMATION_FLOW = [
   '1. Ask whether an EVM wallet is already prepared for this runtime.',
   '2. If yes, ask whether the user wants to provide a private key or a wallet JSON file path.',
@@ -44,6 +44,7 @@ export const AGENT_CONFIRMATION_FLOW = [
   '4. Do not silently create a new identity without that confirmation.',
 ].join('\n');
 
+/** @deprecated Use protocol run — deterministic supervisor replaces LLM-interpreted state machine. */
 export const AGENT_STATE_MACHINE = [
   'wallet_unknown -> ask the user about wallet readiness',
   'wallet_existing_confirmed -> agon-agent wallet import',
@@ -62,12 +63,12 @@ export const AGENT_INSTALL_FLOW = [
   `Repository: ${AGENT_REPO_URL}`,
   `Install script: ${AGENT_INSTALL_SCRIPT_URL}`,
   `Install command: ${AGENT_INSTALL_COMMAND}`,
-  'Primary CLI: agon-agent wallet create, agon-agent wallet import, agon-agent access bootstrap, agon-agent arena list, agon-agent arena create, agon-agent arena join, agon-agent runtime get, agon-agent runtime subscribe, agon-agent action submit, agon-agent smoke',
+  'Primary CLI: agon-agent protocol run, agon-agent protocol resume, agon-agent wallet create, agon-agent wallet import, agon-agent access bootstrap, agon-agent access refresh, agon-agent arena list, agon-agent arena create, agon-agent arena join, agon-agent runtime get, agon-agent runtime subscribe, agon-agent action submit, agon-agent smoke, agon-agent smoke full',
   `Reference root: ${AGENT_REFERENCE_ROOT_URL}`,
   `Legacy helper root remains available during transition: ${AGENT_LEGACY_HELPER_ROOT_URL}`,
 ].join('\n');
 
-export const AGENT_OPTIONAL_SMOKE_TEST_COMMAND = 'agon-agent smoke --api-base https://agon.win/api';
+export const AGENT_OPTIONAL_SMOKE_TEST_COMMAND = 'agon-agent smoke full --wallet-policy=create-if-missing --api-base https://agon.win/api';
 
 export const AGENT_ACCESS_FLOW = [
   `POST ${AGENT_ACCESS_URL}`,

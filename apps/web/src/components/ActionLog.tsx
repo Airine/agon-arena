@@ -8,11 +8,11 @@ import type { ActionEntry } from '../hooks/useArenaSocket';
 // ---------------------------------------------------------------------------
 
 const ACTION_COLORS: Record<string, string> = {
-  fold: '#718096',
-  check: '#68d391',
-  call: '#63b3ed',
-  raise: '#f6ad55',
-  all_in: '#fc8181',
+  fold:   '#555570',
+  check:  '#22DD88',
+  call:   '#00C8F0',
+  raise:  '#E8A020',
+  all_in: '#FF4455',
 };
 
 const ACTION_LABELS: Record<string, string> = {
@@ -103,8 +103,8 @@ function ThoughtBubble({ entry }: { entry: ActionEntry }) {
         marginTop: 4,
         padding: '5px 8px',
         borderRadius: '6px',
-        background: 'rgba(244, 240, 232, 0.92)',
-        border: `1px solid ${color}25`,
+        background: 'rgba(16, 16, 36, 0.8)',
+        border: `0.5px solid ${color}25`,
         fontSize: '11px',
         color: 'var(--muted)',
         lineHeight: 1.5,
@@ -130,12 +130,12 @@ function ThoughtBubble({ entry }: { entry: ActionEntry }) {
           {entry.latencyMs != null && (
             <div>
               Server latency:{' '}
-              <span style={{ color: entry.latencyMs < 50 ? '#68d391' : entry.latencyMs < 100 ? '#f6ad55' : '#fc8181' }}>
+              <span style={{ color: entry.latencyMs < 50 ? '#22DD88' : entry.latencyMs < 100 ? '#f6ad55' : '#fc8181' }}>
                 {entry.latencyMs}ms
               </span>
             </div>
           )}
-          <div style={{ color: '#4a5568', marginTop: 2 }}>{formatTime(entry.timestamp)}</div>
+          <div style={{ color: '#444460', marginTop: 2 }}>{formatTime(entry.timestamp)}</div>
         </div>
       ) : (
         <span style={{ opacity: 0.7 }}>
@@ -160,16 +160,16 @@ function HandStartEntry({ entry }: { entry: ActionEntry }) {
         gap: '8px',
         margin: '10px 0 4px',
         padding: '6px 10px',
-        background: 'linear-gradient(90deg, #1a2332 0%, #111827 100%)',
+        background: 'linear-gradient(90deg, #0D1020 0%, #0B0B18 100%)',
         borderRadius: '4px',
-        borderLeft: '3px solid var(--accent)',
+        borderLeft: '2px solid var(--accent)',
       }}
     >
       <span style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 700 }}>
         HAND #{entry.handNumber}
       </span>
       <span style={{ fontSize: '11px', color: 'var(--muted)', flex: 1 }}>New hand dealt</span>
-      <span style={{ fontSize: '10px', color: '#4a5568' }}>{formatTime(entry.timestamp)}</span>
+      <span style={{ fontSize: '10px', color: '#444460' }}>{formatTime(entry.timestamp)}</span>
     </div>
   );
 }
@@ -181,9 +181,9 @@ function HandEndEntry({ entry }: { entry: ActionEntry }) {
       style={{
         margin: '4px 0 10px',
         padding: '6px 10px',
-        background: 'linear-gradient(90deg, #0f2b1a 0%, #111827 100%)',
+        background: 'linear-gradient(90deg, #0D1F16 0%, #0B0B18 100%)',
         borderRadius: '4px',
-        borderLeft: '3px solid #68d391',
+        borderLeft: '2px solid #22DD88',
       }}
     >
       <div
@@ -195,16 +195,16 @@ function HandEndEntry({ entry }: { entry: ActionEntry }) {
         }}
         onClick={() => entry.winners && setExpanded((v) => !v)}
       >
-        <span style={{ fontSize: '11px', color: '#68d391', fontWeight: 700 }}>
+        <span style={{ fontSize: '11px', color: '#22DD88', fontWeight: 700 }}>
           Hand #{entry.handNumber} ended
         </span>
         {entry.winners && entry.winners.length > 0 && (
-          <span style={{ fontSize: '10px', color: '#4a5568' }}>
+          <span style={{ fontSize: '10px', color: '#444460' }}>
             {expanded ? '▲' : '▼'}
           </span>
         )}
         <span style={{ flex: 1 }} />
-        <span style={{ fontSize: '10px', color: '#4a5568' }}>{formatTime(entry.timestamp)}</span>
+        <span style={{ fontSize: '10px', color: '#444460' }}>{formatTime(entry.timestamp)}</span>
       </div>
 
       {expanded && entry.winners && (
@@ -224,7 +224,7 @@ function HandEndEntry({ entry }: { entry: ActionEntry }) {
               <span style={{ color: 'var(--fg)', fontWeight: 600 }}>
                 {w.agentId.length > 16 ? `${w.agentId.slice(0, 8)}…` : w.agentId}
               </span>
-              <span style={{ color: '#68d391', fontWeight: 700 }}>+${w.amount.toLocaleString()}</span>
+              <span style={{ color: '#22DD88', fontWeight: 700 }}>+${w.amount.toLocaleString()}</span>
               {w.handDescription && (
                 <span style={{ color: 'var(--muted)', fontStyle: 'italic' }}>
                   {w.handDescription}
@@ -271,7 +271,7 @@ function ActionEntry_({ entry }: { entry: ActionEntry }) {
           </span>
           <ActionBadge type={entry.action?.type ?? 'fold'} amount={entry.action?.amount} />
           <span style={{ flex: 1 }} />
-          <span style={{ fontSize: '10px', color: '#4a5568', flexShrink: 0 }}>
+          <span style={{ fontSize: '10px', color: '#444460', flexShrink: 0 }}>
             {formatTime(entry.timestamp)}
           </span>
         </div>
@@ -313,9 +313,9 @@ export default function ActionLog({ actions, emptyMessage }: ActionLogProps) {
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
-        background: 'var(--card-bg)',
+        background: '#0B0B18',
         borderRadius: '8px',
-        border: '1px solid var(--border)',
+        border: '0.5px solid #1A1A30',
         overflow: 'hidden',
       }}
     >
@@ -337,9 +337,9 @@ export default function ActionLog({ actions, emptyMessage }: ActionLogProps) {
               fontSize: '10px',
               padding: '1px 6px',
               borderRadius: '10px',
-              background: 'rgba(47, 120, 207, 0.1)',
+              background: 'rgba(232, 160, 32, 0.1)',
               color: 'var(--accent)',
-              border: '1px solid rgba(47, 120, 207, 0.18)',
+              border: '0.5px solid rgba(232, 160, 32, 0.2)',
             }}
           >
             {actions.length}
@@ -356,9 +356,9 @@ export default function ActionLog({ actions, emptyMessage }: ActionLogProps) {
               fontSize: '10px',
               padding: '2px 8px',
               borderRadius: '4px',
-              background: 'rgba(47, 120, 207, 0.1)',
+              background: 'rgba(232, 160, 32, 0.1)',
               color: 'var(--accent)',
-              border: '1px solid rgba(47, 120, 207, 0.18)',
+              border: '0.5px solid rgba(232, 160, 32, 0.2)',
               cursor: 'pointer',
             }}
           >

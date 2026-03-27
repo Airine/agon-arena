@@ -1,4 +1,4 @@
-const { parseArgs } = require('node:util');
+const { parseBaseOptions, wantsHelp } = require('../lib/cli');
 const { requestJson } = require('../lib/api');
 const {
   DEFAULT_API_BASE,
@@ -10,10 +10,6 @@ const {
 const { getSessionForRole } = require('../lib/session');
 const { connectRuntimeSocket } = require('../lib/socket');
 const { jsonResult, loadRunState, updateRunState } = require('../lib/state');
-
-function wantsHelp(argv) {
-  return argv.includes('--help') || argv.includes('-h');
-}
 
 function help(subcommand) {
   if (subcommand === 'get') {
@@ -60,14 +56,8 @@ async function runGet(argv) {
     return;
   }
 
-  const { values } = parseArgs({
-    args: argv,
-    options: {
-      'api-base': { type: 'string', default: DEFAULT_API_BASE },
-      'state-dir': { type: 'string', default: DEFAULT_STATE_DIR },
-      role: { type: 'string', default: 'primary' },
-      'arena-id': { type: 'string' },
-    },
+  const { values } = parseBaseOptions(argv, {
+    'arena-id': { type: 'string' },
   });
 
   const { session } = getSessionForRole(values['state-dir'], values.role);
@@ -106,17 +96,11 @@ async function runSubscribe(argv) {
     return;
   }
 
-  const { values } = parseArgs({
-    args: argv,
-    options: {
-      'api-base': { type: 'string', default: DEFAULT_API_BASE },
-      'socket-origin': { type: 'string' },
-      'state-dir': { type: 'string', default: DEFAULT_STATE_DIR },
-      role: { type: 'string', default: 'primary' },
-      'arena-id': { type: 'string' },
-      once: { type: 'string', default: 'none' },
-      'timeout-ms': { type: 'string', default: '0' },
-    },
+  const { values } = parseBaseOptions(argv, {
+    'socket-origin': { type: 'string' },
+    'arena-id': { type: 'string' },
+    once: { type: 'string', default: 'none' },
+    'timeout-ms': { type: 'string', default: '0' },
   });
 
   const { session } = getSessionForRole(values['state-dir'], values.role);

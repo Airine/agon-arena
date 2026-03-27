@@ -42,14 +42,14 @@ export default function CommentaryBubble({ commentary }: CommentaryBubbleProps) 
       `}</style>
       <div
         style={{
-          background: 'linear-gradient(135deg, #1a2332 0%, #0f1a28 100%)',
-          border: '1px solid #2a4a6c',
+          background: '#0B0B18',
+          border: '0.5px solid #252540',
           borderRadius: '10px',
           padding: '10px 14px',
           display: 'flex',
           alignItems: 'flex-start',
           gap: '10px',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+          boxShadow: '0 4px 24px rgba(0,0,0,0.6)',
         }}
       >
         {/* Mic icon */}
@@ -68,10 +68,11 @@ export default function CommentaryBubble({ commentary }: CommentaryBubbleProps) 
           <div
             style={{
               fontSize: '10px',
-              color: '#63b3ed',
+              color: '#E8A020',
               fontWeight: 700,
-              letterSpacing: '0.08em',
+              letterSpacing: '0.1em',
               textTransform: 'uppercase',
+              fontFamily: 'JetBrains Mono, monospace',
               marginBottom: 4,
             }}
           >
@@ -82,7 +83,7 @@ export default function CommentaryBubble({ commentary }: CommentaryBubbleProps) 
             <div
               style={{
                 fontSize: '13px',
-                color: '#4a5568',
+                color: '#555570',
                 fontStyle: 'italic',
               }}
             >
@@ -92,8 +93,8 @@ export default function CommentaryBubble({ commentary }: CommentaryBubbleProps) 
             <div
               style={{
                 fontSize: '13px',
-                color: '#e2e8f0',
-                lineHeight: 1.5,
+                color: '#EDE9E2',
+                lineHeight: 1.55,
               }}
             >
               {commentary.text}

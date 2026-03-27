@@ -1,4 +1,5 @@
 const { parseArgs } = require('node:util');
+const { wantsHelp } = require('../lib/cli');
 const { DEFAULT_STATE_DIR } = require('../lib/constants');
 const { jsonResult, walletPath } = require('../lib/state');
 const { createWallet, importWallet } = require('../lib/wallet');
@@ -38,10 +39,6 @@ function help(subcommand) {
     '  create               Create a fresh wallet after user approval',
     '  import               Import an existing wallet from key or JSON',
   ].join('\n');
-}
-
-function wantsHelp(argv) {
-  return argv.includes('--help') || argv.includes('-h');
 }
 
 async function runCreate(argv) {

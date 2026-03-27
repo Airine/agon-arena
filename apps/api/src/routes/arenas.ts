@@ -10,7 +10,7 @@ import {
   getMaxRaise,
   getAgentRuntimeRoom,
 } from '../services/agent-runtime.js';
-import { getAgentPendingTurn, getAgentRuntimeSnapshot } from '../services/redis.js';
+import { getAgentPendingTurn, getAgentRuntimeSnapshot, getAgentLastProcessedTurnId } from '../services/redis.js';
 import {
   findSparringReplacementSeat,
 } from '../services/arena-admission.js';
@@ -41,6 +41,7 @@ const createArenaSchema = z.object({
   maxHands: z.number().int().min(0).max(10000).optional(),
   // buyInAmount: CHIP cost to join; must be 0 for practice
   buyInAmount: z.number().int().min(0).optional(),
+  isSmoke: z.boolean().optional(),
 });
 
 const runtimeQuerySchema = z.object({
@@ -108,6 +109,7 @@ arenasRouter.post('/', requireAuth, async (req, res) => {
         startingStack,
         maxHands,
         buyInAmount,
+        isSmoke: body.isSmoke ?? false,
         createdByUserId: req.user!.userId,
       })
       .returning();
@@ -155,6 +157,7 @@ arenasRouter.get('/', async (req, res) => {
         startingStack: schema.arenas.startingStack,
         maxHands: schema.arenas.maxHands,
         buyInAmount: schema.arenas.buyInAmount,
+        isSmoke: schema.arenas.isSmoke,
         spectatorCount: schema.arenas.spectatorCount,
         playerCount: sql<number>`COALESCE(${playerCountSq.playerCount}, 0)`.as('player_count'),
         createdByUserId: schema.arenas.createdByUserId,
@@ -165,18 +168,25 @@ arenasRouter.get('/', async (req, res) => {
       .$dynamic();
 
     const conditions = [];
+    conditions.push(eq(schema.arenas.isSmoke, false));
     if (status && ['waiting', 'running', 'finished', 'cancelled'].includes(status)) {
       conditions.push(eq(schema.arenas.status, status as 'waiting' | 'running' | 'finished' | 'cancelled'));
     }
     if (mode && ['practice', 'cash', 'tournament'].includes(mode)) {
       conditions.push(eq(schema.arenas.mode, mode as 'practice' | 'cash' | 'tournament'));
     }
-    if (conditions.length > 0) {
-      query = query.where(conditions.length === 1 ? conditions[0]! : and(...conditions));
-    }
+    query = query.where(conditions.length === 1 ? conditions[0]! : and(...conditions));
 
     const arenas = await query.limit(50);
-    res.json({ arenas });
+    const arenasWithTier = arenas.map((a) => ({
+      ...a,
+      tier: a.mode === 'practice'
+        ? 'practice'
+        : a.mode === 'cash' && (a.buyInAmount ?? 0) === 0
+        ? 'micro'
+        : 'serious',
+    }));
+    res.json({ arenas: arenasWithTier });
   } catch {
     res.status(500).json({ error: 'Failed to list arenas' });
   }
@@ -384,6 +394,7 @@ arenasRouter.get('/:id/runtime', requireAuth, async (req, res) => {
 
     const snapshot = await getAgentRuntimeSnapshot(arenaId, agentId);
     const pendingTurn = await getAgentPendingTurn(arenaId, agentId);
+    const lastProcessedTurnId = await getAgentLastProcessedTurnId(arenaId, agentId);
 
     res.json({
       snapshot: snapshot ?? {
@@ -411,6 +422,7 @@ arenasRouter.get('/:id/runtime', requireAuth, async (req, res) => {
           : null,
         updatedAt: Date.now(),
       },
+      lastProcessedTurnId: lastProcessedTurnId ?? null,
     });
   } catch (err) {
     if (err instanceof z.ZodError) {
