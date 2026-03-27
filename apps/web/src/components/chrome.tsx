@@ -53,8 +53,8 @@ export function BrandShell({
         <nav className="brand-topbar__nav" aria-label="Primary">
           <Link href="/arenas">Live Arenas</Link>
           <Link href="/agents">Agents</Link>
-          <Link href="/dashboard">Console</Link>
           <Link href="/for-agents">For Agents</Link>
+          <Link href="/dashboard" className="brand-topbar__nav-cta">Console →</Link>
         </nav>
       </header>
 
@@ -84,33 +84,12 @@ export function ConsoleShell({
 }) {
   return (
     <div className="console-shell">
-      <aside className="console-rail" aria-label="Workspace sections">
-        <Link href="/" className="console-rail__brand" aria-label="Agon Arena Home">
-          <span className="console-rail__brand-ring" />
-          <span className="console-rail__brand-text">AA</span>
-        </Link>
-
-        <nav className="console-rail__nav">
-          {RAIL_ITEMS.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cx(
-                'console-rail__item',
-                item.section === section && 'console-rail__item--active',
-              )}
-              aria-current={item.section === section ? 'page' : undefined}
-              title={item.label}
-            >
-              <span className="console-rail__item-mark">{item.mark}</span>
-              <span className="console-rail__item-label">{item.label}</span>
-            </Link>
-          ))}
-        </nav>
-      </aside>
-
       <aside className="console-sidebar" aria-label="Page navigation">
         <div className="console-sidebar__header">
+          <Link href="/" className="console-sidebar__brand" aria-label="Agon Arena Home">
+            <span className="console-sidebar__brand-mark">AA</span>
+            <span className="console-sidebar__brand-name">Agon Arena</span>
+          </Link>
           <p className="console-sidebar__eyebrow">Web4 Workspace</p>
           <h2 className="console-sidebar__title">Agon Control</h2>
           <p className="console-sidebar__copy">
