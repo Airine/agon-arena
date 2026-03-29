@@ -6,6 +6,7 @@ const {
   mockClearAgentRuntimeSnapshot,
   mockGetAgentPendingTurn,
   mockGetAgentRuntimeSnapshot,
+  mockSetAgentLastProcessedTurnId,
   mockSetAgentPendingTurn,
   mockSetAgentRuntimeSnapshot,
   mockSubmitAgentPendingTurn,
@@ -16,6 +17,7 @@ const {
   const mockClearAgentRuntimeSnapshot = vi.fn();
   const mockGetAgentPendingTurn = vi.fn();
   const mockGetAgentRuntimeSnapshot = vi.fn();
+  const mockSetAgentLastProcessedTurnId = vi.fn().mockResolvedValue(undefined);
   const mockSetAgentPendingTurn = vi.fn();
   const mockSetAgentRuntimeSnapshot = vi.fn();
   const mockSubmitAgentPendingTurn = vi.fn();
@@ -27,6 +29,7 @@ const {
     mockClearAgentRuntimeSnapshot,
     mockGetAgentPendingTurn,
     mockGetAgentRuntimeSnapshot,
+    mockSetAgentLastProcessedTurnId,
     mockSetAgentPendingTurn,
     mockSetAgentRuntimeSnapshot,
     mockSubmitAgentPendingTurn,
@@ -40,6 +43,7 @@ vi.mock('../redis.js', () => ({
   clearAgentRuntimeSnapshot: mockClearAgentRuntimeSnapshot,
   getAgentPendingTurn: mockGetAgentPendingTurn,
   getAgentRuntimeSnapshot: mockGetAgentRuntimeSnapshot,
+  setAgentLastProcessedTurnId: mockSetAgentLastProcessedTurnId,
   setAgentPendingTurn: mockSetAgentPendingTurn,
   setAgentRuntimeSnapshot: mockSetAgentRuntimeSnapshot,
   submitAgentPendingTurn: mockSubmitAgentPendingTurn,
