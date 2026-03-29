@@ -2282,3 +2282,915 @@ img {
 }
 
 /* === END ARENA DETAIL PAGE === */
+
+/* ============================================================
+   LOB VISUALIZATION
+   Prefix: .lob-viz__
+   Used by: LOBVisualization.tsx (market arena detail page)
+   ============================================================ */
+
+.lob-viz__root {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: var(--bg2);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-console);
+  overflow: hidden;
+  min-height: 480px;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+}
+
+/* Top bar */
+.lob-viz__topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 0.5px solid var(--border);
+  background: var(--bg);
+}
+
+.lob-viz__topbar-left {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.lob-viz__topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lob-viz__label {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.lob-viz__mid-price {
+  font-family: var(--font-display), 'Bebas Neue', sans-serif;
+  font-size: clamp(28px, 4vw, 40px);
+  letter-spacing: 0.02em;
+  line-height: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  transition: color 0.2s ease-out;
+}
+
+.lob-viz__mid-price.lob-viz__price--up   { color: var(--green); }
+.lob-viz__mid-price.lob-viz__price--down { color: var(--red); }
+.lob-viz__mid-price.lob-viz__price--flat { color: var(--fg); }
+
+.lob-viz__direction-arrow {
+  font-family: var(--font-mono, monospace);
+  font-size: 18px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+/* Status badges */
+.lob-viz__status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  border: 0.5px solid transparent;
+}
+
+.lob-viz__status-badge--live {
+  color: var(--green);
+  border-color: rgba(34, 221, 136, 0.3);
+  background: rgba(34, 221, 136, 0.07);
+}
+
+.lob-viz__status-badge--waiting {
+  color: var(--gold);
+  border-color: rgba(232, 160, 32, 0.3);
+  background: var(--gold-dim);
+}
+
+.lob-viz__status-badge--finished {
+  color: var(--ink-faint);
+  border-color: var(--border2);
+  background: var(--bg3);
+}
+
+.lob-viz__live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  animation: lob-pulse 1.6s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes lob-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.75); }
+}
+
+/* Body — two column */
+.lob-viz__body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-bottom: 0.5px solid var(--border);
+}
+
+@media (max-width: 680px) {
+  .lob-viz__body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.lob-viz__col-book {
+  border-right: 0.5px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+@media (max-width: 680px) {
+  .lob-viz__col-book {
+    border-right: none;
+    border-bottom: 0.5px solid var(--border);
+  }
+}
+
+.lob-viz__col-feed {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.lob-viz__col-title {
+  padding: 8px 12px;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  border-bottom: 0.5px solid var(--border);
+  background: var(--bg);
+}
+
+/* Order book */
+.lob-viz__book {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.lob-viz__book-header {
+  display: grid;
+  grid-template-columns: 72px 1fr 1fr;
+  padding: 5px 12px;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  border-bottom: 0.5px solid var(--border);
+  background: var(--bg);
+}
+
+.lob-viz__book-header span:not(:first-child) {
+  text-align: right;
+}
+
+/* Ask / bid level rows */
+.lob-viz__ask-levels,
+.lob-viz__bid-levels {
+  display: flex;
+  flex-direction: column;
+}
+
+.lob-viz__level {
+  position: relative;
+  display: grid;
+  grid-template-columns: 72px 1fr 1fr;
+  align-items: center;
+  padding: 3px 12px;
+  font-size: 11px;
+  line-height: 1.6;
+  transition: background 0.12s;
+  overflow: hidden;
+}
+
+.lob-viz__level:hover {
+  background: var(--bg3);
+}
+
+.lob-viz__level--best {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* Depth bar sits behind the text */
+.lob-viz__depth-bar-wrap {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.lob-viz__depth-bar-fill {
+  display: block;
+  height: 100%;
+  transition: width 0.3s ease-out;
+}
+
+.lob-viz__level-price,
+.lob-viz__level-size,
+.lob-viz__level-cum {
+  position: relative;
+  z-index: 1;
+}
+
+.lob-viz__level-price {
+  font-weight: 600;
+}
+
+.lob-viz__level-price--ask { color: var(--red); }
+.lob-viz__level-price--bid { color: var(--green); }
+
+.lob-viz__level-size,
+.lob-viz__level-cum {
+  text-align: right;
+  color: var(--ink-soft);
+  font-size: 10px;
+}
+
+/* Spread row */
+.lob-viz__spread-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 12px;
+  border-top: 0.5px solid var(--border);
+  border-bottom: 0.5px solid var(--border);
+  background: var(--bg);
+}
+
+.lob-viz__spread-label {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.lob-viz__spread-value {
+  font-size: 11px;
+  color: var(--gold);
+  font-weight: 600;
+}
+
+.lob-viz__spread-bps {
+  font-size: 10px;
+  color: var(--ink-faint);
+  font-weight: 400;
+}
+
+/* Agent activity feed */
+.lob-viz__feed {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+.lob-viz__feed-header {
+  padding: 8px 12px;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  border-bottom: 0.5px solid var(--border);
+  background: var(--bg);
+}
+
+.lob-viz__feed-scroll {
+  overflow-y: auto;
+  flex: 1;
+  max-height: 320px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border2) transparent;
+}
+
+.lob-viz__feed-entry {
+  padding: 7px 12px;
+  border-bottom: 0.5px solid var(--border);
+  transition: background 0.1s;
+}
+
+.lob-viz__feed-entry:hover {
+  background: var(--bg3);
+}
+
+.lob-viz__feed-entry-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.lob-viz__feed-agent {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--fg);
+  letter-spacing: 0.04em;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lob-viz__feed-chip {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 0.5px solid transparent;
+  flex-shrink: 0;
+}
+
+.lob-viz__feed-chip--buy {
+  color: var(--green);
+  border-color: rgba(34, 221, 136, 0.35);
+  background: rgba(34, 221, 136, 0.08);
+}
+
+.lob-viz__feed-chip--sell {
+  color: var(--red);
+  border-color: rgba(255, 68, 85, 0.35);
+  background: rgba(255, 68, 85, 0.08);
+}
+
+.lob-viz__feed-chip--cancel {
+  color: var(--ink-faint);
+  border-color: var(--border2);
+  background: var(--bg3);
+}
+
+.lob-viz__feed-time {
+  font-size: 9px;
+  color: var(--ink-faint);
+  flex-shrink: 0;
+}
+
+.lob-viz__feed-entry-bottom {
+  padding-left: 0;
+}
+
+.lob-viz__feed-order {
+  font-size: 10px;
+  color: var(--ink-soft);
+  letter-spacing: 0.04em;
+}
+
+/* Bottom sparkline */
+.lob-viz__chart-row {
+  padding: 10px 16px 12px;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lob-viz__chart-label {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.lob-viz__sparkline {
+  width: 100%;
+  height: 56px;
+  display: block;
+  overflow: visible;
+}
+
+/* Skeleton */
+.lob-viz__skeleton {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.lob-viz__skeleton-bar,
+.lob-viz__skeleton-block {
+  background: var(--bg3);
+  border-radius: 4px;
+  animation: lob-shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes lob-shimmer {
+  0%, 100% { opacity: 0.5; }
+  50%       { opacity: 0.9; }
+}
+
+.lob-viz__skeleton-label {
+  margin-top: 16px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+  text-align: center;
+}
+
+/* === END LOB VISUALIZATION === */
+
+/* ==========================================================================
+   Agent Profile — (market)/agents/[id]
+   ========================================================================== */
+
+.agent-profile {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 48px 24px 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 48px;
+}
+
+/* Back link */
+.agent-profile__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  transition: color 150ms ease-out;
+}
+
+.agent-profile__back:hover {
+  color: var(--gold);
+}
+
+/* ---- Hero ---- */
+
+.agent-profile__hero {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.agent-profile__hero-left {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.agent-profile__badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Status badge */
+.agent-profile__status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 0.5px solid var(--border2);
+  background: var(--bg2);
+  color: var(--ink-soft);
+}
+
+.agent-profile__status-badge--active {
+  border-color: rgba(34, 221, 136, 0.35);
+  color: var(--green);
+  background: rgba(34, 221, 136, 0.08);
+}
+
+.agent-profile__status-badge--in-arena {
+  border-color: rgba(0, 200, 240, 0.35);
+  color: var(--cyan);
+  background: rgba(0, 200, 240, 0.08);
+}
+
+.agent-profile__status-badge--idle {
+  border-color: var(--border2);
+  color: var(--ink-faint);
+  background: var(--bg2);
+}
+
+.agent-profile__status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.agent-profile__status-badge--active .agent-profile__status-dot {
+  animation: agent-status-pulse 2s ease-in-out infinite;
+}
+
+.agent-profile__status-badge--in-arena .agent-profile__status-dot {
+  animation: agent-status-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes agent-status-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+
+/* Tier badge */
+.agent-profile__tier-badge {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 0.5px solid var(--border2);
+  background: var(--bg2);
+  color: var(--ink-soft);
+}
+
+.agent-profile__tier-badge--pro {
+  border-color: rgba(232, 160, 32, 0.35);
+  color: var(--gold);
+  background: var(--gold-dim);
+}
+
+.agent-profile__tier-badge--elite {
+  border-color: rgba(155, 127, 255, 0.35);
+  color: var(--purple);
+  background: rgba(155, 127, 255, 0.10);
+}
+
+/* Agent name */
+.agent-profile__name {
+  font-family: var(--font-display, 'Bebas Neue', sans-serif);
+  font-size: clamp(2.4rem, 6vw, 4rem);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--fg);
+  line-height: 1;
+}
+
+/* Description */
+.agent-profile__description {
+  font-family: var(--font-sans, 'DM Sans', sans-serif);
+  font-size: 15px;
+  font-weight: 300;
+  color: var(--ink-soft);
+  max-width: 600px;
+  line-height: 1.6;
+}
+
+/* Owner row */
+.agent-profile__owner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 11px;
+}
+
+.agent-profile__owner-label {
+  color: var(--ink-faint);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.agent-profile__owner-address {
+  color: var(--ink-soft);
+  letter-spacing: 0.04em;
+}
+
+/* ---- Stats row ---- */
+
+.agent-profile__stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.agent-profile__stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 24px 20px;
+  background: var(--bg2);
+  transition: background 150ms ease-out;
+}
+
+.agent-profile__stat-card:hover {
+  background: var(--bg3);
+}
+
+.agent-profile__stat-label {
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.agent-profile__stat-value {
+  font-family: var(--font-display, 'Bebas Neue', sans-serif);
+  font-size: clamp(1.8rem, 3vw, 2.4rem);
+  font-weight: 400;
+  letter-spacing: 0.03em;
+  color: var(--gold);
+  line-height: 1;
+}
+
+.agent-profile__stat-sub {
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+
+@media (max-width: 700px) {
+  .agent-profile__stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 420px) {
+  .agent-profile__stats {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- Section layout ---- */
+
+.agent-profile__section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.agent-profile__section-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.agent-profile__section-eyebrow {
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cyan);
+}
+
+.agent-profile__section-title {
+  font-family: var(--font-display, 'Bebas Neue', sans-serif);
+  font-size: clamp(1.4rem, 3vw, 2rem);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg);
+  line-height: 1.1;
+}
+
+/* ---- Arena history table ---- */
+
+.agent-profile__history-table {
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.agent-profile__history-head {
+  display: grid;
+  grid-template-columns: 1fr 72px 110px 110px;
+  padding: 10px 16px;
+  background: var(--bg2);
+  border-bottom: 0.5px solid var(--border);
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.agent-profile__history-row {
+  display: grid;
+  grid-template-columns: 1fr 72px 110px 110px;
+  align-items: center;
+  padding: 13px 16px;
+  border-bottom: 0.5px solid var(--border);
+  transition: background 120ms ease-out;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.agent-profile__history-row:last-child {
+  border-bottom: none;
+}
+
+.agent-profile__history-row--win {
+  background: rgba(34, 221, 136, 0.03);
+}
+
+.agent-profile__history-row--win:hover {
+  background: rgba(34, 221, 136, 0.07);
+}
+
+.agent-profile__history-row--loss {
+  opacity: 0.65;
+}
+
+.agent-profile__history-row--loss:hover {
+  opacity: 0.85;
+  background: var(--bg2);
+}
+
+.agent-profile__history-arena {
+  font-size: 12px;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 12px;
+}
+
+.agent-profile__history-result {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.10em;
+}
+
+.agent-profile__history-result--win {
+  color: var(--green);
+}
+
+.agent-profile__history-result--loss {
+  color: var(--red);
+}
+
+.agent-profile__history-chips {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.agent-profile__history-date {
+  color: var(--ink-faint);
+  font-size: 10px;
+}
+
+.agent-profile__history-cell--right {
+  text-align: right;
+}
+
+/* Empty state */
+.agent-profile__history-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 48px 24px;
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg2);
+  text-align: center;
+}
+
+.agent-profile__history-empty-mark {
+  font-family: var(--font-display, 'Bebas Neue', sans-serif);
+  font-size: 2rem;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+  opacity: 0.4;
+}
+
+.agent-profile__history-empty p {
+  font-family: var(--font-sans, 'DM Sans', sans-serif);
+  font-size: 13px;
+  color: var(--ink-faint);
+}
+
+/* ---- Strategy placeholder ---- */
+
+.agent-profile__strategy {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.agent-profile__strategy-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 40px 32px 36px;
+  border: 0.5px solid var(--border2);
+  border-radius: 10px;
+  background: var(--bg2);
+  text-align: center;
+  overflow: hidden;
+}
+
+/* Subtle gold border glow on strategy card */
+.agent-profile__strategy-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  background: radial-gradient(ellipse at 50% 0%, rgba(232, 160, 32, 0.06) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.agent-profile__strategy-lock {
+  font-size: 2rem;
+  line-height: 1;
+  margin-bottom: 4px;
+  filter: grayscale(1) opacity(0.55);
+}
+
+.agent-profile__strategy-headline {
+  font-family: var(--font-serif, 'Syne', sans-serif);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ink-soft);
+}
+
+.agent-profile__strategy-body {
+  font-family: var(--font-sans, 'DM Sans', sans-serif);
+  font-size: 13px;
+  font-weight: 300;
+  color: var(--ink-faint);
+  line-height: 1.7;
+  max-width: 380px;
+}
+
+/* Blurred teaser rows behind the lock */
+.agent-profile__strategy-blur-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 480px;
+  margin-top: 16px;
+  filter: blur(5px);
+  opacity: 0.3;
+  pointer-events: none;
+  user-select: none;
+}
+
+.agent-profile__strategy-blur-row {
+  height: 14px;
+  border-radius: 4px;
+  background: var(--border2);
+}
+
+.agent-profile__strategy-blur-row:nth-child(2) {
+  width: 80%;
+}
+
+.agent-profile__strategy-blur-row:nth-child(3) {
+  width: 55%;
+}
+
+/* ---- Skeleton / loading ---- */
+
+.agent-profile__skeleton-bar {
+  background: var(--bg3);
+  border-radius: 6px;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  /* reuse the existing keyframe from arena-skeleton-bar */
+}
+
+/* === END AGENT PROFILE === */
