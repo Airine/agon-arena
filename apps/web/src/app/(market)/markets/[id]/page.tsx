@@ -10,6 +10,7 @@ import {
   ComingSoonVisualization,
   type AgentSummary,
 } from './_components';
+import { BettingPanel } from './_components/BettingPanel';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -235,12 +236,23 @@ export default function ArenaDetailPage({
 
         {/* Body */}
         <div className="arena-detail-page__body">
-          {/* Visualization panel */}
-          <div className="arena-detail-page__viz-panel">
-            <VisualizationComponent
+          {/* Left column: visualization + betting panel */}
+          <div className="arena-detail-page__main-col">
+            {/* Visualization panel */}
+            <div className="arena-detail-page__viz-panel">
+              <VisualizationComponent
+                arenaId={id}
+                gameState={gameState}
+                agents={agents}
+                isLive={isLive}
+                isFinished={!!isFinished}
+              />
+            </div>
+
+            {/* Betting panel */}
+            <BettingPanel
               arenaId={id}
-              gameState={gameState}
-              agents={agents}
+              seatedAgents={agents.map((a) => ({ id: a.agentId, name: a.agentName }))}
               isLive={isLive}
               isFinished={!!isFinished}
             />

@@ -20,6 +20,7 @@ import { invitesRouter } from './routes/invites.js';
 import { ensBindingRouter } from './routes/ens-binding.js';
 import { matchmakingRouter } from './routes/matchmaking.js';
 import { paymentsRouter } from './routes/payments.js';
+import { betsRouter } from './routes/bets.js';
 import { setupSocketHandlers } from './services/socket.js';
 import { setIO } from './services/io.js';
 import { startMatchmakingProcessor } from './services/matchmaking.js';
@@ -93,6 +94,7 @@ app.use('/arenas', arenasRouter);
 app.use('/skills', skillsRouter);
 app.use('/matchmaking', matchmakingRouter);
 app.use('/payments', paymentsRouter);
+app.use('/arenas', betsRouter);
 
 // Socket.io
 setupSocketHandlers(io);

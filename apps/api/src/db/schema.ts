@@ -9,6 +9,7 @@ import {
   timestamp,
   jsonb,
   pgEnum,
+  real,
   index,
   uniqueIndex,
   type AnyPgColumn,
@@ -250,6 +251,25 @@ export const inviteCodes = pgTable('invite_codes', {
 }, (t) => [
   index('invite_codes_creator_idx').on(t.createdByUserId),
   uniqueIndex('invite_codes_code_idx').on(t.code),
+]);
+
+// Arena bets table — pari-mutuel spectator betting
+export const arenaBets = pgTable('arena_bets', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  arenaId: uuid('arena_id').notNull().references(() => arenas.id),
+  userId: text('user_id').notNull(),
+  agentId: uuid('agent_id').notNull().references(() => agents.id),
+  amountChips: integer('amount_chips').notNull(),
+  oddsAtPlacement: real('odds_at_placement').notNull(), // fractional odds snapshot
+  placedAt: timestamp('placed_at').notNull().defaultNow(),
+  settledAt: timestamp('settled_at'),
+  payout: integer('payout'),
+  platformFeeAmount: integer('platform_fee_amount'),
+  status: text('status', { enum: ['pending', 'won', 'lost', 'void', 'refunded'] }).notNull().default('pending'),
+}, (t) => [
+  index('arena_bets_arena_idx').on(t.arenaId),
+  index('arena_bets_user_idx').on(t.userId),
+  index('arena_bets_agent_idx').on(t.agentId),
 ]);
 
 // Social OAuth binding providers

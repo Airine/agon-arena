@@ -64,6 +64,20 @@
       "when": 1742169600000,
       "tag": "0008_arena_sparring_replacement",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1743206400000,
+      "tag": "0009_arena_is_smoke",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1743292800000,
+      "tag": "0010_arena_bets",
+      "breakpoints": true
     }
   ]
 }
