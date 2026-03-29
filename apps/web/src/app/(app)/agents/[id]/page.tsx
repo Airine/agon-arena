@@ -1,5 +1,17 @@
 'use client';
 
+const CHART = {
+  gold: '#E8A020',
+  tooltipBg: '#13131f',
+  tooltipBorder: 'rgba(232,160,32,0.3)',
+  tooltipText: '#e0ddd6',
+  axisLabel: '#6b6a74',
+  gridLine: 'rgba(255,255,255,0.06)',
+  axisLine: 'rgba(255,255,255,0.08)',
+  areaTop: 'rgba(232, 160, 32, 0.22)',
+  areaBottom: 'rgba(232, 160, 32, 0.02)',
+} as const;
+
 import Link from 'next/link';
 import { use, useEffect, useRef, useState } from 'react';
 import {
@@ -11,7 +23,6 @@ import {
   StatusBadge,
   SurfaceCard,
 } from '@/components/chrome';
-import { buildConsoleNav } from '@/components/console-nav';
 import { buildApiUrl } from '@/lib/api';
 
 interface AgentDetail {
@@ -86,20 +97,20 @@ function ProfitChart({ matches }: { matches: Match[] }) {
           grid: { top: 18, right: 12, bottom: 28, left: 56 },
           tooltip: {
             trigger: 'axis',
-            backgroundColor: '#fffaf0',
-            borderColor: '#d8cfbf',
-            textStyle: { color: '#1b1a16' },
+            backgroundColor: CHART.tooltipBg,
+            borderColor: CHART.tooltipBorder,
+            textStyle: { color: CHART.tooltipText },
           },
           xAxis: {
             type: 'category',
             data: chronological.map((_, index) => `M${index + 1}`),
-            axisLabel: { color: '#7d7666', fontSize: 11 },
-            axisLine: { lineStyle: { color: '#d8cfbf' } },
+            axisLabel: { color: CHART.axisLabel, fontSize: 11 },
+            axisLine: { lineStyle: { color: CHART.axisLine } },
           },
           yAxis: {
             type: 'value',
-            axisLabel: { color: '#7d7666', fontSize: 11 },
-            splitLine: { lineStyle: { color: '#ebe4d6' } },
+            axisLabel: { color: CHART.axisLabel, fontSize: 11 },
+            splitLine: { lineStyle: { color: CHART.gridLine } },
           },
           series: [
             {
@@ -107,7 +118,7 @@ function ProfitChart({ matches }: { matches: Match[] }) {
               smooth: true,
               symbol: 'circle',
               symbolSize: 6,
-              color: '#2f78cf',
+              color: CHART.gold,
               areaStyle: {
                 color: {
                   type: 'linear',
@@ -116,8 +127,8 @@ function ProfitChart({ matches }: { matches: Match[] }) {
                   x2: 0,
                   y2: 1,
                   colorStops: [
-                    { offset: 0, color: 'rgba(47, 120, 207, 0.24)' },
-                    { offset: 1, color: 'rgba(47, 120, 207, 0.02)' },
+                    { offset: 0, color: CHART.areaTop },
+                    { offset: 1, color: CHART.areaBottom },
                   ],
                 },
               },
@@ -198,8 +209,6 @@ export default function AgentDetailPage({
       ? `${((agent.handsWon / agent.handsPlayed) * 100).toFixed(1)}%`
       : '--';
 
-  const detailLabel = agent?.name ?? 'Agent Detail';
-
   return (
     <ConsoleShell
       section="agents"
@@ -213,21 +222,6 @@ export default function AgentDetailPage({
         <Link href="/agents" className="button-secondary">
           Back to Agent Plaza
         </Link>
-      }
-      sidebarGroups={buildConsoleNav('agents', {
-        label: detailLabel,
-        meta: agent ? `ELO ${agent.eloRating}` : 'Loading',
-      })}
-      sidebarFooter={
-        <SurfaceCard tone="spotlight" className="surface-card--padded">
-          <div className="section-title__eyebrow">Roster Snapshot</div>
-          <h3 style={{ marginTop: '8px', fontSize: '1.04rem', fontWeight: 800 }}>
-            {agent?.name ?? 'Loading agent'}
-          </h3>
-          <p className="muted-copy" style={{ marginTop: '10px', fontSize: '0.92rem' }}>
-            {agent ? `Joined ${new Date(agent.createdAt).toLocaleDateString()}` : 'Fetching profile'}
-          </p>
-        </SurfaceCard>
       }
     >
       {loading ? (

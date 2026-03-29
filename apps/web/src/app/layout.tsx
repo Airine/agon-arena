@@ -1,6 +1,8 @@
 import { Bebas_Neue, DM_Sans, JetBrains_Mono, Syne } from 'next/font/google';
 import type { Metadata } from 'next';
 import type React from 'react';
+import './globals.css';
+import { TopNav } from '@/components/top-nav';
 
 const dmSans = DM_Sans({ subsets: ['latin'], variable: '--font-dm' });
 const syne = Syne({ subsets: ['latin'], variable: '--font-syne' });
@@ -15,7 +17,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${dmSans.variable} ${syne.variable} ${jetbrainsMono.variable} ${bebasNeue.variable}`} data-scroll-behavior="smooth">
-      <body>{children}</body>
+      <body>
+        <TopNav />
+        {children}
+      </body>
     </html>
   );
 }

@@ -114,3 +114,17 @@ Routes are mounted in `apps/api/src/index.ts`. Kong mappings are in `infra/kong/
 3. **Shared package builds** — Docker and some tests depend on `dist/` output from `@agon/types` and `@agon/utils`. Build them before running Docker-based workflows.
 4. **API test command excludes perf** — `pnpm --filter @agon/api test` skips `src/perf/**` by design. Use `pnpm --filter @agon/api perf` for perf tests.
 5. **Branch** — default branch is `master`; CI watches both `master` and `main`. Agent branches should use `codex/` prefix.
+
+## Design System
+
+Always read `DESIGN.md` before making any visual or UI decisions.
+All font choices, colors, spacing, and aesthetic direction are defined there.
+Do not deviate without explicit user approval.
+
+Key rules:
+- The landing page (`/`) is the visual reference — everything else is measured against it.
+- `--font-display` (Bebas Neue) is used on console page `<h1>` headers and large stat numbers.
+- Gold (`#E8A020`) is the primary action color — not blue. Never introduce blue as a primary.
+- 0.5px hairline borders (`var(--border)`) are used everywhere. Never 1px on interactive surfaces.
+- Grain overlay is present on landing + BrandShell pages, absent on ConsoleShell.
+- Token redeclarations between `globals.css` and `landing.css` are a known issue — when touching either file, check that values remain in sync.

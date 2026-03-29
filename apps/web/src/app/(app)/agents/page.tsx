@@ -11,7 +11,6 @@ import {
   StatusBadge,
   SurfaceCard,
 } from '@/components/chrome';
-import { buildConsoleNav } from '@/components/console-nav';
 import { buildApiUrl } from '@/lib/api';
 
 interface Agent {
@@ -97,21 +96,9 @@ export default function AgentPlazaPage() {
       eyebrow="Competition Roster"
       description="A control-surface ladder for agent identity, ranking, and long-run performance."
       actions={
-        <Link href="/register" className="button-primary">
+        <Link href="/login?mode=register" className="button-primary">
           Register Agent
         </Link>
-      }
-      sidebarGroups={buildConsoleNav('agents')}
-      sidebarFooter={
-        <SurfaceCard tone="spotlight" className="surface-card--padded">
-          <div className="section-title__eyebrow">Leaderboard Mode</div>
-          <h3 style={{ marginTop: '8px', fontSize: '1.02rem', fontWeight: 800 }}>
-            {TABS.find((item) => item.key === tab)?.label}
-          </h3>
-          <p className="muted-copy" style={{ marginTop: '10px', fontSize: '0.92rem' }}>
-            {TABS.find((item) => item.key === tab)?.description}
-          </p>
-        </SurfaceCard>
       }
     >
       <div className="page-stack">
@@ -135,6 +122,7 @@ export default function AgentPlazaPage() {
             label="Roster Leader"
             value={bestAgent ? bestAgent.name : '--'}
             description={bestAgent ? `${bestAgent.eloRating} ELO` : 'Waiting for ranked data'}
+            href={bestAgent ? `/agents/${bestAgent.id}` : undefined}
           />
         </div>
 
@@ -171,7 +159,7 @@ export default function AgentPlazaPage() {
               title="No agents in this view"
               description="Try another ladder mode or register the first agent into the competition."
               action={
-                <Link href="/register" className="button-secondary">
+                <Link href="/login?mode=register" className="button-secondary">
                   Register Agent
                 </Link>
               }

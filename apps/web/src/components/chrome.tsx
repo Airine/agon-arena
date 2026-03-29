@@ -1,3 +1,5 @@
+'use client';
+
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
@@ -7,29 +9,9 @@ function cx(...parts: Array<string | false | null | undefined>): string {
 
 export type ConsoleSection = 'dashboard' | 'arenas' | 'agents' | 'settings';
 
-export interface ConsoleNavItem {
-  href: string;
-  label: string;
-  active?: boolean;
-  meta?: string;
-}
-
-export interface ConsoleNavGroup {
-  label: string;
-  items: ConsoleNavItem[];
-}
-
-const RAIL_ITEMS: Array<{
-  section: ConsoleSection;
-  href: string;
-  label: string;
-  mark: string;
-}> = [
-  { section: 'dashboard', href: '/dashboard', label: 'Dashboard', mark: 'DB' },
-  { section: 'arenas', href: '/arenas', label: 'Arenas', mark: 'AR' },
-  { section: 'agents', href: '/agents', label: 'Agents', mark: 'AG' },
-  { section: 'settings', href: '/settings', label: 'Settings', mark: 'ST' },
-];
+// ---------------------------------------------------------------------------
+// BrandShell — auth pages (glow + grain backdrop, no nav — TopNav handles nav)
+// ---------------------------------------------------------------------------
 
 export function BrandShell({
   children,
@@ -43,34 +25,21 @@ export function BrandShell({
       <div className="brand-shell__glow brand-shell__glow--top" />
       <div className="brand-shell__glow brand-shell__glow--bottom" />
       <div className="brand-shell__grain" />
-
-      <header className="brand-topbar">
-        <Link href="/" className="brand-topbar__mark" aria-label="Agon Arena Home">
-          <span className="brand-mark">AA</span>
-          <span className="brand-topbar__title">Agon Arena</span>
-        </Link>
-
-        <nav className="brand-topbar__nav" aria-label="Primary">
-          <Link href="/arenas">Live Arenas</Link>
-          <Link href="/agents">Agents</Link>
-          <Link href="/for-agents">For Agents</Link>
-          <Link href="/dashboard" className="brand-topbar__nav-cta">Console →</Link>
-        </nav>
-      </header>
-
       <div className="brand-shell__body">{children}</div>
     </div>
   );
 }
 
+// ---------------------------------------------------------------------------
+// ConsoleShell — owner dashboard / system pages
+// ---------------------------------------------------------------------------
+
 export function ConsoleShell({
-  section,
+  section: _section,
   title,
   description,
   eyebrow,
   actions,
-  sidebarGroups,
-  sidebarFooter,
   children,
 }: {
   section: ConsoleSection;
@@ -78,96 +47,43 @@ export function ConsoleShell({
   description?: ReactNode;
   eyebrow?: string;
   actions?: ReactNode;
-  sidebarGroups: ConsoleNavGroup[];
-  sidebarFooter?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <div className="console-shell">
-      <aside className="console-sidebar" aria-label="Page navigation">
-        <div className="console-sidebar__header">
-          <Link href="/" className="console-sidebar__brand" aria-label="Agon Arena Home">
-            <span className="console-sidebar__brand-mark">AA</span>
-            <span className="console-sidebar__brand-name">Agon Arena</span>
-          </Link>
-          <p className="console-sidebar__eyebrow">Web4 Workspace</p>
-          <h2 className="console-sidebar__title">Agon Control</h2>
-          <p className="console-sidebar__copy">
-            Monitor live arenas, coordinate agents, and manage owner capital from one board.
-          </p>
-        </div>
-
-        <div className="console-sidebar__groups">
-          {sidebarGroups.map((group) => (
-            <section key={group.label} className="console-sidebar__group">
-              <div className="console-sidebar__group-label">{group.label}</div>
-              <div className="console-sidebar__group-items">
-                {group.items.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={cx(
-                      'console-sidebar__link',
-                      item.active && 'console-sidebar__link--active',
-                    )}
-                    aria-current={item.active ? 'page' : undefined}
-                  >
-                    <span>{item.label}</span>
-                    {item.meta ? (
-                      <span className="console-sidebar__link-meta">{item.meta}</span>
-                    ) : null}
-                  </Link>
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
-
-        {sidebarFooter ? (
-          <div className="console-sidebar__footer">{sidebarFooter}</div>
-        ) : null}
-      </aside>
-
       <main className="console-main">
-        <div className="console-mobile-nav">
-          <div className="console-mobile-nav__rail">
-            {RAIL_ITEMS.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cx(
-                  'console-mobile-nav__chip',
-                  item.section === section && 'console-mobile-nav__chip--active',
-                )}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </div>
-
-          <div className="console-mobile-nav__context">
-            {sidebarGroups.flatMap((group) =>
-              group.items.filter((item) => item.active).map((item) => (
-                <span key={item.href} className="console-mobile-nav__context-pill">
-                  {group.label} / {item.label}
-                </span>
-              )),
-            )}
-          </div>
-        </div>
-
         <PageHeader
           eyebrow={eyebrow}
           title={title}
           description={description}
           actions={actions}
         />
-
         <div className="console-main__content">{children}</div>
       </main>
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// MarketShell — public market / arena pages
+// ---------------------------------------------------------------------------
+
+export interface MarketShellProps {
+  children: ReactNode;
+}
+
+export function MarketShell({ children }: MarketShellProps) {
+  return (
+    <div className="market-shell">
+      <div className="market-shell__grain" />
+      <main className="market-shell__main">{children}</main>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// PageHeader
+// ---------------------------------------------------------------------------
 
 export function PageHeader({
   eyebrow,

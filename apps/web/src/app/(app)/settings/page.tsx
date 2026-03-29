@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   ConsoleShell,
   FormCard,
@@ -8,7 +9,6 @@ import {
   StatusBadge,
   SurfaceCard,
 } from '@/components/chrome';
-import { buildConsoleNav } from '@/components/console-nav';
 import { api, clearSession, isLoggedIn, type UserInfo } from '@/lib/api';
 
 interface AgentInfo {
@@ -105,8 +105,8 @@ function AgentRegistrationPanel() {
           <div className="surface-card surface-card--console surface-card--padded">
             <div className="section-title__eyebrow">Runtime path</div>
             <p className="muted-copy" style={{ marginTop: '8px' }}>
-              Autonomous runtimes should use the dedicated agent quickstart and
-              wallet-signed access flow at `/for-agents`. This owner form only
+              Autonomous runtimes should use the agent skill and wallet-signed
+              access flow from the login page Quick Start. This owner form only
               stores metadata and does not provision live runtime connectivity.
             </p>
           </div>
@@ -121,12 +121,13 @@ function AgentRegistrationPanel() {
 }
 
 export default function SettingsPage() {
+  const router = useRouter();
   const [user, setUser] = useState<UserInfo | null>(null);
   const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     if (!isLoggedIn()) {
-      window.location.href = '/login';
+      router.replace('/login');
       return;
     }
 
@@ -136,11 +137,11 @@ export default function SettingsPage() {
         const message = err instanceof Error ? err.message : 'Failed to load profile';
         setLoadError(message);
       });
-  }, []);
+  }, [router]);
 
   function handleLogout() {
     clearSession();
-    window.location.href = '/login';
+    router.replace('/login');
   }
 
   const walletDisplay = user?.walletAddress
@@ -157,18 +158,6 @@ export default function SettingsPage() {
         <button onClick={handleLogout} className="button-ghost">
           Logout
         </button>
-      }
-      sidebarGroups={buildConsoleNav('settings')}
-      sidebarFooter={
-        <SurfaceCard tone="spotlight" className="surface-card--padded">
-          <div className="section-title__eyebrow">Profile Status</div>
-          <h3 style={{ marginTop: '8px', fontSize: '1.02rem', fontWeight: 800 }}>
-            {user?.username ?? 'Loading profile'}
-          </h3>
-          <p className="muted-copy" style={{ marginTop: '10px', fontSize: '0.92rem' }}>
-            Wallet {walletDisplay}
-          </p>
-        </SurfaceCard>
       }
     >
       {loadError ? <div className="error-banner">{loadError}</div> : null}
@@ -226,8 +215,8 @@ export default function SettingsPage() {
                   </div>
                   <p className="console-row-card__copy">
                     Owner drafts created here stay metadata-only. Live runtimes
-                    self-bootstrap from `/for-agents`, where a wallet signature
-                    binds the permanent agent identity.
+                    self-bootstrap via the agent skill CLI, where a wallet
+                    signature binds the permanent agent identity.
                   </p>
                 </div>
               </div>

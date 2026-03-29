@@ -1,20 +1,5 @@
 .landing-root {
-  --bg: #06060D;
-  --bg2: #0B0B18;
-  --bg3: #101024;
-  --border: #1A1A30;
-  --border2: #252540;
-  --gold: #E8A020;
-  --gold2: #F5C050;
-  --gold-dim: rgba(232, 160, 32, 0.12);
-  --cyan: #00C8F0;
-  --cyan-dim: rgba(0, 200, 240, 0.10);
-  --text: #EDE9E2;
-  --text2: #8888AA;
-  --text3: #555570;
-  --red: #FF4455;
-  --green: #22DD88;
-  --purple: #9B7FFF;
+  /* Tokens inherited from :root (globals.css) — no redeclarations needed */
 
   /* Merged from body */
   background: var(--bg);
@@ -45,21 +30,6 @@ html {
   opacity: .35;
 }
 
-nav {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 48px;
-  height: 64px;
-  background: rgba(6, 6, 13, .85);
-  backdrop-filter: blur(16px);
-  border-bottom: .5px solid var(--border);
-}
 
 .nav-logo {
   font-family: 'Bebas Neue', var(--font-bebas), sans-serif;
@@ -227,10 +197,10 @@ nav {
   font-family: 'Syne', var(--font-syne), sans-serif;
   font-size: 14px;
   font-weight: 700;
-  color: var(--bg);
+  color: #06060D;
   background: var(--gold);
-  padding: 14px 32px;
-  border-radius: 8px;
+  padding: 13px 28px;
+  border-radius: 999px;
   text-decoration: none;
   letter-spacing: .04em;
   border: none;
@@ -250,8 +220,8 @@ nav {
   font-weight: 600;
   color: var(--text);
   background: transparent;
-  padding: 13px 32px;
-  border-radius: 8px;
+  padding: 12px 28px;
+  border-radius: 999px;
   text-decoration: none;
   letter-spacing: .04em;
   border: .5px solid var(--border2);
@@ -260,7 +230,7 @@ nav {
 }
 
 .btn-ghost:hover {
-  border-color: var(--text3);
+  border-color: var(--ink-faint);
   background: rgba(255, 255, 255, .04);
 }
 
@@ -1038,7 +1008,6 @@ footer {
 }
 
 @media (max-width: 900px) {
-  nav { padding: 0 24px; }
   .nav-links { display: none; }
   section { padding: 72px 24px; }
   #hero { padding: 100px 24px 60px; }

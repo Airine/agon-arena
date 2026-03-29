@@ -1,5 +1,17 @@
 'use client';
 
+const CHART = {
+  gold: '#E8A020',
+  tooltipBg: '#13131f',
+  tooltipBorder: 'rgba(232,160,32,0.3)',
+  tooltipText: '#e0ddd6',
+  axisLabel: '#6b6a74',
+  gridLine: 'rgba(255,255,255,0.06)',
+  axisLine: 'rgba(255,255,255,0.08)',
+  areaTop: 'rgba(232,160,32,0.22)',
+  areaBottom: 'rgba(232,160,32,0.02)',
+} as const;
+
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -11,7 +23,6 @@ import {
   StatusBadge,
   SurfaceCard,
 } from '@/components/chrome';
-import { buildConsoleNav } from '@/components/console-nav';
 import {
   buildApiUrl,
   clearSession,
@@ -88,7 +99,7 @@ function ConnectForm({ onConnect }: { onConnect: () => void }) {
             sign in
           </Link>{' '}
           or{' '}
-          <Link href="/register" style={{ color: 'var(--accent-blue)' }}>
+          <Link href="/login?mode=register" style={{ color: 'var(--accent-blue)' }}>
             create an account
           </Link>
           .
@@ -153,9 +164,9 @@ function PortfolioPnLChart({ matches }: { matches: Match[] }) {
           grid: { top: 20, right: 12, bottom: 28, left: 56 },
           tooltip: {
             trigger: 'axis',
-            backgroundColor: '#fffaf0',
-            borderColor: '#d8cfbf',
-            textStyle: { color: '#1b1a16' },
+            backgroundColor: CHART.tooltipBg,
+            borderColor: CHART.tooltipBorder,
+            textStyle: { color: CHART.tooltipText },
             formatter: (params: Array<{ dataIndex: number; value: number }>) => {
               const point = params[0];
               if (!point) return '';
@@ -166,13 +177,13 @@ function PortfolioPnLChart({ matches }: { matches: Match[] }) {
           xAxis: {
             type: 'category',
             data: sorted.map((_, index) => `M${index + 1}`),
-            axisLabel: { color: '#7d7666', fontSize: 11 },
-            axisLine: { lineStyle: { color: '#d8cfbf' } },
+            axisLabel: { color: CHART.axisLabel, fontSize: 11 },
+            axisLine: { lineStyle: { color: CHART.axisLine } },
           },
           yAxis: {
             type: 'value',
-            axisLabel: { color: '#7d7666', fontSize: 11 },
-            splitLine: { lineStyle: { color: '#ebe4d6' } },
+            axisLabel: { color: CHART.axisLabel, fontSize: 11 },
+            splitLine: { lineStyle: { color: CHART.gridLine } },
           },
           series: [
             {
@@ -180,7 +191,7 @@ function PortfolioPnLChart({ matches }: { matches: Match[] }) {
               smooth: true,
               symbol: 'circle',
               symbolSize: 6,
-              color: '#2f78cf',
+              color: CHART.gold,
               areaStyle: {
                 color: {
                   type: 'linear',
@@ -189,8 +200,8 @@ function PortfolioPnLChart({ matches }: { matches: Match[] }) {
                   x2: 0,
                   y2: 1,
                   colorStops: [
-                    { offset: 0, color: 'rgba(47, 120, 207, 0.24)' },
-                    { offset: 1, color: 'rgba(47, 120, 207, 0.02)' },
+                    { offset: 0, color: CHART.areaTop },
+                    { offset: 1, color: CHART.areaBottom },
                   ],
                 },
               },
@@ -239,7 +250,7 @@ function AgentRoster({ agents }: { agents: Agent[] }) {
           </>
         }
         action={
-          <Link href="/register" className="button-secondary">
+          <Link href="/login?mode=register" className="button-secondary">
             Register Agent
           </Link>
         }
@@ -284,7 +295,13 @@ function AgentRoster({ agents }: { agents: Agent[] }) {
               >
                 {formatSigned(agent.totalChipsWon)}
               </div>
-              <div className="console-link-arrow">Open</div>
+              <div
+                className="dashboard-shares-placeholder"
+                title="Agent shares — coming soon"
+              >
+                Configure Shares
+              </div>
+              <div className="console-link-arrow">Open →</div>
             </div>
           </Link>
         );
@@ -401,25 +418,11 @@ export default function OwnerDashboardPage() {
             <Link href="/login" className="button-secondary">
               Sign In
             </Link>
-            <Link href="/register" className="button-primary">
+            <Link href="/login?mode=register" className="button-primary">
               Create Account
             </Link>
           </>
         )
-      }
-      sidebarGroups={buildConsoleNav('dashboard')}
-      sidebarFooter={
-        <SurfaceCard tone="spotlight" className="surface-card--padded">
-          <div className="section-title__eyebrow">Session</div>
-          <h3 style={{ marginTop: '8px', fontSize: '1.06rem', fontWeight: 800 }}>
-            {user?.username ?? 'No active owner session'}
-          </h3>
-          <p className="muted-copy" style={{ marginTop: '10px', fontSize: '0.92rem' }}>
-            {user
-              ? `Wallet ${truncateWallet(user.walletAddress)}`
-              : 'Connect with an existing dashboard token or sign in normally.'}
-          </p>
-        </SurfaceCard>
       }
     >
       {!token ? (
@@ -489,7 +492,7 @@ export default function OwnerDashboardPage() {
               label="Live Arenas"
               value={runningMatches.length.toLocaleString()}
               description={bestAgent ? `Best ELO: ${bestAgent.name}` : 'No roster leader yet'}
-              href="/arenas"
+              href="/markets"
             />
           </div>
 
