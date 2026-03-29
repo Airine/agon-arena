@@ -782,6 +782,66 @@ export class ChipService {
     };
   }
 
+  /**
+   * Credit chips to a user within an **external** transaction.
+   * Identical to `credit()` but uses the caller-supplied `tx` instead of
+   * opening a new transaction — allows multiple credits to be atomic.
+   */
+  async creditInTx(
+    tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+    userId: string,
+    amount: number,
+    description: string,
+    meta?: Record<string, unknown>,
+  ): Promise<ChipTxResult> {
+    if (amount <= 0) throw new Error('Credit amount must be positive');
+
+    const user = await this.lockUser(tx, userId);
+
+    const balanceBefore = user.chipBalance;
+    const frozenBefore = user.frozenAmount;
+    const balanceAfter = balanceBefore + amount;
+    const frozenAfter = frozenBefore;
+
+    await tx
+      .update(schema.users)
+      .set({
+        chipBalance: sql`${schema.users.chipBalance} + ${amount}`,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.users.id, userId));
+
+    const referenceId = meta?.['referenceId'] as string | undefined;
+    const referenceType = meta?.['referenceType'] as string | undefined;
+
+    const [row] = await tx
+      .insert(schema.chipTransactions)
+      .values({
+        userId,
+        type: 'credit',
+        amount,
+        balanceBefore,
+        balanceAfter,
+        frozenBefore,
+        frozenAfter,
+        referenceId,
+        referenceType,
+        note: description,
+      })
+      .returning({ id: schema.chipTransactions.id });
+
+    return {
+      txId: row!.id,
+      userId,
+      type: 'credit',
+      amount,
+      balanceBefore,
+      balanceAfter,
+      frozenBefore,
+      frozenAfter,
+    };
+  }
+
   // ─── Internal ─────────────────────────────────────────────────────────────
 
   /** SELECT the user row for update inside an open transaction. */

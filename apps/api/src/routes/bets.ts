@@ -1,11 +1,17 @@
 import { Router, type Router as RouterType } from 'express';
 import { z } from 'zod';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, sql, desc } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { chipService, InsufficientChipsError } from '../services/chip.js';
 
 export const betsRouter: RouterType = Router();
+
+/**
+ * Cross-arena bets router — mounted at /bets (top-level).
+ * Provides portfolio-page endpoints that span all arenas.
+ */
+export const myBetsRouter: RouterType = Router();
 
 const placeBetSchema = z.object({
   agentId: z.string().uuid(),
@@ -294,6 +300,41 @@ betsRouter.get('/:id/bets/my', requireAuth, async (req, res) => {
       ));
 
     res.json({ bets, arenaId });
+  } catch {
+    res.status(500).json({ error: 'Failed to fetch bets' });
+  }
+});
+
+/**
+ * GET /bets/my — cross-arena portfolio view.
+ * Returns all bets placed by the authenticated user across all arenas,
+ * joined with arena name and agent name, sorted by placedAt DESC.
+ */
+myBetsRouter.get('/my', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user!.userId;
+
+    const bets = await db
+      .select({
+        id: schema.arenaBets.id,
+        arenaId: schema.arenaBets.arenaId,
+        arenaName: schema.arenas.name,
+        agentId: schema.arenaBets.agentId,
+        agentName: schema.agents.name,
+        amountChips: schema.arenaBets.amountChips,
+        oddsAtPlacement: schema.arenaBets.oddsAtPlacement,
+        status: schema.arenaBets.status,
+        payout: schema.arenaBets.payout,
+        placedAt: schema.arenaBets.placedAt,
+        settledAt: schema.arenaBets.settledAt,
+      })
+      .from(schema.arenaBets)
+      .innerJoin(schema.arenas, eq(schema.arenaBets.arenaId, schema.arenas.id))
+      .innerJoin(schema.agents, eq(schema.arenaBets.agentId, schema.agents.id))
+      .where(eq(schema.arenaBets.userId, userId))
+      .orderBy(desc(schema.arenaBets.placedAt));
+
+    res.json({ bets });
   } catch {
     res.status(500).json({ error: 'Failed to fetch bets' });
   }

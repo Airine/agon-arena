@@ -22,6 +22,7 @@ import {
 import { publishEvent } from './kafka.js';
 import { chipService } from './chip.js';
 import { resolveBotAction } from './bot.js';
+import { settleBets } from './bet-settlement.js';
 
 const DEFAULT_ACTION_ROUND_MIN_MS = 5_000;
 const MAX_HANDS = 100; // Max hands per arena session
@@ -397,7 +398,19 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
     await sleep(1000);
   }
 
-  // Arena finished
+  // Arena finished — determine final standings from stacks
+  const winnerAgentIds = Array.from(stacks.entries())
+    .filter(([, chips]) => chips > 0)
+    .map(([agentId]) => agentId);
+
+  // Settle spectator bets before marking arena finished
+  try {
+    await settleBets(arenaId, winnerAgentIds);
+  } catch (err) {
+    console.error(`[Orchestrator] settleBets failed for arena ${arenaId}:`, err);
+    // Non-fatal: arena should still be marked finished
+  }
+
   await db
     .update(schema.arenas)
     .set({ status: 'finished', finishedAt: new Date() })

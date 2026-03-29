@@ -3538,3 +3538,363 @@ img {
 }
 
 /* === END BETTING PANEL === */
+
+/* ============================================================
+   PORTFOLIO PAGE
+   ============================================================ */
+
+.portfolio {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 48px 28px 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+/* ---- Header ---- */
+
+.portfolio__header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.portfolio__title {
+  font-family: var(--font-display, 'Bebas Neue', sans-serif);
+  font-size: clamp(2.4rem, 5vw, 3.6rem);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  line-height: 0.95;
+  text-transform: uppercase;
+  color: var(--fg);
+}
+
+.portfolio__subtitle {
+  font-family: var(--font-sans, 'DM Sans', sans-serif);
+  font-size: 14px;
+  font-weight: 300;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+/* ---- Stat strip — reuses agent-profile__stats grid ---- */
+
+.portfolio__stats {
+  /* inherits agent-profile__stats styles — no overrides needed */
+}
+
+/* ---- Section wrapper ---- */
+
+.portfolio__section {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* ---- Bets table ---- */
+
+.portfolio__table {
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.portfolio__table-head {
+  display: grid;
+  grid-template-columns: 1.4fr 1.2fr 90px 60px 90px 90px 100px;
+  align-items: center;
+  padding: 10px 16px;
+  background: var(--bg2);
+  border-bottom: 0.5px solid var(--border);
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  gap: 8px;
+}
+
+.portfolio__table-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1.2fr 90px 60px 90px 90px 100px;
+  align-items: center;
+  padding: 11px 16px;
+  border-bottom: 0.5px solid var(--border);
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 12px;
+  color: var(--ink-soft);
+  gap: 8px;
+  transition: background 120ms ease-out;
+}
+
+.portfolio__table-row:last-child {
+  border-bottom: none;
+}
+
+.portfolio__table-row:hover {
+  background: var(--bg2);
+}
+
+/* Status-based row treatments */
+.portfolio__table-row--pending {
+  opacity: 0.72;
+}
+
+.portfolio__table-row--won {
+  background: rgba(34, 221, 136, 0.03);
+}
+
+.portfolio__table-row--won:hover {
+  background: rgba(34, 221, 136, 0.07);
+}
+
+.portfolio__table-row--lost {
+  opacity: 0.6;
+}
+
+.portfolio__table-row--lost:hover {
+  opacity: 0.85;
+  background: var(--bg2);
+}
+
+.portfolio__table-row--void,
+.portfolio__table-row--refunded {
+  opacity: 0.5;
+}
+
+/* Cell alignment */
+.portfolio__table-cell--right {
+  text-align: right;
+}
+
+/* Cell content styles */
+.portfolio__table-arena {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 8px;
+}
+
+.portfolio__table-link {
+  color: var(--fg);
+  text-decoration: none;
+  transition: color 120ms;
+}
+
+.portfolio__table-link:hover {
+  color: var(--gold);
+}
+
+.portfolio__table-agent {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 8px;
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+
+.portfolio__table-chips {
+  color: var(--ink-soft);
+}
+
+.portfolio__table-odds {
+  color: var(--gold);
+  font-weight: 600;
+}
+
+.portfolio__table-payout {
+  font-weight: 700;
+}
+
+.portfolio__table-date {
+  color: var(--ink-faint);
+  font-size: 10px;
+}
+
+/* ---- Status badges ---- */
+
+.portfolio__status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 0.5px solid transparent;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.portfolio__status-badge--pending {
+  background: var(--gold-dim);
+  border-color: rgba(232, 160, 32, 0.3);
+  color: var(--gold);
+}
+
+.portfolio__status-badge--won {
+  background: rgba(34, 221, 136, 0.1);
+  border-color: rgba(34, 221, 136, 0.35);
+  color: var(--green);
+}
+
+.portfolio__status-badge--lost {
+  background: rgba(255, 68, 85, 0.08);
+  border-color: rgba(255, 68, 85, 0.25);
+  color: var(--red);
+}
+
+.portfolio__status-badge--void,
+.portfolio__status-badge--refunded {
+  background: var(--bg3);
+  border-color: var(--border2);
+  color: var(--ink-faint);
+}
+
+/* ---- Empty state ---- */
+
+.portfolio__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 24px 40px;
+  text-align: center;
+  gap: 8px;
+}
+
+.portfolio__empty-mark {
+  font-family: var(--font-display, 'Bebas Neue', sans-serif);
+  font-size: 2.4rem;
+  letter-spacing: 0.08em;
+  color: var(--text3);
+  opacity: 0.4;
+  margin-bottom: 8px;
+}
+
+.portfolio__empty-title {
+  font-family: var(--font-serif, 'Syne', sans-serif);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+
+.portfolio__empty-body {
+  font-family: var(--font-sans, 'DM Sans', sans-serif);
+  font-size: 13px;
+  font-weight: 300;
+  color: var(--text3);
+  line-height: 1.6;
+}
+
+/* ---- Skeleton / loading ---- */
+
+@keyframes portfolio-skeleton-pulse {
+  0%, 100% { opacity: 0.5; }
+  50%       { opacity: 1; }
+}
+
+.portfolio__skeleton-bar {
+  background: var(--bg3);
+  border-radius: 6px;
+  animation: portfolio-skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+.portfolio__skeleton-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.portfolio__skeleton-stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 20px;
+  background: var(--bg2);
+}
+
+.portfolio__skeleton-bar--label {
+  height: 10px;
+  width: 60%;
+}
+
+.portfolio__skeleton-bar--value {
+  height: 32px;
+  width: 80%;
+}
+
+.portfolio__skeleton-table {
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.portfolio__skeleton-row {
+  height: 44px;
+  border-bottom: 0.5px solid var(--border);
+  background: var(--bg2);
+  animation: portfolio-skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+.portfolio__skeleton-row:last-child {
+  border-bottom: none;
+}
+
+.portfolio__skeleton-row:nth-child(even) {
+  background: var(--bg);
+}
+
+/* ---- Responsive ---- */
+
+@media (max-width: 900px) {
+  .portfolio__table-head,
+  .portfolio__table-row {
+    grid-template-columns: 1fr 80px 60px 90px 90px;
+  }
+
+  /* Hide Agent column on narrow viewports */
+  .portfolio__table-head > span:nth-child(2),
+  .portfolio__table-row > span:nth-child(2) {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .portfolio {
+    padding: 32px 16px 64px;
+  }
+
+  .portfolio__table-head,
+  .portfolio__table-row {
+    grid-template-columns: 1fr 60px 80px 80px;
+  }
+
+  /* Hide Odds column */
+  .portfolio__table-head > span:nth-child(4),
+  .portfolio__table-row > span:nth-child(4) {
+    display: none;
+  }
+
+  .portfolio__skeleton-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 420px) {
+  .portfolio__skeleton-stats {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* === END PORTFOLIO PAGE === */
