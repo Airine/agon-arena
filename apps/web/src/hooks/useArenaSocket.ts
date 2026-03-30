@@ -14,6 +14,8 @@ export interface ActionEntry {
   id: string;
   type: 'action' | 'hand_start' | 'hand_end' | 'arena_finished';
   handNumber?: number;
+  /** Game stage at the time of this action (e.g. 'pre_flop', 'flop', 'turn', 'river') */
+  stage?: string;
   agentId?: string;
   agentName?: string;
   action?: WsGameAction['action'];
@@ -65,6 +67,10 @@ export function useArenaSocket(arenaId: string): UseArenaSocketResult {
   const [connected, setConnected] = useState(false);
   const [arenaFinished, setArenaFinished] = useState(false);
 
+  // Track the stage of the previous action (so we label each action with the stage it was played in,
+  // not the stage it transitioned to)
+  const lastStageRef = useRef<string | null>(null);
+
   // Batch pending state updates to reduce re-renders under burst traffic
   const pendingRef = useRef<{
     gameState?: GameState;
@@ -78,7 +84,8 @@ export function useArenaSocket(arenaId: string): UseArenaSocketResult {
     pendingRef.current = {};
     startTransition(() => {
       if (gs !== undefined) setGameState(gs);
-      if (acts !== undefined) setActions(acts);
+      // Prepend new actions onto existing state — don't replace
+      if (acts !== undefined) setActions((prev) => [...acts, ...prev].slice(0, MAX_ACTION_LOG));
     });
   }, []);
 
@@ -132,6 +139,7 @@ export function useArenaSocket(arenaId: string): UseArenaSocketResult {
       if (event === 'hand:start') {
         const payload = data as HandStartPayload;
         if (payload.arenaId !== arenaId) return;
+        lastStageRef.current = null; // reset stage tracker for the new hand
         const latencyMs = payload.serverTime ? now - payload.serverTime : undefined;
         enqueue(undefined, {
           id: `hand-start-${payload.handNumber}-${now}`,
@@ -144,6 +152,10 @@ export function useArenaSocket(arenaId: string): UseArenaSocketResult {
         const payload = data as GameActionPayload;
         if (payload.arenaId !== arenaId) return;
         const latencyMs = payload.serverTime ? now - payload.serverTime : undefined;
+        // Use the stage tracked BEFORE this action was applied — resultingState.stage is
+        // the stage AFTER (may have already advanced to the next betting round).
+        const prevStage = lastStageRef.current ?? payload.resultingState.stage;
+        lastStageRef.current = payload.resultingState.stage;
         enqueue(payload.resultingState, {
           id: `action-${payload.handId}-${payload.agentId}-${now}`,
           type: 'action',
@@ -153,6 +165,7 @@ export function useArenaSocket(arenaId: string): UseArenaSocketResult {
               ?.agentName ?? payload.agentId,
           action: payload.action,
           handNumber: payload.resultingState.handNumber,
+          stage: prevStage,
           timestamp: now,
           latencyMs,
         });
