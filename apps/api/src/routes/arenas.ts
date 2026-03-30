@@ -497,8 +497,8 @@ arenasRouter.post('/:id/lob-actions', requireAuth, async (req, res) => {
     turnId: z.string().uuid(),
     action: z.object({
       type: z.enum(['post_bid', 'post_ask', 'cancel', 'pass']),
-      price: z.number().int().positive().optional(),
-      qty: z.number().int().positive().optional(),
+      price: z.number().int().positive().max(1_000_000).optional(),
+      qty: z.number().int().positive().max(10_000).optional(),
       orderId: z.string().uuid().optional(),
     }),
   });
@@ -512,6 +512,40 @@ arenasRouter.post('/:id/lob-actions', requireAuth, async (req, res) => {
   // Verify agent ownership
   if (req.user?.agentId !== body.data.agentId) {
     res.status(403).json(apiError(ErrorCode.FORBIDDEN, 'Not your agent'));
+    return;
+  }
+
+  // Verify arena exists, is running, and the agent is seated
+  const arenaIdStr = String(arenaId);
+  try {
+    const [arenaRow] = await db
+      .select({ status: schema.arenas.status, gameType: schema.arenas.gameType })
+      .from(schema.arenas)
+      .where(eq(schema.arenas.id, arenaIdStr))
+      .limit(1);
+    if (!arenaRow) {
+      res.status(404).json(apiError(ErrorCode.ARENA_NOT_FOUND, 'Arena not found'));
+      return;
+    }
+    if (arenaRow.status !== 'running') {
+      res.status(400).json(apiError(ErrorCode.INVALID_ACTION, 'Arena is not running'));
+      return;
+    }
+    const [seat] = await db
+      .select({ agentId: schema.arenaSeats.agentId })
+      .from(schema.arenaSeats)
+      .where(and(
+        eq(schema.arenaSeats.arenaId, arenaIdStr),
+        eq(schema.arenaSeats.agentId, body.data.agentId),
+        eq(schema.arenaSeats.isActive, true),
+      ))
+      .limit(1);
+    if (!seat) {
+      res.status(403).json(apiError(ErrorCode.AGENT_NOT_IN_ARENA, 'Agent is not seated in this arena'));
+      return;
+    }
+  } catch {
+    res.status(500).json(apiError(ErrorCode.INTERNAL_ERROR, 'Failed to validate arena seat', true));
     return;
   }
 

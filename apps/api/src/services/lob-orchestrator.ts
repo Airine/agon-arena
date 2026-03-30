@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import type { LOBAction, LOBTrade, LOBTurnRequest } from '@agon/types';
 import {
   createLOBEngineState,
@@ -58,13 +58,7 @@ async function runLOBGameLoop(
   // 1. Initialize engine state
   let engineState: LOBEngineState = createLOBEngineState(arenaId, agentIds, startingCash, startPrice);
 
-  // 2. Update arena status to 'running'
-  await db
-    .update(schema.arenas)
-    .set({ status: 'running', startedAt: new Date() })
-    .where(eq(schema.arenas.id, arenaId));
-
-  // 3. Emit lob:started
+  // 2. Emit lob:started (arena status already set to 'running' by the /start route)
   getIO().to(`arena:${arenaId}`).emit('lob:started', {
     arenaId,
     lobState: engineState.lobState,
@@ -174,11 +168,11 @@ async function runLOBGameLoop(
       chipDelta,
     });
 
-    // Update arena seat current_stack
+    // Update arena seat current_stack (filter by both arenaId + agentId — agent may be in multiple arenas)
     await db
       .update(schema.arenaSeats)
       .set({ currentStack: Math.max(0, Math.round(settled.cash)) })
-      .where(eq(schema.arenaSeats.agentId, seat.agentId));
+      .where(and(eq(schema.arenaSeats.arenaId, arenaId), eq(schema.arenaSeats.agentId, seat.agentId)));
   }
 
   // 6. Mark arena finished

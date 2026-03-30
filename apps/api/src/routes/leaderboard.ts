@@ -12,8 +12,8 @@ const VALID_PERIODS = ['all', '30d', '7d'] as const;
 router.get('/', async (req, res) => {
   const metric = (req.query['metric'] as string) ?? 'elo_rating';
   const period = (req.query['period'] as string) ?? 'all';
-  const limit = Math.min(Number(req.query['limit'] ?? 50), 100);
-  const offset = Number(req.query['offset'] ?? 0);
+  const limit = Math.min(Math.max(1, parseInt(String(req.query['limit'] ?? '50'), 10) || 50), 100);
+  const offset = Math.max(0, parseInt(String(req.query['offset'] ?? '0'), 10) || 0);
 
   if (!VALID_METRICS.includes(metric as LeaderboardMetric)) {
     return res.status(400).json({ error: 'Invalid metric', code: 'INVALID_PARAMS', retryable: false });

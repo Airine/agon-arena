@@ -18,7 +18,8 @@ export function addOrder(
 
   if (order.side === 'bid') {
     // Match against asks (ascending price): fill while ask.price <= bid.price
-    const asks = [...book.asks];
+    // Deep-copy elements so mutations don't bleed back into the caller's book reference
+    const asks = book.asks.map(o => ({ ...o }));
     let i = 0;
     while (i < asks.length && remainingQty > 0) {
       const ask = asks[i]!;
@@ -48,7 +49,7 @@ export function addOrder(
     return { book: { bids: newBids, asks }, trades };
   } else {
     // ask — match against bids (descending price): fill while bid.price >= ask.price
-    const bids = [...book.bids];
+    const bids = book.bids.map(o => ({ ...o }));
     let i = 0;
     while (i < bids.length && remainingQty > 0) {
       const bid = bids[i]!;
