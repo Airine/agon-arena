@@ -1,0 +1,21 @@
+name: CI agon-agent-skill
+
+on:
+  pull_request:
+    paths:
+      - 'sdks/agent-skill/**'
+
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: npm install
+        working-directory: sdks/agent-skill
+      - name: Dry run
+        run: npm pack --dry-run
+        working-directory: sdks/agent-skill

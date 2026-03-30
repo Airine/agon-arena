@@ -129,6 +129,7 @@ function makeEntry(overrides: Partial<QueueEntry> = {}): QueueEntry {
     apiUrl: 'https://agent.example.com',
     webhookPublicKey: null,
     joinedAt: Date.now(),
+    tier: 'practice',
     ...overrides,
   };
 }
@@ -172,6 +173,7 @@ describe('joinQueue', () => {
       apiUrl: 'https://my-agent.ai',
       webhookPublicKey: 'deadbeef',
       joinedAt: 12345,
+      tier: 'practice',
     };
     await joinQueue('tournament', entry);
 

@@ -18,7 +18,8 @@ import { BOT_PROFILES } from './bot.js';
 
 const QUEUE_KEY_PREFIX = 'matchmaking:queue:';
 const POLL_INTERVAL_MS = 5_000;    // check queues every 5 seconds
-const MATCH_TIMEOUT_MS = 60_000;   // 60s SLA
+const WIDEN_WINDOW_MS = 30_000;    // 30s: widen ELO window / relax constraints
+const MATCH_TIMEOUT_MS = 60_000;   // 60s SLA: fill with bots
 
 // Minimum real players per mode (bots fill the rest)
 const MIN_REAL_PLAYERS: Record<string, number> = {
@@ -41,6 +42,7 @@ export interface QueueEntry {
   apiUrl: string | null;
   webhookPublicKey: string | null;
   joinedAt: number; // ms
+  tier: 'practice' | 'micro' | 'serious';
 }
 
 let processorTimer: ReturnType<typeof setInterval> | null = null;
@@ -152,49 +154,71 @@ async function processQueue(mode: 'practice' | 'cash' | 'tournament'): Promise<v
   const oldestEntry = entries[0]!;
   const waitingMs = Date.now() - oldestEntry.score;
 
-  const hasEnoughPlayers = entries.length >= minPlayers;
+  const widenWindowReached = waitingMs >= WIDEN_WINDOW_MS;
   const timeoutExpired = waitingMs >= MATCH_TIMEOUT_MS;
 
-  // Only match if: (a) enough real players, or (b) at least 2 and timeout expired
-  if (!hasEnoughPlayers && (!timeoutExpired || entries.length < 2)) return;
-
-  // Parse all entries
-  const realPlayers: QueueEntry[] = [];
-  const validValues: string[] = [];
+  // Parse all entries, defaulting missing tier to 'practice' for in-flight entries
+  const allPlayers: Array<{ entry: QueueEntry; value: string }> = [];
   for (const e of entries) {
     try {
-      realPlayers.push(JSON.parse(e.value) as QueueEntry);
-      validValues.push(e.value);
+      const parsed = JSON.parse(e.value) as Partial<QueueEntry> & Omit<QueueEntry, 'tier'>;
+      const entry: QueueEntry = {
+        ...parsed,
+        tier: parsed.tier ?? 'practice',
+      } as QueueEntry;
+      allPlayers.push({ entry, value: e.value });
     } catch { /* skip malformed */ }
   }
 
-  if (realPlayers.length < 2) return;
+  if (allPlayers.length === 0) return;
 
-  // Remove matched players from queue atomically
-  await redis.zRem(key, validValues);
-
-  // Determine final player set (cap at TARGET_PLAYERS, fill with bots if timeout)
-  const target = TARGET_PLAYERS[mode] ?? 6;
-  const players = realPlayers.slice(0, target);
-
-  if (timeoutExpired && players.length < minPlayers) {
-    // Edge case: still under minimum after removing — restore and skip
-    for (let i = 0; i < validValues.length; i++) {
-      await redis.zAdd(key, { score: realPlayers[i]!.joinedAt, value: validValues[i]! });
-    }
-    return;
+  // Group by tier — each tier matched independently
+  const tierGroups = new Map<string, typeof allPlayers>();
+  for (const p of allPlayers) {
+    const t = p.entry.tier;
+    if (!tierGroups.has(t)) tierGroups.set(t, []);
+    tierGroups.get(t)!.push(p);
   }
 
-  // Fill with bots if timeout expired and still room
-  if (timeoutExpired) {
-    const botsNeeded = Math.max(0, minPlayers - players.length);
-    for (let i = 0; i < botsNeeded; i++) {
-      players.push(await createBotEntry(i));
-    }
-  }
+  for (const [tier, group] of tierGroups) {
+    const realPlayers = group.map((g) => g.entry);
+    const validValues = group.map((g) => g.value);
 
-  // Create arena + seats + start game
-  await createMatchedGame(mode, players);
+    const hasEnoughPlayers = realPlayers.length >= minPlayers;
+
+    // Before widen window: require exact tier + enough players
+    // After widen window (30s): match even with fewer players (relaxed)
+    // After full timeout (60s): fill with bots
+    if (!hasEnoughPlayers && (!widenWindowReached || realPlayers.length < 2)) continue;
+
+    if (realPlayers.length < 2) continue;
+
+    // Remove matched players from queue atomically
+    await redis.zRem(key, validValues);
+
+    // Determine final player set (cap at TARGET_PLAYERS, fill with bots if timeout)
+    const target = TARGET_PLAYERS[mode] ?? 6;
+    const players = realPlayers.slice(0, target);
+
+    if (timeoutExpired && players.length < minPlayers) {
+      // Edge case: still under minimum after removing — restore and skip
+      for (let i = 0; i < validValues.length; i++) {
+        await redis.zAdd(key, { score: realPlayers[i]!.joinedAt, value: validValues[i]! });
+      }
+      continue;
+    }
+
+    // Fill with bots if timeout expired and still room
+    if (timeoutExpired) {
+      const botsNeeded = Math.max(0, minPlayers - players.length);
+      for (let i = 0; i < botsNeeded; i++) {
+        players.push(await createBotEntry(i, tier as 'practice' | 'micro' | 'serious'));
+      }
+    }
+
+    // Create arena + seats + start game
+    await createMatchedGame(mode, players, tier as 'practice' | 'micro' | 'serious');
+  }
 }
 
 // Stable bot agent IDs (lazy-initialized, persisted in DB)
@@ -243,7 +267,7 @@ async function getOrCreateBotAgent(botName: string): Promise<string> {
  * Create a bot entry for queue filling.
  * Cycles through BOT_PROFILES so each seat gets a distinct personality.
  */
-async function createBotEntry(index: number): Promise<QueueEntry> {
+async function createBotEntry(index: number, tier: 'practice' | 'micro' | 'serious' = 'practice'): Promise<QueueEntry> {
   const profile = BOT_PROFILES[index % BOT_PROFILES.length]!;
   const agentId = await getOrCreateBotAgent(profile.name);
   return {
@@ -253,6 +277,7 @@ async function createBotEntry(index: number): Promise<QueueEntry> {
     apiUrl: profile.url,
     webhookPublicKey: null,
     joinedAt: Date.now(),
+    tier,
   };
 }
 
@@ -263,6 +288,7 @@ async function createBotEntry(index: number): Promise<QueueEntry> {
 async function createMatchedGame(
   mode: 'practice' | 'cash' | 'tournament',
   players: QueueEntry[],
+  tier: 'practice' | 'micro' | 'serious' = 'practice',
 ): Promise<void> {
   const blinds = { smallBlind: 10, bigBlind: 20, startingStack: 1000 };
 

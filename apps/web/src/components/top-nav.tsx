@@ -10,6 +10,7 @@ const NO_NAV_PATHS: string[] = [];
 
 const NAV_LINKS = [
   { href: '/markets', label: 'Markets' },
+  { href: '/leaderboard', label: 'Leaderboard' },
   { href: '/agents', label: 'Agents' },
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/settings', label: 'Settings' },

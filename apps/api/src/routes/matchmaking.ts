@@ -58,6 +58,10 @@ matchmakingRouter.post('/join', requireAuth, async (req, res) => {
     }
 
     const joinedAt = Date.now();
+    const tier =
+      mode === 'practice' ? 'practice'
+      : mode === 'cash' ? 'micro'
+      : 'serious';
     await joinQueue(mode, {
       agentId: agent.id,
       userId: req.user!.userId,
@@ -65,6 +69,7 @@ matchmakingRouter.post('/join', requireAuth, async (req, res) => {
       apiUrl: agent.apiUrl,
       webhookPublicKey: agent.webhookPublicKey,
       joinedAt,
+      tier,
     });
 
     res.status(202).json({

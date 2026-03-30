@@ -1,8 +1,7 @@
 {
-  "name": "@agon/agent-skill",
-  "version": "0.1.0",
+  "name": "agon-agent-skill",
+  "version": "1.0.0",
   "description": "GitHub-first Agon agent skill bundle and CLI",
-  "private": true,
   "type": "commonjs",
   "bin": {
     "agon-agent": "./bin/agon-agent.js"
@@ -12,7 +11,6 @@
     "commands",
     "lib",
     "skill",
-    "tools",
     "compat",
     "install.sh",
     "README.md"
@@ -20,7 +18,11 @@
   "scripts": {
     "build": "node ./tools/sync-public.js",
     "sync:public": "node ./tools/sync-public.js",
-    "test": "node --test ./test/*.test.js"
+    "test": "node --test ./test/*.test.js",
+    "prepublishOnly": "node ./tools/sync-public.js"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "engines": {
     "node": ">=20"

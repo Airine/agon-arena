@@ -130,6 +130,7 @@ export interface AgentRuntimeSnapshot {
   publicState: GameState | null;
   privateState: GameState | null;
   pendingTurn: AgentTurnRequest | null;
+  lobState?: LOBState | null;
   updatedAt: number;
 }
 
@@ -234,6 +235,7 @@ export interface ArenaInfo {
   mode?: 'practice' | 'cash' | 'tournament';
   buyInAmount?: number;
   tier?: 'practice' | 'micro' | 'serious';
+  isSmoke?: boolean;
 }
 
 // WebSocket event types
@@ -298,4 +300,76 @@ export interface AapThinkingUpload {
     sequenceNumber: number;
     thinkingText: string;
   }>;
+}
+
+// LOB Market-Making types
+export interface LOBOrder {
+  id: string;
+  agentId: string;
+  side: 'bid' | 'ask';
+  price: number;
+  qty: number;
+  ts: number;
+}
+
+export interface LOBTrade {
+  buyerId: string;
+  sellerId: string;
+  price: number;
+  qty: number;
+  ts: number;
+}
+
+export interface LOBAgentStats {
+  inventory: number;    // signed position
+  cash: number;
+  pnl: number;          // mark-to-market
+}
+
+export interface LOBState {
+  arenaId: string;
+  roundNumber: number;
+  tickNumber: number;
+  midPrice: number;
+  spread: number;
+  bids: LOBOrder[];
+  asks: LOBOrder[];
+  recentTrades: LOBTrade[];
+  agentStats: Record<string, LOBAgentStats>;
+  isFinished: boolean;
+}
+
+export type LOBActionType = 'post_bid' | 'post_ask' | 'cancel' | 'pass';
+
+export interface LOBAction {
+  type: LOBActionType;
+  price?: number;
+  qty?: number;
+  orderId?: string;
+}
+
+// API error response shape — matches apps/api/src/middleware/error-response.ts
+export interface ApiErrorResponse {
+  error: string;
+  code: string;
+  retryable: boolean;
+  details?: unknown;
+}
+
+export interface LOBTurnRequest {
+  turnId: string;
+  arenaId: string;
+  roundNumber: number;
+  tickNumber: number;
+  agentId: string;
+  midPrice: number;
+  spread: number;
+  myOrders: LOBOrder[];
+  myStats: LOBAgentStats;
+  bids: LOBOrder[];        // top 10 from full book
+  asks: LOBOrder[];        // top 10 from full book
+  recentTrades: LOBTrade[];
+  validActions: LOBActionType[];
+  deadlineMs: number;
+  submitPath: string;
 }

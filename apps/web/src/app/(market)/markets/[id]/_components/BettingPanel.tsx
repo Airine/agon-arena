@@ -54,9 +54,6 @@ export function BettingPanel({
   isLive,
   isFinished,
 }: BettingPanelProps) {
-  // Feature flag — render nothing when disabled
-  if (!process.env.NEXT_PUBLIC_BETTING_ENABLED) return null;
-
   return (
     <BettingPanelInner
       arenaId={arenaId}

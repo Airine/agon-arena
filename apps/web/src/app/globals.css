@@ -4147,3 +4147,322 @@ img {
 }
 
 /* === END PORTFOLIO PAGE === */
+
+/* ============================================================
+   LEADERBOARD PAGE
+   ============================================================ */
+
+.leaderboard {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 48px 24px 96px;
+}
+
+/* Header */
+.leaderboard__header {
+  margin-bottom: 32px;
+}
+
+.leaderboard__eyebrow {
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 8px;
+}
+
+.leaderboard__title {
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(2.5rem, 6vw, 4.5rem);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--fg);
+  line-height: 1;
+}
+
+/* Filters */
+.leaderboard__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.leaderboard__pills {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.leaderboard__pill {
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 0.5px solid var(--border2);
+  color: var(--ink-soft);
+  background: transparent;
+  transition: color 150ms, background 150ms, border-color 150ms;
+}
+
+.leaderboard__pill:hover {
+  color: var(--fg);
+  background: var(--bg3);
+  border-color: var(--border2);
+}
+
+.leaderboard__pill--active {
+  color: var(--gold);
+  background: var(--gold-dim);
+  border-color: rgba(232, 160, 32, 0.3);
+}
+
+.leaderboard__pill--active:hover {
+  color: var(--gold2);
+  background: rgba(232, 160, 32, 0.18);
+}
+
+/* Mono utility */
+.leaderboard__mono {
+  font-family: var(--font-mono), monospace;
+}
+
+/* ---- Table (desktop) ---- */
+.leaderboard__table {
+  background: var(--bg2);
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.leaderboard__table-head {
+  display: grid;
+  grid-template-columns: 64px 1fr 140px 120px 100px;
+  padding: 10px 20px;
+  border-bottom: 0.5px solid var(--border);
+  background: var(--bg3);
+}
+
+.leaderboard__table-head span {
+  font-family: var(--font-mono), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.leaderboard__table-row {
+  display: grid;
+  grid-template-columns: 64px 1fr 140px 120px 100px;
+  align-items: center;
+  padding: 12px 20px;
+  border-bottom: 0.5px solid var(--border);
+  transition: background 120ms;
+  text-decoration: none;
+  color: inherit;
+}
+
+.leaderboard__table-row:last-child {
+  border-bottom: none;
+}
+
+.leaderboard__table-row:hover {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+/* Rank column */
+.leaderboard__col--rank {
+  display: flex;
+  align-items: center;
+}
+
+.leaderboard__col--agent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.leaderboard__col--metric,
+.leaderboard__col--secondary {
+  display: flex;
+  align-items: center;
+}
+
+.leaderboard__col--right {
+  justify-content: flex-end;
+  font-size: 13px;
+  color: var(--fg);
+}
+
+/* Rank badges */
+.leaderboard__rank {
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  letter-spacing: 0.04em;
+}
+
+.leaderboard__rank--gold {
+  color: var(--gold);
+}
+
+.leaderboard__rank--silver {
+  color: #B0B0C8;
+}
+
+.leaderboard__rank--bronze {
+  color: #CD7F32;
+}
+
+/* Avatar */
+.leaderboard__avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 0.5px solid var(--border2);
+  flex-shrink: 0;
+}
+
+.leaderboard__avatar--fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg3);
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-soft);
+  letter-spacing: 0.04em;
+}
+
+.leaderboard__agent-name {
+  font-family: var(--font-sans), sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Desktop / mobile visibility */
+.leaderboard__desktop {
+  display: block;
+}
+
+.leaderboard__mobile {
+  display: none;
+}
+
+/* ---- Mobile cards ---- */
+.leaderboard__cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.leaderboard__card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--bg2);
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  text-decoration: none;
+  color: inherit;
+  transition: background 120ms, border-color 120ms;
+}
+
+.leaderboard__card:hover {
+  background: var(--bg3);
+  border-color: var(--border2);
+}
+
+.leaderboard__card-rank {
+  flex-shrink: 0;
+  width: 28px;
+  text-align: center;
+}
+
+.leaderboard__card-body {
+  flex: 1;
+  overflow: hidden;
+}
+
+.leaderboard__card-name {
+  font-family: var(--font-sans), sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-bottom: 3px;
+}
+
+.leaderboard__card-meta {
+  font-size: 11px;
+  color: var(--ink-soft);
+  letter-spacing: 0.04em;
+}
+
+/* ---- Empty state ---- */
+.leaderboard__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 24px;
+  text-align: center;
+}
+
+.leaderboard__empty-mark {
+  font-family: var(--font-display), sans-serif;
+  font-size: 40px;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  margin-bottom: 16px;
+}
+
+.leaderboard__empty-title {
+  font-family: var(--font-serif), sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--fg);
+  margin-bottom: 8px;
+}
+
+.leaderboard__empty-body {
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+
+/* ---- Responsive ---- */
+
+@media (max-width: 768px) {
+  .leaderboard {
+    padding: 32px 16px 64px;
+  }
+
+  .leaderboard__desktop {
+    display: none;
+  }
+
+  .leaderboard__mobile {
+    display: block;
+  }
+}
+
+/* === END LEADERBOARD PAGE === */

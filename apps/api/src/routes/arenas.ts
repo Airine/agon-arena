@@ -4,13 +4,14 @@ import { eq, and, count, sql, desc } from 'drizzle-orm';
 import type { AgentActionSubmission, ActionType, HandReplayResponse } from '@agon/types';
 import { db, schema } from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
+import { apiError, ErrorCode } from '../middleware/error-response.js';
 import {
   acceptSubmittedTurn,
   getCallAmount,
   getMaxRaise,
   getAgentRuntimeRoom,
 } from '../services/agent-runtime.js';
-import { getAgentPendingTurn, getAgentRuntimeSnapshot, getAgentLastProcessedTurnId } from '../services/redis.js';
+import { getAgentPendingTurn, getAgentRuntimeSnapshot, getAgentLastProcessedTurnId, getRedisClient } from '../services/redis.js';
 import {
   findSparringReplacementSeat,
 } from '../services/arena-admission.js';
@@ -229,7 +230,12 @@ arenasRouter.get('/:id', async (req, res) => {
       ))
       .orderBy(schema.arenaSeats.seatIndex);
 
-    res.json({ ...reconciledArena, seats });
+    const tier = reconciledArena.mode === 'practice'
+      ? 'practice'
+      : reconciledArena.mode === 'cash' && (reconciledArena.buyInAmount ?? 0) === 0
+      ? 'micro'
+      : 'serious';
+    res.json({ ...reconciledArena, tier, seats });
   } catch {
     res.status(500).json({ error: 'Failed to fetch arena' });
   }
@@ -456,23 +462,67 @@ arenasRouter.post('/:id/actions', requireAuth, async (req, res) => {
     const body = submitActionSchema.parse(req.body);
 
     if (req.user?.agentId !== body.agentId) {
-      res.status(403).json({ error: 'This action may only be submitted by the authenticated agent runtime' });
+      res.status(403).json(apiError(ErrorCode.FORBIDDEN, 'This action may only be submitted by the authenticated agent runtime'));
       return;
     }
 
     const result = await acceptSubmittedTurn(body as AgentActionSubmission, arenaId);
     if (!result.ok) {
-      res.status(result.status).json({ error: result.error });
+      const code = result.status === 403 ? ErrorCode.FORBIDDEN
+        : result.status === 409 ? ErrorCode.TURN_ALREADY_PROCESSED
+        : result.status === 404 ? ErrorCode.AGENT_NOT_IN_ARENA
+        : ErrorCode.INVALID_ACTION;
+      res.status(result.status).json(apiError(code, result.error));
       return;
     }
 
     res.status(202).json({ accepted: true, turnId: result.turn.turnId });
   } catch (err) {
     if (err instanceof z.ZodError) {
-      res.status(400).json({ error: 'Validation failed', details: err.errors });
+      res.status(400).json(apiError(ErrorCode.INVALID_BODY, 'Validation failed', false, err.errors));
       return;
     }
-    res.status(500).json({ error: 'Failed to submit action' });
+    res.status(500).json(apiError(ErrorCode.INTERNAL_ERROR, 'Failed to submit action', true));
+  }
+});
+
+/**
+ * POST /arenas/:id/lob-actions - Submit a LOB action for the current pending tick.
+ */
+arenasRouter.post('/:id/lob-actions', requireAuth, async (req, res) => {
+  const { id: arenaId } = req.params;
+
+  const lobActionSchema = z.object({
+    agentId: z.string().uuid(),
+    turnId: z.string().uuid(),
+    action: z.object({
+      type: z.enum(['post_bid', 'post_ask', 'cancel', 'pass']),
+      price: z.number().int().positive().optional(),
+      qty: z.number().int().positive().optional(),
+      orderId: z.string().uuid().optional(),
+    }),
+  });
+
+  const body = lobActionSchema.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json(apiError(ErrorCode.INVALID_ACTION, 'Invalid action', false, body.error.issues));
+    return;
+  }
+
+  // Verify agent ownership
+  if (req.user?.agentId !== body.data.agentId) {
+    res.status(403).json(apiError(ErrorCode.FORBIDDEN, 'Not your agent'));
+    return;
+  }
+
+  // Store pending LOB action in Redis for the LOB orchestrator to pick up
+  try {
+    const redis = await getRedisClient();
+    const key = `lob:pending:${arenaId}:${body.data.agentId}`;
+    await redis.set(key, JSON.stringify({ turnId: body.data.turnId, action: body.data.action }), { EX: 30 });
+    res.status(202).json({ ok: true });
+  } catch (err) {
+    res.status(500).json(apiError(ErrorCode.INTERNAL_ERROR, 'Failed to submit LOB action', true));
   }
 });
 

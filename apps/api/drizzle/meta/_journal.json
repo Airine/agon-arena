@@ -92,6 +92,13 @@
       "when": 1774863116450,
       "tag": "0012_zippy_tiger_shark",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1774880120832,
+      "tag": "0013_red_frank_castle",
+      "breakpoints": true
     }
   ]
 }

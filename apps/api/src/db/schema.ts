@@ -18,7 +18,7 @@ import type { Card, GameState, Winner, ReplayStep } from '@agon/types';
 
 // Enums
 export const arenaStatusEnum = pgEnum('arena_status', ['waiting', 'running', 'finished', 'cancelled']);
-export const gameTypeEnum = pgEnum('game_type', ['texas_holdem']);
+export const gameTypeEnum = pgEnum('game_type', ['texas_holdem', 'lob_market_making']);
 // Arena mode: practice (free virtual chips), cash (CHIP buy-in, unlimited), tournament (CHIP buy-in, elimination)
 export const arenaModeEnum = pgEnum('arena_mode', ['practice', 'cash', 'tournament']);
 export const gameStageEnum = pgEnum('game_stage', [
@@ -315,3 +315,30 @@ export const socialBindings = pgTable('social_bindings', {
   // One user per provider account (prevent multi-account farm)
   uniqueIndex('social_bindings_provider_uid_idx').on(t.provider, t.providerUserId),
 ]);
+
+// LOB order log — one row per order submission in a LOB arena
+export const lobOrderLog = pgTable('lob_order_log', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  arenaId: uuid('arena_id').notNull().references(() => arenas.id),
+  roundNumber: integer('round_number').notNull(),
+  tickNumber: integer('tick_number').notNull(),
+  agentId: uuid('agent_id').notNull(),
+  side: varchar('side', { length: 4 }).notNull(), // 'bid' | 'ask'
+  price: integer('price').notNull(),
+  qty: integer('qty').notNull(),
+  orderId: uuid('order_id').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+// LOB trade log — one row per fill that occurs during LOB matching
+export const lobTradeLog = pgTable('lob_trade_log', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  arenaId: uuid('arena_id').notNull().references(() => arenas.id),
+  roundNumber: integer('round_number').notNull(),
+  tickNumber: integer('tick_number').notNull(),
+  buyerId: uuid('buyer_id').notNull(),
+  sellerId: uuid('seller_id').notNull(),
+  price: integer('price').notNull(),
+  qty: integer('qty').notNull(),
+  createdAt: timestamp('created_at').notNull(),
+});

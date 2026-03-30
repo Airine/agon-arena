@@ -21,6 +21,7 @@ import { ensBindingRouter } from './routes/ens-binding.js';
 import { matchmakingRouter } from './routes/matchmaking.js';
 import { paymentsRouter } from './routes/payments.js';
 import { betsRouter, myBetsRouter } from './routes/bets.js';
+import { leaderboardRouter } from './routes/leaderboard.js';
 import { setupSocketHandlers } from './services/socket.js';
 import { setIO } from './services/io.js';
 import { startMatchmakingProcessor } from './services/matchmaking.js';
@@ -96,6 +97,7 @@ app.use('/matchmaking', matchmakingRouter);
 app.use('/payments', paymentsRouter);
 app.use('/arenas', betsRouter);
 app.use('/bets', myBetsRouter);
+app.use('/leaderboard', leaderboardRouter);
 
 // Socket.io
 setupSocketHandlers(io);
