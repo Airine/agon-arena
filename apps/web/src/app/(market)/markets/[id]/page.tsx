@@ -298,6 +298,58 @@ const STAGE_LABELS: Record<string, string> = {
   pre_flop: 'Preflop', flop: 'Flop', turn: 'Turn', river: 'River', showdown: 'Showdown',
 };
 
+const STAGE_ORDER = ['pre_flop', 'flop', 'turn', 'river'] as const;
+
+// ---------------------------------------------------------------------------
+// Game Status Strip — stage pills + pot + hand number
+// ---------------------------------------------------------------------------
+
+function GameStatusStrip({
+  gameState,
+  handNumber,
+}: {
+  gameState: import('@agon/types').GameState | null;
+  handNumber: number | null;
+}) {
+  if (!gameState && handNumber == null) return null;
+
+  const stage = gameState?.stage ?? null;
+  const totalPot = gameState?.pots.reduce((s, p) => s + p.amount, 0) ?? 0;
+  const currentStageIdx = stage ? STAGE_ORDER.indexOf(stage as typeof STAGE_ORDER[number]) : -1;
+
+  return (
+    <div className="arena-status-strip">
+      {/* Stage progression pills */}
+      <div className="arena-status-strip__stages">
+        {STAGE_ORDER.map((s, i) => {
+          const isPast = currentStageIdx > i;
+          const isCurrent = currentStageIdx === i;
+          return (
+            <span
+              key={s}
+              className={`arena-status-pill${isCurrent ? ' arena-status-pill--active' : ''}${isPast ? ' arena-status-pill--past' : ''}`}
+            >
+              {STAGE_LABELS[s]}
+            </span>
+          );
+        })}
+      </div>
+
+      {/* Right side: pot + hand */}
+      <div className="arena-status-strip__right">
+        {totalPot > 0 && (
+          <span className="arena-status-strip__pot">
+            Pot&nbsp;<strong>{formatStack(totalPot)}</strong>
+          </span>
+        )}
+        {handNumber != null && (
+          <span className="arena-status-strip__hand">Hand #{handNumber}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ActionFeed({ actions }: { actions: ReturnType<typeof useArenaSocket>['actions'] }) {
   if (actions.length === 0) {
     return (
@@ -595,6 +647,7 @@ export default function ArenaDetailPage({
                 isFinished={!!isFinished}
               />
             </div>
+            <GameStatusStrip gameState={gameState} handNumber={currentHandNumber} />
           </div>
 
           {/* Sidebar */}

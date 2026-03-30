@@ -2197,6 +2197,74 @@ img {
   align-items: stretch;
 }
 
+/* ── Game status strip (stage pills + pot + hand) ── */
+.arena-status-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+  background: var(--bg2);
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+}
+
+.arena-status-strip__stages {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.arena-status-pill {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 0.5px solid transparent;
+  transition: color 200ms, border-color 200ms, background 200ms;
+}
+
+.arena-status-pill--past {
+  color: var(--ink-soft);
+}
+
+.arena-status-pill--active {
+  color: var(--gold);
+  border-color: rgba(232, 160, 32, 0.3);
+  background: var(--gold-dim);
+}
+
+.arena-status-strip__right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.arena-status-strip__pot {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+}
+
+.arena-status-strip__pot strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.arena-status-strip__hand {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
 .arena-match-ended-banner {
   background: rgba(255, 68, 85, 0.08);
   border: 0.5px solid rgba(255, 68, 85, 0.3);
