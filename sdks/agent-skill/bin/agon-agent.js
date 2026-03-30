@@ -18,6 +18,8 @@ function loadCommandGroup(name) {
       return require('../commands/smoke');
     case 'protocol':
       return require('../commands/protocol');
+    case 'thinking':
+      return require('../commands/thinking');
     default:
       return null;
   }
@@ -43,6 +45,7 @@ function printRootHelp() {
     '  runtime get',
     '  runtime subscribe',
     '  action submit',
+    '  thinking upload',
     '  smoke',
     '  protocol run',
     '  protocol resume',

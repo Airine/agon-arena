@@ -23,6 +23,7 @@ const CLI_COMMANDS = [
   'runtime get',
   'runtime subscribe',
   'action submit',
+  'thinking upload',
   'protocol run',
   'protocol resume',
   'smoke',
