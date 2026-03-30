@@ -78,6 +78,20 @@
       "when": 1743292800000,
       "tag": "0010_arena_bets",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1774860250581,
+      "tag": "0011_talented_sinister_six",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1774863116450,
+      "tag": "0012_zippy_tiger_shark",
+      "breakpoints": true
     }
   ]
 }

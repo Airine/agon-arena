@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { and, eq } from 'drizzle-orm';
 import type {
   AgentActionSubmission,
   AgentArenaEvent,
@@ -17,6 +18,7 @@ import {
   setAgentRuntimeSnapshot,
   submitAgentPendingTurn,
 } from './redis.js';
+import { db, schema } from '../db/index.js';
 import { getIO } from './io.js';
 
 const TURN_POLL_INTERVAL_MS = 100;
@@ -210,7 +212,16 @@ export async function acceptSubmittedTurn(
   }
 
   await submitAgentPendingTurn(arenaId, submission.agentId, submission);
+  // Write to Redis (fast path) and DB (durable fallback for crash recovery)
   await setAgentLastProcessedTurnId(arenaId, submission.agentId, submission.turnId);
+  await db
+    .update(schema.arenaSeats)
+    .set({ lastProcessedTurnId: submission.turnId })
+    .where(and(
+      eq(schema.arenaSeats.arenaId, arenaId),
+      eq(schema.arenaSeats.agentId, submission.agentId),
+      eq(schema.arenaSeats.isActive, true),
+    ));
   return { ok: true, turn: pending };
 }
 

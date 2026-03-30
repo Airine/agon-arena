@@ -1,7 +1,7 @@
 import { Router, type Router as RouterType } from 'express';
 import { z } from 'zod';
 import { eq, and, count, sql, desc } from 'drizzle-orm';
-import type { AgentActionSubmission, ActionType } from '@agon/types';
+import type { AgentActionSubmission, ActionType, HandReplayResponse } from '@agon/types';
 import { db, schema } from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import {
@@ -394,7 +394,21 @@ arenasRouter.get('/:id/runtime', requireAuth, async (req, res) => {
 
     const snapshot = await getAgentRuntimeSnapshot(arenaId, agentId);
     const pendingTurn = await getAgentPendingTurn(arenaId, agentId);
-    const lastProcessedTurnId = await getAgentLastProcessedTurnId(arenaId, agentId);
+    // Redis is the fast path; fall back to DB for durability across Redis restarts
+    const redisLastTurnId = await getAgentLastProcessedTurnId(arenaId, agentId);
+    let lastProcessedTurnId: string | null = redisLastTurnId;
+    if (!lastProcessedTurnId) {
+      const [seatRow] = await db
+        .select({ lastProcessedTurnId: schema.arenaSeats.lastProcessedTurnId })
+        .from(schema.arenaSeats)
+        .where(and(
+          eq(schema.arenaSeats.arenaId, arenaId),
+          eq(schema.arenaSeats.agentId, agentId),
+          eq(schema.arenaSeats.isActive, true),
+        ))
+        .limit(1);
+      lastProcessedTurnId = seatRow?.lastProcessedTurnId ?? null;
+    }
 
     res.json({
       snapshot: snapshot ?? {
@@ -648,5 +662,183 @@ arenasRouter.delete('/:id', requireAuth, async (req, res) => {
     res.json({ message: 'Arena cancelled', arenaId });
   } catch {
     res.status(500).json({ error: 'Failed to cancel arena' });
+  }
+});
+
+/**
+ * GET /arenas/:id/hands/:handNumber/replay
+ * Returns replay steps for a completed hand.
+ */
+arenasRouter.get('/:id/hands/:handNumber/replay', async (req, res) => {
+  const arenaId = String(req.params['id']);
+  const handNumber = parseInt(String(req.params['handNumber']), 10);
+  if (isNaN(handNumber)) { res.status(400).json({ error: 'Invalid hand number' }); return; }
+
+  try {
+    const [hand] = await db
+      .select({
+        id: schema.gameHands.id,
+        replaySteps: schema.gameHands.replaySteps,
+        winnersJson: schema.gameHands.winnersJson,
+        vrfSeed: schema.gameHands.vrfSeed,
+      })
+      .from(schema.gameHands)
+      .where(and(
+        eq(schema.gameHands.arenaId, arenaId),
+        eq(schema.gameHands.handNumber, handNumber),
+      ))
+      .limit(1);
+
+    if (!hand) { res.status(404).json({ error: 'Hand not found' }); return; }
+    if (!hand.replaySteps?.length) { res.status(404).json({ error: 'Replay not available' }); return; }
+
+    const startingStacks: Record<string, number> = {};
+    const firstStep = hand.replaySteps[0];
+    if (firstStep) {
+      for (const ps of firstStep.playerStates) {
+        startingStacks[ps.agentId] = ps.stack + (ps.bet ?? 0);
+      }
+    }
+
+    res.json({
+      arenaId,
+      handNumber,
+      startingStacks,
+      steps: hand.replaySteps,
+      winners: hand.winnersJson ?? [],
+      vrfSeed: hand.vrfSeed ?? undefined,
+    } satisfies HandReplayResponse);
+  } catch {
+    res.status(500).json({ error: 'Failed to fetch replay' });
+  }
+});
+
+/**
+ * POST /arenas/:id/hands/:handNumber/thinking
+ * Allows a seated agent to upload thinking text for each step of a completed hand.
+ * Must be called within 30 seconds of hand end.
+ */
+arenasRouter.post('/:id/hands/:handNumber/thinking', requireAuth, async (req, res) => {
+  const arenaId = String(req.params['id']);
+  const handNumber = parseInt(String(req.params['handNumber']), 10);
+  if (isNaN(handNumber)) { res.status(400).json({ error: 'Invalid hand number' }); return; }
+
+  const agentId = req.user?.agentId;
+  if (!agentId) { res.status(403).json({ error: 'Agent auth required' }); return; }
+
+  const bodySchema = z.object({
+    steps: z.array(z.object({
+      sequenceNumber: z.number().int().min(0),
+      thinkingText: z.string().min(1).max(10_000),
+    })).min(1).max(500),
+  });
+
+  try {
+    const body = bodySchema.parse(req.body);
+
+    // Verify agent is seated in this arena
+    const [seat] = await db
+      .select({ agentId: schema.arenaSeats.agentId })
+      .from(schema.arenaSeats)
+      .where(and(
+        eq(schema.arenaSeats.arenaId, arenaId),
+        eq(schema.arenaSeats.agentId, agentId),
+      ))
+      .limit(1);
+
+    if (!seat) { res.status(403).json({ error: 'Not authorized for this arena' }); return; }
+
+    // Check 30-second upload window
+    const { handEndedAt } = await import('../services/orchestrator.js');
+    const endedAt = handEndedAt.get(`${arenaId}:${handNumber}`);
+    if (!endedAt || Date.now() - endedAt > 30_000) {
+      res.status(410).json({ error: 'Thinking upload window expired' });
+      return;
+    }
+
+    // Get the hand record
+    const [hand] = await db
+      .select({ id: schema.gameHands.id, replaySteps: schema.gameHands.replaySteps })
+      .from(schema.gameHands)
+      .where(and(
+        eq(schema.gameHands.arenaId, arenaId),
+        eq(schema.gameHands.handNumber, handNumber),
+      ))
+      .limit(1);
+
+    if (!hand) { res.status(404).json({ error: 'Hand not found' }); return; }
+
+    // Insert thinking records (idempotent)
+    await db.insert(schema.agentThinking).values(
+      body.steps.map((s) => ({
+        handId: hand.id,
+        arenaId,
+        agentId,
+        sequenceNumber: s.sequenceNumber,
+        thinkingText: s.thinkingText,
+      }))
+    ).onConflictDoNothing();
+
+    // Patch replaySteps with thinkingText inline
+    if (hand.replaySteps?.length) {
+      const updatedSteps = hand.replaySteps.map((step) => {
+        const thinking = body.steps.find((s) => s.sequenceNumber === step.sequenceNumber);
+        if (thinking) return { ...step, thinkingText: thinking.thinkingText };
+        return step;
+      });
+      await db.update(schema.gameHands)
+        .set({ replaySteps: updatedSteps })
+        .where(eq(schema.gameHands.id, hand.id));
+    }
+
+    res.json({ ok: true, uploaded: body.steps.length });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'Validation failed', details: err.errors });
+      return;
+    }
+    res.status(500).json({ error: 'Failed to upload thinking' });
+  }
+});
+
+/**
+ * GET /arenas/:id/hands/:handNumber/thinking
+ * Returns uploaded thinking text grouped by agentId.
+ */
+arenasRouter.get('/:id/hands/:handNumber/thinking', async (req, res) => {
+  const arenaId = String(req.params['id']);
+  const handNumber = parseInt(String(req.params['handNumber']), 10);
+  if (isNaN(handNumber)) { res.status(400).json({ error: 'Invalid hand number' }); return; }
+
+  try {
+    const [hand] = await db
+      .select({ id: schema.gameHands.id })
+      .from(schema.gameHands)
+      .where(and(
+        eq(schema.gameHands.arenaId, arenaId),
+        eq(schema.gameHands.handNumber, handNumber),
+      ))
+      .limit(1);
+
+    if (!hand) { res.status(404).json({ error: 'Hand not found' }); return; }
+
+    const thinkingRows = await db
+      .select()
+      .from(schema.agentThinking)
+      .where(eq(schema.agentThinking.handId, hand.id))
+      .orderBy(schema.agentThinking.sequenceNumber);
+
+    const thinking: Record<string, Array<{ sequenceNumber: number; thinkingText: string }>> = {};
+    for (const row of thinkingRows) {
+      if (!thinking[row.agentId]) thinking[row.agentId] = [];
+      thinking[row.agentId]!.push({
+        sequenceNumber: row.sequenceNumber,
+        thinkingText: row.thinkingText,
+      });
+    }
+
+    res.json({ handNumber, thinking });
+  } catch {
+    res.status(500).json({ error: 'Failed to fetch thinking' });
   }
 });

@@ -1,0 +1,1 @@
+ALTER TABLE "arena_seats" ADD COLUMN "last_processed_turn_id" uuid;

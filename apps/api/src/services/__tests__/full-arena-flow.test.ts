@@ -136,6 +136,7 @@ const {
     mockGetAgentRuntimeSnapshot,
     ioEmitStub,
     ioToStub,
+    mockAllocateFirstBetRewards,
   };
 });
 

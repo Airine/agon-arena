@@ -133,6 +133,23 @@ export interface AgentRuntimeSnapshot {
   updatedAt: number;
 }
 
+/**
+ * Response envelope for GET /arenas/:id/runtime
+ *
+ * `lastProcessedTurnId` semantics:
+ *   - Set to the turnId of the last turn that was submitted AND successfully
+ *     accepted by the server (i.e. `POST /arenas/:id/actions` returned 202).
+ *   - Persists across reconnects: stored in Redis (24h TTL, fast path) and
+ *     in the arena_seats DB row (durable fallback, survives Redis restarts).
+ *   - Null until the agent has submitted at least one action in this arena.
+ *   - Agents use this field with `protocol resume` to detect whether their
+ *     last submission was processed after a crash, avoiding duplicate turns.
+ */
+export interface AgentRuntimeResponse {
+  snapshot: AgentRuntimeSnapshot;
+  lastProcessedTurnId?: string | null;
+}
+
 export interface AgentArenaEvent {
   arenaId: string;
   type: 'hand:start' | 'hand:action' | 'hand:end' | 'arena:finished';
@@ -244,4 +261,41 @@ export interface WsHandEnd {
   handNumber: number;
   winners: Winner[];
   finalState: GameState;
+  replayAvailable?: boolean;
+}
+
+export interface ReplayStep {
+  sequenceNumber: number;
+  stage: 'pre_flop' | 'flop' | 'turn' | 'river' | 'showdown';
+  actorAgentId: string;
+  action: { type: string; amount?: number };
+  potTotal: number;
+  communityCards: Card[];
+  playerStates: Array<{
+    agentId: string;
+    stack: number;
+    bet: number;
+    isFolded: boolean;
+    holeCards: Card[];
+  }>;
+  thinkingText?: string;
+}
+
+export interface HandReplayResponse {
+  arenaId: string;
+  handNumber: number;
+  startingStacks: Record<string, number>;
+  steps: ReplayStep[];
+  winners: Winner[];
+  vrfSeed?: string;
+}
+
+export interface AapThinkingUpload {
+  type: 'thinking_upload';
+  arenaId: string;
+  handNumber: number;
+  steps: Array<{
+    sequenceNumber: number;
+    thinkingText: string;
+  }>;
 }

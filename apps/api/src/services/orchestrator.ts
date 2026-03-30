@@ -1,5 +1,5 @@
 import { eq, sql } from 'drizzle-orm';
-import type { GameState, PlayerAction, ActionType, AgentActionSubmission } from '@agon/types';
+import type { GameState, PlayerAction, ActionType, AgentActionSubmission, ReplayStep } from '@agon/types';
 import { createGame, processAction, getValidActions, getWinners, isHandOver, type GameConfig } from '../game/index.js';
 import { db, schema } from '../db/index.js';
 import { getIO } from './io.js';
@@ -26,6 +26,9 @@ import { settleBets } from './bet-settlement.js';
 
 const DEFAULT_ACTION_ROUND_MIN_MS = 5_000;
 const MAX_HANDS = 100; // Max hands per arena session
+
+// Track when each hand ended (arenaId:handNumber -> timestamp) for thinking upload window
+export const handEndedAt = new Map<string, number>();
 
 interface SeatInfo {
   seatIndex: number;
@@ -155,6 +158,7 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
     let currentState = gameState;
     let sequenceNumber = 0;
     let roundStartedAt = Date.now();
+    const replaySteps: ReplayStep[] = [];
     await publishRuntimeSnapshot(arenaId, currentState);
     await emitArenaEvent(
       arenaId,
@@ -228,6 +232,25 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
         responseTimeMs,
       });
 
+      // Accumulate replay step (hole cards withheld during hand)
+      if (currentState.stage !== 'waiting' && currentState.stage !== 'finished') {
+        replaySteps.push({
+          sequenceNumber,
+          stage: currentState.stage as ReplayStep['stage'],
+          actorAgentId: actor.agentId,
+          action: { type: action.type, amount: action.amount },
+          potTotal: currentState.pots.reduce((s, p) => s + p.amount, 0),
+          communityCards: [...currentState.communityCards],
+          playerStates: currentState.players.map((p) => ({
+            agentId: p.agentId,
+            stack: p.stack,
+            bet: p.bet,
+            isFolded: p.isFolded ?? false,
+            holeCards: [],
+          })),
+        });
+      }
+
       // AGO-68: trigger first-bet invite rewards for non-fold actions
       if (action.type !== 'fold') {
         triggerFirstBetRewards(actor.agentId).catch((err) => {
@@ -297,7 +320,15 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
       stacks.set(winner.agentId, current + winner.amount);
     }
 
-    // Update hand record
+    // Fill in hole cards now that the hand is over
+    for (const step of replaySteps) {
+      for (const ps of step.playerStates) {
+        const player = currentState.players.find((p) => p.agentId === ps.agentId);
+        if (player?.cards?.length) ps.holeCards = [...player.cards];
+      }
+    }
+
+    // Update hand record (include replaySteps)
     await db
       .update(schema.gameHands)
       .set({
@@ -306,9 +337,13 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
         communityCards: currentState.communityCards,
         potAmount: currentState.pots.reduce((sum, p) => sum + p.amount, 0),
         winnersJson: winners,
+        replaySteps,
         endedAt: new Date(),
       })
       .where(eq(schema.gameHands.id, handRecord!.id));
+
+    // Record hand end time for thinking upload window (30s)
+    handEndedAt.set(`${arenaId}:${handNumber}`, Date.now());
 
     // Reveal VRF seed after hand ends — anyone can now verify the commitment
     await db
@@ -361,6 +396,7 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
       handNumber,
       winners,
       finalState: finalSpectatorState,
+      replayAvailable: replaySteps.length > 0,
     });
 
     publishEvent({

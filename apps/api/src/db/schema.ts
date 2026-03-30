@@ -14,7 +14,7 @@ import {
   uniqueIndex,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
-import type { Card, GameState, Winner } from '@agon/types';
+import type { Card, GameState, Winner, ReplayStep } from '@agon/types';
 
 // Enums
 export const arenaStatusEnum = pgEnum('arena_status', ['waiting', 'running', 'finished', 'cancelled']);
@@ -131,6 +131,11 @@ export const arenaSeats = pgTable('arena_seats', {
   currentStack: integer('current_stack').notNull(),
   isActive: boolean('is_active').notNull().default(true),
   joinedAt: timestamp('joined_at').notNull().defaultNow(),
+  // lastProcessedTurnId: the most recent turn submitted+accepted by this agent in
+  // this arena. Persisted to DB for crash-recovery deduplication across reconnects.
+  // Redis (agent:last_turn:<arenaId>:<agentId>) is the fast path; this column is
+  // the durable fallback. Null until the agent has submitted at least one turn.
+  lastProcessedTurnId: uuid('last_processed_turn_id'),
 }, (t) => [
   index('arena_seats_arena_idx').on(t.arenaId),
   uniqueIndex('arena_seats_unique_seat').on(t.arenaId, t.seatIndex),
@@ -150,6 +155,7 @@ export const gameHands = pgTable('game_hands', {
   vrfCommit: varchar('vrf_commit', { length: 64 }),   // SHA-256 commitment (published pre-deal)
   vrfSeed: varchar('vrf_seed', { length: 64 }),        // Random seed (revealed post-hand)
   vrfSignature: varchar('vrf_signature', { length: 128 }), // Ed25519 signature of commit
+  replaySteps: jsonb('replay_steps').$type<ReplayStep[]>(),
   startedAt: timestamp('started_at').notNull().defaultNow(),
   endedAt: timestamp('ended_at'),
 }, (t) => [
@@ -251,6 +257,20 @@ export const inviteCodes = pgTable('invite_codes', {
 }, (t) => [
   index('invite_codes_creator_idx').on(t.createdByUserId),
   uniqueIndex('invite_codes_code_idx').on(t.code),
+]);
+
+// Agent thinking table — post-hand thinking upload from agents (Phase C)
+export const agentThinking = pgTable('agent_thinking', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  handId: uuid('hand_id').notNull().references(() => gameHands.id),
+  arenaId: uuid('arena_id').notNull().references(() => arenas.id),
+  agentId: uuid('agent_id').notNull().references(() => agents.id),
+  sequenceNumber: integer('sequence_number').notNull(),
+  thinkingText: text('thinking_text').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (t) => [
+  index('agent_thinking_hand_idx').on(t.handId),
+  uniqueIndex('agent_thinking_unique').on(t.handId, t.agentId, t.sequenceNumber),
 ]);
 
 // Arena bets table — pari-mutuel spectator betting
