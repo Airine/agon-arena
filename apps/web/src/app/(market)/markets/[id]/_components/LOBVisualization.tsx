@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import type { LOBState as SocketLOBState } from '@agon/types';
 import { registerVisualization, type ArenaVisualizationProps } from './arenaTypes';
 
 // ---------------------------------------------------------------------------
-// Types
+// Local (mock-friendly) types
 // ---------------------------------------------------------------------------
 
 interface OrderLevel {
@@ -23,7 +24,7 @@ interface TradeEntry {
   timestamp: number;
 }
 
-interface LOBState {
+interface LocalLOBState {
   asks: OrderLevel[];
   bids: OrderLevel[];
   lastPrice: number;
@@ -32,13 +33,91 @@ interface LOBState {
   spreadBps: number;
   midPriceHistory: number[];
   trades: TradeEntry[];
+  /** Agent P&L data: agentId → { name, pnl } */
+  agentPnl: { agentId: string; agentName: string; pnl: number }[];
+}
+
+// ---------------------------------------------------------------------------
+// Socket LOBState → LocalLOBState adapter
+// ---------------------------------------------------------------------------
+
+function adaptSocketLOBState(
+  incoming: SocketLOBState,
+  prev: LocalLOBState | null,
+): LocalLOBState {
+  // Aggregate orders at the same price level
+  function aggregateLevels(
+    orders: SocketLOBState['bids'] | SocketLOBState['asks'],
+  ): OrderLevel[] {
+    const map = new Map<number, number>();
+    for (const o of orders) {
+      map.set(o.price, (map.get(o.price) ?? 0) + o.qty);
+    }
+    // Sort: asks ascending, bids descending — handled by caller
+    const sorted = [...map.entries()];
+    let cum = 0;
+    return sorted.map(([price, size]) => {
+      cum += size;
+      return { price, size, cumulative: cum };
+    });
+  }
+
+  const rawBids = aggregateLevels(incoming.bids).sort((a, b) => b.price - a.price).slice(0, 10);
+  const rawAsks = aggregateLevels(incoming.asks).sort((a, b) => a.price - b.price).slice(0, 10);
+
+  // Recompute cumulatives after sort/slice
+  let cumBid = 0;
+  const bids = rawBids.map((l) => { cumBid += l.size; return { ...l, cumulative: cumBid }; });
+  let cumAsk = 0;
+  const asks = rawAsks.map((l) => { cumAsk += l.size; return { ...l, cumulative: cumAsk }; });
+
+  const mid = incoming.midPrice;
+  const spread = incoming.spread;
+  const spreadBps = mid > 0 ? parseFloat(((spread / mid) * 10000).toFixed(1)) : 0;
+
+  const lastPrice = parseFloat(mid.toFixed(2));
+  const prevLastPrice = prev?.lastPrice ?? mid;
+  const lastDirection: 'up' | 'down' | 'flat' =
+    lastPrice > prevLastPrice ? 'up' : lastPrice < prevLastPrice ? 'down' : 'flat';
+
+  const history = [...(prev?.midPriceHistory ?? []).slice(-29), mid];
+
+  // Convert recentTrades to TradeEntry
+  const trades: TradeEntry[] = incoming.recentTrades.map((t) => ({
+    id: `trade-${t.ts}-${t.buyerId}-${t.sellerId}`,
+    agentName: t.buyerId.slice(0, 12),
+    side: 'BUY',
+    orderType: 'LIMIT',
+    size: t.qty,
+    price: t.price,
+    timestamp: t.ts,
+  }));
+
+  // Derive agent P&L list
+  const agentPnl = Object.entries(incoming.agentStats).map(([agentId, stats]) => ({
+    agentId,
+    agentName: agentId.slice(0, 12),
+    pnl: stats.pnl,
+  }));
+
+  return {
+    asks,
+    bids,
+    lastPrice,
+    lastDirection,
+    spread,
+    spreadBps,
+    midPriceHistory: history,
+    trades,
+    agentPnl,
+  };
 }
 
 // ---------------------------------------------------------------------------
 // Mock data helpers
 // ---------------------------------------------------------------------------
 
-function generateInitialLOBState(): LOBState {
+function generateInitialLOBState(): LocalLOBState {
   const mid = 100.32;
   const tickSize = 0.01;
 
@@ -91,15 +170,20 @@ function generateInitialLOBState(): LOBState {
     spreadBps,
     midPriceHistory: history,
     trades,
+    agentPnl: mockAgents.map((name) => ({
+      agentId: name,
+      agentName: name,
+      pnl: parseFloat(((Math.random() - 0.5) * 400).toFixed(0)),
+    })),
   };
 }
 
-function perturbLOBState(prev: LOBState): LOBState {
+function perturbLOBState(prev: LocalLOBState): LocalLOBState {
   const tickSize = 0.01;
   const direction = Math.random() > 0.5 ? 1 : -1;
   const move = direction * (Math.random() < 0.3 ? tickSize : 0);
 
-  const newAsks: OrderLevel[] = prev.asks.map((lvl, i) => {
+  const newAsks: OrderLevel[] = prev.asks.map((lvl) => {
     const size = Math.max(50, lvl.size + Math.floor((Math.random() - 0.5) * 200));
     return { ...lvl, price: parseFloat((lvl.price + move).toFixed(2)), size };
   });
@@ -139,6 +223,12 @@ function perturbLOBState(prev: LOBState): LOBState {
     timestamp: Date.now(),
   };
 
+  // Perturb mock P&L slightly
+  const agentPnl = prev.agentPnl.map((a) => ({
+    ...a,
+    pnl: parseFloat((a.pnl + (Math.random() - 0.5) * 20).toFixed(0)),
+  }));
+
   return {
     asks: newAsks,
     bids: newBids,
@@ -148,6 +238,7 @@ function perturbLOBState(prev: LOBState): LOBState {
     spreadBps,
     midPriceHistory: history,
     trades: [newTrade, ...prev.trades].slice(0, 40),
+    agentPnl,
   };
 }
 
@@ -170,11 +261,18 @@ function DepthBar({ fraction, side }: { fraction: number; side: 'ask' | 'bid' })
   );
 }
 
-function OrderBook({ asks, bids, spread, spreadBps }: {
+function OrderBook({
+  asks,
+  bids,
+  spread,
+  spreadBps,
+  isPausedRef,
+}: {
   asks: OrderLevel[];
   bids: OrderLevel[];
   spread: number;
   spreadBps: number;
+  isPausedRef: React.RefObject<boolean>;
 }) {
   const maxCum = Math.max(
     asks.length ? asks[asks.length - 1].cumulative : 1,
@@ -182,7 +280,11 @@ function OrderBook({ asks, bids, spread, spreadBps }: {
   );
 
   return (
-    <div className="lob-viz__book">
+    <div
+      className="lob-viz__book"
+      onMouseEnter={() => { isPausedRef.current = true; }}
+      onMouseLeave={() => { isPausedRef.current = false; }}
+    >
       {/* Column headers */}
       <div className="lob-viz__book-header">
         <span>PRICE</span>
@@ -330,6 +432,29 @@ function Sparkline({ history, direction }: { history: number[]; direction: 'up' 
 }
 
 // ---------------------------------------------------------------------------
+// P&L strip
+// ---------------------------------------------------------------------------
+
+function PnLStrip({ agentPnl }: { agentPnl: LocalLOBState['agentPnl'] }) {
+  if (agentPnl.length === 0) return null;
+  return (
+    <div className="lob-viz__pnl-strip">
+      {agentPnl.map(({ agentId, agentName, pnl }) => {
+        const pnlClass =
+          pnl > 0 ? 'lob-viz__pnl-chip--up' :
+          pnl < 0 ? 'lob-viz__pnl-chip--down' :
+          'lob-viz__pnl-chip--flat';
+        return (
+          <span key={agentId} className={`lob-viz__pnl-chip ${pnlClass}`}>
+            {agentName.slice(0, 12)} {pnl >= 0 ? '+' : ''}{pnl}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Skeleton
 // ---------------------------------------------------------------------------
 
@@ -351,29 +476,64 @@ function LOBSkeleton() {
 // Main component
 // ---------------------------------------------------------------------------
 
-function LOBVisualization({ arenaId: _arenaId, isLive, isFinished }: ArenaVisualizationProps) {
-  const [lobState, setLobState] = useState<LOBState | null>(null);
-  const [tick, setTick] = useState(0);
+function LOBVisualization({
+  arenaId: _arenaId,
+  isLive,
+  isFinished,
+  lobState: socketLobState,
+}: ArenaVisualizationProps) {
+  const [lobState, setLobState] = useState<LocalLOBState | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isPaused = useRef(false);
+  // Track previous local state for direction/history computation when adapting socket data
+  const prevLocalRef = useRef<LocalLOBState | null>(null);
 
-  // Initialize mock state
+  const useMock = !isLive || socketLobState == null;
+
+  // Initialize local state when mode switches (mock ↔ live)
+  const useMockRef = useRef(useMock);
   useEffect(() => {
-    setLobState(generateInitialLOBState());
-  }, []);
+    if (useMockRef.current === useMock) return; // no mode change
+    useMockRef.current = useMock;
+    if (!useMock && socketLobState != null) {
+      const adapted = adaptSocketLOBState(socketLobState, prevLocalRef.current);
+      prevLocalRef.current = adapted;
+      setLobState(adapted);
+    } else {
+      // Switching to mock — keep existing state if any, generate if missing
+      setLobState((prev) => prev ?? generateInitialLOBState());
+    }
+  }, [useMock, socketLobState]);
 
-  // Animate mock data when live (or show static mock when waiting)
+  // When socket data arrives (live mode), update local state — but respect isPaused
+  useEffect(() => {
+    if (!useMock && socketLobState != null) {
+      if (!isPaused.current) {
+        const adapted = adaptSocketLOBState(socketLobState, prevLocalRef.current);
+        prevLocalRef.current = adapted;
+        setLobState(adapted);
+      }
+    }
+  }, [socketLobState, useMock]);
+
+  // Mock animation — only when not live or no socket data
   const tickCallback = useCallback(() => {
+    if (isPaused.current) return;
     setLobState((prev) => prev ? perturbLOBState(prev) : generateInitialLOBState());
-    setTick((n) => n + 1);
   }, []);
 
   useEffect(() => {
-    // Always animate for demo — real data integration would replace this
-    intervalRef.current = setInterval(tickCallback, 800);
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    if (useMock) {
+      intervalRef.current = setInterval(tickCallback, 800);
+    }
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [tickCallback]);
+  }, [useMock, tickCallback]);
 
   if (!lobState) {
     return (
@@ -401,6 +561,7 @@ function LOBVisualization({ arenaId: _arenaId, isLive, isFinished }: ArenaVisual
           </span>
         </div>
         <div className="lob-viz__topbar-right">
+          <PnLStrip agentPnl={lobState.agentPnl} />
           {isFinished ? (
             <span className="lob-viz__status-badge lob-viz__status-badge--finished">CLOSED</span>
           ) : isLive ? (
@@ -424,6 +585,7 @@ function LOBVisualization({ arenaId: _arenaId, isLive, isFinished }: ArenaVisual
             bids={lobState.bids}
             spread={lobState.spread}
             spreadBps={lobState.spreadBps}
+            isPausedRef={isPaused}
           />
         </div>
 

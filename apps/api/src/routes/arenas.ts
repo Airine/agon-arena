@@ -582,9 +582,31 @@ arenasRouter.post('/:id/start', requireAuth, async (req, res) => {
       .set({ status: 'running', startedAt: new Date() })
       .where(eq(schema.arenas.id, arenaId));
 
-    // Import orchestrator and start the game asynchronously
-    const { startGame } = await import('../services/orchestrator.js');
-    startGame(arenaId, arena, seats);
+    // Start the appropriate game loop based on game type
+    if (arena.gameType === 'lob_market_making') {
+      // Fetch ownerId for each seat (needed by LOB orchestrator for chip settlement)
+      const lobSeats = await db
+        .select({
+          agentId: schema.agents.id,
+          userId: schema.agents.ownerId,
+          seatIndex: schema.arenaSeats.seatIndex,
+        })
+        .from(schema.arenaSeats)
+        .innerJoin(schema.agents, eq(schema.arenaSeats.agentId, schema.agents.id))
+        .where(and(
+          eq(schema.arenaSeats.arenaId, arenaId),
+          eq(schema.arenaSeats.isActive, true),
+        ))
+        .orderBy(schema.arenaSeats.seatIndex);
+
+      const { startLOBGame } = await import('../services/lob-orchestrator.js');
+      startLOBGame(arenaId, lobSeats, {
+        startingCash: arena.startingStack,
+      });
+    } else {
+      const { startGame } = await import('../services/orchestrator.js');
+      startGame(arenaId, arena, seats);
+    }
 
     res.json({ message: 'Game started', arenaId, playerCount: seats.length });
   } catch {

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback, startTransition } from 'react';
 import type {
   GameState,
+  LOBState,
   WsGameAction,
   WsHandStart,
   WsHandEnd,
@@ -32,6 +33,7 @@ export interface ChipSnapshot {
 
 export interface UseArenaSocketResult {
   gameState: GameState | null;
+  lobState: LOBState | null;
   actions: ActionEntry[];
   chipSnapshots: ChipSnapshot[];
   connected: boolean;
@@ -62,6 +64,7 @@ interface ArenaFinishedPayload {
 
 export function useArenaSocket(arenaId: string): UseArenaSocketResult {
   const [gameState, setGameState] = useState<GameState | null>(null);
+  const [lobState, setLobState] = useState<LOBState | null>(null);
   const [actions, setActions] = useState<ActionEntry[]>([]);
   const [chipSnapshots, setChipSnapshots] = useState<ChipSnapshot[]>([]);
   const [connected, setConnected] = useState(false);
@@ -197,6 +200,11 @@ export function useArenaSocket(arenaId: string): UseArenaSocketResult {
         const payload = data as ArenaFinishedPayload;
         if (payload.arenaId !== arenaId) return;
         startTransition(() => setArenaFinished(true));
+      } else if (event === 'lob:tick') {
+        const payload = data as { lobState: LOBState };
+        if (payload?.lobState) {
+          startTransition(() => setLobState(payload.lobState));
+        }
       }
     };
 
@@ -216,5 +224,5 @@ export function useArenaSocket(arenaId: string): UseArenaSocketResult {
     };
   }, [arenaId, enqueue, hydrateFromSnapshot]);
 
-  return { gameState, actions, chipSnapshots, connected, arenaFinished };
+  return { gameState, lobState, actions, chipSnapshots, connected, arenaFinished };
 }

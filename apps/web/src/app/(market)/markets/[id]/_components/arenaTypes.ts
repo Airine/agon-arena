@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react';
-import type { GameState } from '@agon/types';
+import type { GameState, LOBState } from '@agon/types';
 
 export interface AgentSummary {
   agentId: string;
@@ -13,6 +13,7 @@ export interface AgentSummary {
 export interface ArenaVisualizationProps {
   arenaId: string;
   gameState: GameState | null;
+  lobState?: LOBState | null;
   agents: AgentSummary[];
   isLive: boolean;
   isFinished: boolean;

@@ -6,6 +6,8 @@ import type {
   AgentRuntimeSnapshot,
   AgentTurnRequest,
   GameState,
+  LOBAction,
+  LOBTurnRequest,
   PlayerAction,
 } from '@agon/types';
 import {
@@ -243,4 +245,67 @@ async function getPendingTurnView(arenaId: string, agentId: string): Promise<Age
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ---------------------------------------------------------------------------
+// LOB turn protocol
+// ---------------------------------------------------------------------------
+
+const LOB_TURN_REQUEST_PREFIX = 'lob:turn-request:';
+const LOB_TURN_REQUEST_TTL_SECONDS = 30;
+const LOB_PENDING_PREFIX = 'lob:pending:';
+
+/**
+ * Publish a LOB turn request for an agent.
+ * Stores the request in Redis at lob:turn-request:<arenaId>:<agentId> (30s TTL)
+ * and emits agent:lob_turn_request to the arena room.
+ */
+export async function publishLOBTurnRequest(
+  arenaId: string,
+  agentId: string,
+  turnRequest: LOBTurnRequest,
+): Promise<void> {
+  const { getRedisClient } = await import('./redis.js');
+  const redis = await getRedisClient();
+  await redis.set(
+    `${LOB_TURN_REQUEST_PREFIX}${arenaId}:${agentId}`,
+    JSON.stringify(turnRequest),
+    { EX: LOB_TURN_REQUEST_TTL_SECONDS },
+  );
+
+  getIO().to(`arena:${arenaId}`).emit('agent:lob_turn_request', turnRequest);
+  getIO().to(getAgentRuntimeRoom(agentId, arenaId)).emit('agent:lob_turn_request', turnRequest);
+}
+
+/**
+ * Poll for a LOB action submission from an agent.
+ * Polls Redis key lob:pending:<arenaId>:<agentId> every 100ms until deadlineMs.
+ * Returns the LOBAction if the turnId matches, or null on timeout.
+ */
+export async function waitForLOBSubmission(
+  arenaId: string,
+  agentId: string,
+  turnId: string,
+  deadlineMs: number,
+): Promise<LOBAction | null> {
+  const { getRedisClient } = await import('./redis.js');
+  const key = `${LOB_PENDING_PREFIX}${arenaId}:${agentId}`;
+
+  while (Date.now() < deadlineMs) {
+    const redis = await getRedisClient();
+    const val = await redis.get(key);
+    if (val) {
+      try {
+        const stored = JSON.parse(val) as { turnId: string; action: LOBAction };
+        if (stored.turnId === turnId) {
+          // Consume the pending action
+          await redis.del(key);
+          return stored.action;
+        }
+      } catch { /* skip malformed */ }
+    }
+    await sleep(TURN_POLL_INTERVAL_MS);
+  }
+
+  return null;
 }

@@ -2962,6 +2962,54 @@ img {
   text-align: center;
 }
 
+/* P&L strip */
+.lob-viz__pnl-strip {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.lob-viz__pnl-chip {
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 0.5px solid var(--border);
+  background: var(--bg3);
+  white-space: nowrap;
+}
+
+.lob-viz__pnl-chip--up   { color: var(--green); border-color: rgba(34,221,136,0.3); }
+.lob-viz__pnl-chip--down { color: var(--red);   border-color: rgba(255,68,85,0.3); }
+.lob-viz__pnl-chip--flat { color: var(--ink-faint); }
+
+/* Mobile responsive — order book */
+@media (max-width: 640px) {
+  /* Cap order book to 5 levels per side */
+  .lob-viz__ask-levels .lob-viz__level:nth-child(n+6),
+  .lob-viz__bid-levels .lob-viz__level:nth-child(n+6) {
+    display: none;
+  }
+
+  /* Drop cumulative column on mobile */
+  .lob-viz__book-header span:last-child,
+  .lob-viz__level-cum {
+    display: none;
+  }
+
+  /* Book takes full width */
+  .lob-viz__col-book {
+    min-width: unset;
+    width: 100%;
+  }
+
+  /* Tighten the topbar on small screens */
+  .lob-viz__pnl-strip {
+    display: none;
+  }
+}
+
 /* === END LOB VISUALIZATION === */
 
 /* ==========================================================================

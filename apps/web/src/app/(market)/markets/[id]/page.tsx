@@ -422,7 +422,7 @@ export default function ArenaDetailPage({
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(false);
 
-  const { gameState, actions, chipSnapshots, connected, arenaFinished } = useArenaSocket(id);
+  const { gameState, lobState, actions, chipSnapshots, connected, arenaFinished } = useArenaSocket(id);
 
   // Track disconnect time to show "Reconnecting" badge only after >5s
   const disconnectedAtRef = useRef<number | null>(null);
@@ -642,6 +642,7 @@ export default function ArenaDetailPage({
               <VisualizationComponent
                 arenaId={id}
                 gameState={gameState}
+                lobState={lobState}
                 agents={agents}
                 isLive={isLive}
                 isFinished={!!isFinished}
