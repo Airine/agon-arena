@@ -12,6 +12,7 @@ import {
 } from './_components';
 import { BettingPanel } from './_components/BettingPanel';
 import PnLChart from './_components/PnLChart';
+import { AgentHistoryTab } from './_components/AgentHistoryTab';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -448,6 +449,9 @@ export default function ArenaDetailPage({
   const [fetchTick, setFetchTick] = useState(0);
   const doFetch = () => setFetchTick((t) => t + 1);
 
+  // Tab state: 'live' | 'history'
+  const [activeTab, setActiveTab] = useState<'live' | 'history'>('live');
+
   useEffect(() => {
     setFetchError(false);
     setLoading(true);
@@ -634,54 +638,74 @@ export default function ArenaDetailPage({
           <div className="arena-match-ended-banner">Match Ended</div>
         )}
 
+        {/* Tab strip */}
+        <div className="arena-detail-page__tabs">
+          {(['live', 'history'] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`arena-detail-page__tab${activeTab === tab ? ' arena-detail-page__tab--active' : ''}`}
+            >
+              {tab === 'live' ? 'Live' : 'History'}
+            </button>
+          ))}
+        </div>
+
         {/* Body */}
-        <div className="arena-detail-page__body">
-          {/* Left column: visualization */}
-          <div className="arena-detail-page__main-col">
-            <div className="arena-detail-page__viz-panel">
-              <VisualizationComponent
+        {activeTab === 'history' ? (
+          <AgentHistoryTab
+            arenaId={id}
+            agents={agents.map((a) => ({ agentId: a.agentId, agentName: a.agentName }))}
+          />
+        ) : (
+          <div className="arena-detail-page__body">
+            {/* Left column: visualization */}
+            <div className="arena-detail-page__main-col">
+              <div className="arena-detail-page__viz-panel">
+                <VisualizationComponent
+                  arenaId={id}
+                  gameState={gameState}
+                  lobState={lobState}
+                  agents={agents}
+                  isLive={isLive}
+                  isFinished={!!isFinished}
+                />
+              </div>
+              <GameStatusStrip gameState={gameState} handNumber={currentHandNumber} />
+            </div>
+
+            {/* Sidebar */}
+            <aside className="arena-detail-page__sidebar">
+              {/* 1. Betting panel — top of sidebar */}
+              <BettingPanel
                 arenaId={id}
-                gameState={gameState}
-                lobState={lobState}
-                agents={agents}
+                seatedAgents={agents.map((a) => ({ id: a.agentId, name: a.agentName }))}
                 isLive={isLive}
                 isFinished={!!isFinished}
               />
-            </div>
-            <GameStatusStrip gameState={gameState} handNumber={currentHandNumber} />
-          </div>
 
-          {/* Sidebar */}
-          <aside className="arena-detail-page__sidebar">
-            {/* 1. Betting panel — top of sidebar */}
-            <BettingPanel
-              arenaId={id}
-              seatedAgents={agents.map((a) => ({ id: a.agentId, name: a.agentName }))}
-              isLive={isLive}
-              isFinished={!!isFinished}
-            />
-
-            {/* 2. PnL Chart */}
-            <div className="arena-sidebar-section">
-              <SectionTitle title="Equity" />
-              <div style={{ padding: '8px 8px 10px' }}>
-                <PnLChart
-                  chipSnapshots={chipSnapshots}
-                  startingStack={arena?.startingStack ?? 1000}
-                />
+              {/* 2. PnL Chart */}
+              <div className="arena-sidebar-section">
+                <SectionTitle title="Equity" />
+                <div style={{ padding: '8px 8px 10px' }}>
+                  <PnLChart
+                    chipSnapshots={chipSnapshots}
+                    startingStack={arena?.startingStack ?? 1000}
+                  />
+                </div>
               </div>
-            </div>
 
-            {/* 4. Action Feed */}
-            <div className="arena-sidebar-section">
-              <SectionTitle
-                title="Action Feed"
-                eyebrow={currentHandNumber != null ? `HAND #${currentHandNumber}` : undefined}
-              />
-              <ActionFeed actions={actions} />
-            </div>
-          </aside>
-        </div>
+              {/* 4. Action Feed */}
+              <div className="arena-sidebar-section">
+                <SectionTitle
+                  title="Action Feed"
+                  eyebrow={currentHandNumber != null ? `HAND #${currentHandNumber}` : undefined}
+                />
+                <ActionFeed actions={actions} />
+              </div>
+            </aside>
+          </div>
+        )}
       </div>
     </MarketShell>
   );

@@ -2166,6 +2166,38 @@ img {
   letter-spacing: 0.12em;
 }
 
+/* Tab strip */
+.arena-detail-page__tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 0.5px solid var(--border);
+  margin-bottom: 16px;
+}
+
+.arena-detail-page__tab {
+  padding: 8px 18px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.arena-detail-page__tab:hover {
+  color: var(--ink-soft);
+}
+
+.arena-detail-page__tab--active {
+  color: var(--gold);
+  border-bottom-color: var(--gold);
+}
+
 .arena-detail-page__body {
   display: grid;
   grid-template-columns: 1fr 300px;
