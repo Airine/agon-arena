@@ -18,12 +18,15 @@ export function createGBMState(startPrice: number): GBMState {
   };
 }
 
-export function tickGBM(state: GBMState): { state: GBMState; newPrice: number } {
+export function tickGBM(
+  state: GBMState,
+  rng: () => number = Math.random,
+): { state: GBMState; newPrice: number } {
   // GBM with mean reversion:
   // dp = mu*dt + sigma*dW + meanReversionStrength*(target - price)*dt
   // Use Box-Muller for normal random variate
-  const u1 = Math.random();
-  const u2 = Math.random();
+  const u1 = rng();
+  const u2 = rng();
   const z = Math.sqrt(-2 * Math.log(u1 + 1e-10)) * Math.cos(2 * Math.PI * u2);
 
   const drift = state.mu + state.meanReversionStrength * (state.meanReversionTarget - state.price);

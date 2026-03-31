@@ -119,6 +119,23 @@ async function runLOBGameLoop(
     // Process tick
     engineState = processTick(engineState, actions);
 
+    // Log submitted orders to lob_order_log (fire-and-forget)
+    for (const { seat, req } of turnRequests) {
+      const action = actions[seat.agentId];
+      if (action && (action.type === 'post_bid' || action.type === 'post_ask') && action.price && action.qty) {
+        db.insert(schema.lobOrderLog).values({
+          arenaId,
+          roundNumber: 1,
+          tickNumber: tick,
+          agentId: seat.agentId,
+          side: action.type === 'post_bid' ? 'bid' : 'ask',
+          price: action.price,
+          qty: action.qty,
+          orderId: crypto.randomUUID(),
+        }).catch(() => {});
+      }
+    }
+
     // Persist lastMidPrice to Redis for crash recovery
     const redis = await getRedisClient();
     await redis.set(

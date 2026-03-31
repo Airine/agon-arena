@@ -10,6 +10,17 @@ export interface LOBEngineState {
   book: BookState;
   gbm: GBMState;
   lastMidPrice: number;
+  rng?: () => number;
+}
+
+function mulberry32(seed: number): () => number {
+  let s = seed;
+  return function() {
+    s |= 0; s = s + 0x6D2B79F5 | 0;
+    let t = Math.imul(s ^ s >>> 15, 1 | s);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
 }
 
 export function createLOBEngineState(
@@ -17,6 +28,7 @@ export function createLOBEngineState(
   agentIds: string[],
   startingCash: number,
   startPrice = 1000,
+  seed?: number,
 ): LOBEngineState {
   const agentStats: Record<string, LOBAgentStats> = {};
   for (const id of agentIds) {
@@ -39,6 +51,7 @@ export function createLOBEngineState(
     book: createBook(),
     gbm: createGBMState(startPrice),
     lastMidPrice: startPrice,
+    rng: seed !== undefined ? mulberry32(seed) : undefined,
   };
 }
 
@@ -46,10 +59,10 @@ export function processTick(
   engineState: LOBEngineState,
   actions: Record<string, LOBAction>, // agentId -> action
 ): LOBEngineState {
-  let { lobState, book, gbm, lastMidPrice } = engineState;
+  let { lobState, book, gbm, lastMidPrice, rng } = engineState;
 
   // Advance GBM price
-  const { state: newGbm, newPrice } = tickGBM(gbm);
+  const { state: newGbm, newPrice } = tickGBM(gbm, rng);
   gbm = newGbm;
   lastMidPrice = newPrice;
 
@@ -126,5 +139,5 @@ export function processTick(
     agentStats: updatedStats,
   };
 
-  return { lobState: newLobState, book, gbm, lastMidPrice };
+  return { lobState: newLobState, book, gbm, lastMidPrice, rng };
 }
