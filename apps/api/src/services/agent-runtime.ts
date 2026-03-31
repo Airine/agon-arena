@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq, notInArray } from 'drizzle-orm';
 import type {
   AgentActionSubmission,
   AgentArenaEvent,
@@ -144,6 +144,32 @@ export async function publishTurnRequest(turn: AgentTurnRequest): Promise<void> 
   }
 
   getIO().to(getAgentRuntimeRoom(turn.agentId, turn.arenaId)).emit('agent:turn_request', turn);
+
+  // Fire-and-forget: insert turn log row (action=null until agent responds)
+  db.insert(schema.arenaTurnLog).values({
+    arenaId: turn.arenaId,
+    agentId: turn.agentId,
+    turnId: turn.turnId,
+    turnNumber: turn.handNumber,
+    state: turn.state as unknown as Record<string, unknown>,
+    action: null,
+    latencyMs: null,
+  }).catch(err => console.error('[TurnLog] insert failed', err));
+
+  // Fire-and-forget: enforce max 200 rows per arena
+  db.delete(schema.arenaTurnLog)
+    .where(and(
+      eq(schema.arenaTurnLog.arenaId, turn.arenaId),
+      notInArray(
+        schema.arenaTurnLog.id,
+        db.select({ id: schema.arenaTurnLog.id })
+          .from(schema.arenaTurnLog)
+          .where(eq(schema.arenaTurnLog.arenaId, turn.arenaId))
+          .orderBy(desc(schema.arenaTurnLog.createdAt))
+          .limit(200)
+      )
+    ))
+    .catch(() => {});
 }
 
 export async function waitForSubmittedTurn(
@@ -155,6 +181,7 @@ export async function waitForSubmittedTurn(
   },
 ): Promise<AgentActionSubmission | null> {
   let lastHeartbeatAt = 0;
+  const startedAt = Date.now();
 
   while (true) {
     if (options?.onHeartbeat && Date.now() - lastHeartbeatAt >= 1_000) {
@@ -163,9 +190,42 @@ export async function waitForSubmittedTurn(
     }
 
     const turn = await getAgentPendingTurn(arenaId, agentId);
-    if (!turn) return null;
-    if (turn.turnId !== turnId) return null;
+    if (!turn) {
+      // Timeout: no pending turn found — log error
+      db.insert(schema.agentErrorLog).values({
+        arenaId,
+        agentId,
+        turnId,
+        errorType: 'timeout',
+        details: null,
+      }).catch(err => console.error('[TurnLog] agentErrorLog insert failed', err));
+      return null;
+    }
+    if (turn.turnId !== turnId) {
+      // Stale turn — treat as timeout
+      db.insert(schema.agentErrorLog).values({
+        arenaId,
+        agentId,
+        turnId,
+        errorType: 'timeout',
+        details: { reason: 'turnId_mismatch' } as unknown as Record<string, unknown>,
+      }).catch(err => console.error('[TurnLog] agentErrorLog insert failed', err));
+      return null;
+    }
     if (turn.status === 'submitted' && turn.submittedAction) {
+      const latencyMs = Date.now() - startedAt;
+      // Fire-and-forget: update turn log with action + latency
+      db.update(schema.arenaTurnLog)
+        .set({
+          action: turn.submittedAction as unknown as Record<string, unknown>,
+          latencyMs,
+        })
+        .where(and(
+          eq(schema.arenaTurnLog.arenaId, arenaId),
+          eq(schema.arenaTurnLog.agentId, agentId),
+          eq(schema.arenaTurnLog.turnId, turnId),
+        ))
+        .catch(err => console.error('[TurnLog] update failed', err));
       return turn.submittedAction;
     }
     await sleep(TURN_POLL_INTERVAL_MS);
@@ -201,14 +261,35 @@ export async function acceptSubmittedTurn(
   }
 
   if (!pending.validActions.includes(submission.action)) {
+    db.insert(schema.agentErrorLog).values({
+      arenaId,
+      agentId: submission.agentId,
+      turnId: submission.turnId,
+      errorType: 'invalid_action',
+      details: { error: 'Action is not valid for the current turn', action: submission.action } as unknown as Record<string, unknown>,
+    }).catch(err => console.error('[TurnLog] agentErrorLog insert failed', err));
     return { ok: false, status: 400, error: 'Action is not valid for the current turn' };
   }
 
   if (submission.action === 'raise') {
     if (!Number.isInteger(submission.amount)) {
+      db.insert(schema.agentErrorLog).values({
+        arenaId,
+        agentId: submission.agentId,
+        turnId: submission.turnId,
+        errorType: 'invalid_action',
+        details: { error: 'Raise actions require an integer amount', amount: submission.amount } as unknown as Record<string, unknown>,
+      }).catch(err => console.error('[TurnLog] agentErrorLog insert failed', err));
       return { ok: false, status: 400, error: 'Raise actions require an integer amount' };
     }
     if ((submission.amount ?? 0) < pending.minRaise || (submission.amount ?? 0) > pending.maxRaise) {
+      db.insert(schema.agentErrorLog).values({
+        arenaId,
+        agentId: submission.agentId,
+        turnId: submission.turnId,
+        errorType: 'invalid_action',
+        details: { error: 'Raise amount is outside the allowed range', amount: submission.amount, minRaise: pending.minRaise, maxRaise: pending.maxRaise } as unknown as Record<string, unknown>,
+      }).catch(err => console.error('[TurnLog] agentErrorLog insert failed', err));
       return { ok: false, status: 400, error: 'Raise amount is outside the allowed range' };
     }
   }

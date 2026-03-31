@@ -344,3 +344,27 @@ export const lobTradeLog = pgTable('lob_trade_log', {
   qty: integer('qty').notNull(),
   createdAt: timestamp('created_at').notNull(),
 });
+
+// Arena turn log — one row per turn request sent to an agent
+export const arenaTurnLog = pgTable('arena_turn_log', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  arenaId: uuid('arena_id').notNull().references(() => arenas.id),
+  agentId: uuid('agent_id').notNull(),
+  turnId: uuid('turn_id').notNull(),
+  turnNumber: integer('turn_number').notNull(),
+  state: jsonb('state'),        // snapshot sent to agent
+  action: jsonb('action'),      // action submitted by agent (null if timed out)
+  latencyMs: integer('latency_ms'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Agent error log — one row per error event (timeout, invalid action, etc.)
+export const agentErrorLog = pgTable('agent_error_log', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  arenaId: uuid('arena_id').notNull().references(() => arenas.id),
+  agentId: uuid('agent_id').notNull(),
+  turnId: uuid('turn_id'),
+  errorType: varchar('error_type', { length: 50 }).notNull(), // 'timeout'|'invalid_action'|'connection_lost'|'schema_error'
+  details: jsonb('details'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
