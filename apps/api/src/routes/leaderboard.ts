@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { desc, gte, and } from 'drizzle-orm';
+import { desc, gte, and, count } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 
 const router: import('express').Router = Router();
@@ -35,6 +35,12 @@ router.get('/', async (req, res) => {
       ? gte(schema.agents.updatedAt, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000))
       : undefined;
 
+    const countResult = await db
+      .select({ count: count() })
+      .from(schema.agents)
+      .where(periodFilter ? and(periodFilter) : undefined);
+    const totalCount = countResult[0]?.count ?? 0;
+
     const agents = await db
       .select({
         id: schema.agents.id,
@@ -51,7 +57,7 @@ router.get('/', async (req, res) => {
       .limit(limit)
       .offset(offset);
 
-    return res.json({ agents, meta: { metric, period, limit, offset, total: agents.length } });
+    return res.json({ agents, meta: { metric, period, limit, offset, total: Number(totalCount) } });
   } catch (err) {
     console.error('Leaderboard query failed:', err);
     return res.status(500).json({ error: 'Query failed', code: 'INTERNAL_ERROR', retryable: true });

@@ -19,7 +19,7 @@ import {
   publishTurnRequest,
   waitForSubmittedTurn,
 } from './agent-runtime.js';
-import { publishEvent } from './kafka.js';
+import { publishEvent, publishFunnelEvent } from './kafka.js';
 import { chipService } from './chip.js';
 import { resolveBotAction } from './bot.js';
 import { settleBets } from './bet-settlement.js';
@@ -75,6 +75,19 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
   const agentUrls = new Map(seats.map((s) => [s.agentId, s.apiUrl]));
   const handLimit = resolveArenaHandLimit(arena);
   const actionRoundMinMs = resolveActionRoundMinMs();
+
+  // Funnel tracking — fire each stage at most once per agent per session
+  const funnelTurnSent = new Set<string>();
+  const funnelActionFiled = new Set<string>();
+  const agentOwnerIds = new Map<string, string>();
+  for (const seat of seats) {
+    const [row] = await db
+      .select({ ownerId: schema.agents.ownerId })
+      .from(schema.agents)
+      .where(eq(schema.agents.id, seat.agentId))
+      .limit(1);
+    if (row) agentOwnerIds.set(seat.agentId, row.ownerId);
+  }
 
   // Track stacks across hands
   const stacks = new Map(seats.map((s) => [s.agentId, arena.startingStack]));
@@ -178,6 +191,15 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
 
       if (validActions.length === 0) break;
 
+      // Funnel: first turn request sent to this agent
+      if (!funnelTurnSent.has(actor.agentId)) {
+        funnelTurnSent.add(actor.agentId);
+        const ownerId = agentOwnerIds.get(actor.agentId);
+        if (ownerId) {
+          publishFunnelEvent({ eventType: 'agent_funnel', stage: 'first_turn_received', agentId: actor.agentId, userId: ownerId, arenaId, ts: new Date().toISOString() });
+        }
+      }
+
       // External runtimes now pull turns over Socket.IO + REST, while local
       // bot:// seats still resolve actions in-process.
       const startTime = Date.now();
@@ -249,6 +271,15 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
             holeCards: [],
           })),
         });
+      }
+
+      // Funnel: first action submitted by this agent
+      if (!funnelActionFiled.has(actor.agentId)) {
+        funnelActionFiled.add(actor.agentId);
+        const ownerId = agentOwnerIds.get(actor.agentId);
+        if (ownerId) {
+          publishFunnelEvent({ eventType: 'agent_funnel', stage: 'first_action_submitted', agentId: actor.agentId, userId: ownerId, arenaId, ts: new Date().toISOString() });
+        }
       }
 
       // AGO-68: trigger first-bet invite rewards for non-fold actions

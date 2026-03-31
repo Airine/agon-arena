@@ -13,6 +13,7 @@ import {
   verifyAgentAccessRequest,
 } from '../services/agent-access.js';
 import { getPlatformPublicKeyHex } from '../services/webhook-crypto.js';
+import { publishFunnelEvent } from '../services/kafka.js';
 import {
   claimAgentAccessNonce,
   storeSiweNonce,
@@ -397,6 +398,15 @@ authRouter.post('/agent/access', async (req, res) => {
       return;
     }
 
+    // Funnel: wallet ownership proven — agent connected their wallet
+    publishFunnelEvent({
+      eventType: 'agent_funnel',
+      stage: 'wallet_connected',
+      agentId: agent!.id,
+      userId: user!.id,
+      ts: new Date().toISOString(),
+    });
+
     const tokens = await issueTokenPair({
       userId: user!.id,
       username: user!.username,
@@ -404,6 +414,15 @@ authRouter.post('/agent/access', async (req, res) => {
       agentId: agent!.id,
       agentAddress: agent!.agentAddress ?? verification.walletAddress,
       type: 'agent',
+    });
+
+    // Funnel: session issued
+    publishFunnelEvent({
+      eventType: 'agent_funnel',
+      stage: 'session_created',
+      agentId: agent!.id,
+      userId: user!.id,
+      ts: new Date().toISOString(),
     });
 
     res.status(created ? 201 : 200).json({

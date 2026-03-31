@@ -19,6 +19,7 @@ import { Kafka, type Producer, type ProducerRecord } from 'kafkajs';
 const TOPIC_ACTIONS = 'agon.game.actions';
 const TOPIC_HANDS   = 'agon.game.hands';
 const TOPIC_ARENAS  = 'agon.game.arenas';
+const TOPIC_FUNNEL  = 'agon.agent.funnel';
 
 // Event type interfaces
 export interface GameActionEvent {
@@ -69,19 +70,30 @@ export interface ArenaFinishedEvent {
   ts: number;
 }
 
+export interface AgentFunnelEvent {
+  eventType: 'agent_funnel';
+  stage: 'wallet_connected' | 'session_created' | 'arena_joined' | 'first_turn_received' | 'first_action_submitted';
+  agentId: string;
+  userId: string;
+  arenaId?: string;
+  ts: string; // ISO-8601
+}
+
 export type GameEvent = GameActionEvent | HandStartEvent | HandEndEvent | ArenaMatchedEvent | ArenaFinishedEvent;
+export type KafkaEvent = GameEvent | AgentFunnelEvent;
 
 let producer: Producer | null = null;
 let isConnected = false;
 let isEnabled = false;
 
-function getTopicForEvent(event: GameEvent): string {
+function getTopicForEvent(event: KafkaEvent): string {
   switch (event.eventType) {
     case 'game_action': return TOPIC_ACTIONS;
     case 'hand_start':
     case 'hand_end': return TOPIC_HANDS;
     case 'arena_matched':
     case 'arena_finished': return TOPIC_ARENAS;
+    case 'agent_funnel': return TOPIC_FUNNEL;
   }
 }
 
@@ -127,7 +139,7 @@ export async function shutdownKafka(): Promise<void> {
  * Publish a game event to the appropriate Kafka topic.
  * Fire-and-forget: errors are logged but never propagated.
  */
-export function publishEvent(event: GameEvent): void {
+export function publishEvent(event: KafkaEvent): void {
   if (!isEnabled || !producer || !isConnected) return;
 
   const topic = getTopicForEvent(event);
@@ -146,6 +158,14 @@ export function publishEvent(event: GameEvent): void {
   producer.send(record).catch((err: Error) => {
     console.warn(`[Kafka] Failed to publish ${event.eventType}:`, err.message);
   });
+
+}
+
+/**
+ * Publish an agent funnel stage event. Fire-and-forget.
+ */
+export function publishFunnelEvent(event: AgentFunnelEvent): void {
+  publishEvent(event);
 }
 
 /** Exposed for testing */

@@ -8,7 +8,7 @@ import { createAdapter } from '@socket.io/redis-adapter';
 import { createClient } from 'redis';
 import { authRouter } from './routes/auth.js';
 import { emailAuthRouter } from './routes/email-auth.js';
-import { ipRateLimit, deviceFingerprintLimit } from './middleware/rate-limit.js';
+import { ipRateLimit, userRateLimit, deviceFingerprintLimit } from './middleware/rate-limit.js';
 import { agentsRouter } from './routes/agents.js';
 import { arenasRouter } from './routes/arenas.js';
 import { skillsRouter } from './routes/skills.js';
@@ -66,6 +66,11 @@ setIO(io);
 // Middleware
 app.use(cors({ origin: allowedOrigins }));
 app.use(express.json({ limit: '1mb' }));
+app.use((_req, res, next) => { res.setHeader('X-API-Version', '1'); next(); });
+
+// Global rate limiting (before all routes)
+app.use(ipRateLimit(60, 20, 'rl:global:unauth'));      // 20 req/min per IP (unauthenticated baseline)
+app.use(userRateLimit(60, 200, 'rl:global:auth'));      // 200 req/min per userId (authenticated)
 
 // Health check
 app.get('/health', (_req, res) => {

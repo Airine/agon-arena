@@ -109,6 +109,8 @@ export const arenas = pgTable('arenas', {
   maxHands: integer('max_hands').notNull().default(0),
   // buyInAmount: CHIP cost to join (0 = free, used for practice mode)
   buyInAmount: integer('buy_in_amount').notNull().default(0),
+  // tier: matchmaking tier ('practice' | 'micro' | 'serious'); null = legacy arenas
+  tier: varchar('tier', { length: 20 }),
   // isSmoke: true for smoke-test arenas (auto-cleaned after 10 min, filtered from public list)
   isSmoke: boolean('is_smoke').notNull().default(false),
   currentHandNumber: integer('current_hand_number').notNull().default(0),

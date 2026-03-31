@@ -20,6 +20,8 @@ import {
   maybeFinalizeOrphanedRunningArena,
 } from '../services/arena-lifecycle.js';
 import { advanceHostedPracticeArena } from '../services/hosted-practice.js';
+import { ipRateLimit } from '../middleware/rate-limit.js';
+import { publishFunnelEvent } from '../services/kafka.js';
 
 export const arenasRouter: RouterType = Router();
 
@@ -124,6 +126,66 @@ arenasRouter.post('/', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Failed to create arena' });
   }
 });
+
+/**
+ * POST /arenas/sandbox/create - Create a personal practice sandbox arena.
+ * Rate-limited to 3 arenas per IP per hour.
+ *
+ * Creates a practice arena pre-configured for LOB market making:
+ *   - tier: 'practice', isSmoke: true
+ *   - gameType: 'lob_market_making', maxPlayers: 2
+ *   - allowSparringReplacement: true (bot fills second seat)
+ */
+arenasRouter.post(
+  '/sandbox/create',
+  requireAuth,
+  ipRateLimit(3600, 3, 'sandbox:create'),
+  async (req, res) => {
+    try {
+      const userId = req.user!.userId;
+
+      let labelName = `user:${userId.slice(0, 8)}`;
+      if (req.user!.agentId) {
+        const [agent] = await db
+          .select({ name: schema.agents.name })
+          .from(schema.agents)
+          .where(eq(schema.agents.id, req.user!.agentId))
+          .limit(1);
+        if (agent) labelName = agent.name;
+      }
+
+      const arenaName = `Sandbox — ${labelName}`;
+
+      const [arena] = await db
+        .insert(schema.arenas)
+        .values({
+          name: arenaName,
+          gameType: 'lob_market_making',
+          mode: 'practice',
+          tier: 'practice',
+          isSmoke: true,
+          allowSparringReplacement: true,
+          maxPlayers: 2,
+          smallBlind: 10,
+          bigBlind: 20,
+          startingStack: 1000,
+          maxHands: 100,
+          buyInAmount: 0,
+          status: 'waiting',
+          createdByUserId: userId,
+        })
+        .returning({ id: schema.arenas.id });
+
+      res.status(201).json({
+        arenaId: arena!.id,
+        arenaUrl: `/markets/${arena!.id}`,
+      });
+    } catch (err) {
+      console.error('[Sandbox] Create error:', err);
+      res.status(500).json({ error: 'Failed to create sandbox arena' });
+    }
+  },
+);
 
 /**
  * GET /arenas - List arenas. Optional ?status= and ?mode= filters.
@@ -359,6 +421,16 @@ arenasRouter.post('/:id/join', requireAuth, async (req, res) => {
       .returning();
 
     await advanceHostedPracticeArena(arenaId);
+
+    // Funnel: agent joined an arena seat
+    publishFunnelEvent({
+      eventType: 'agent_funnel',
+      stage: 'arena_joined',
+      agentId,
+      userId: req.user!.userId,
+      arenaId,
+      ts: new Date().toISOString(),
+    });
 
     res.status(201).json(seat);
   } catch (err) {

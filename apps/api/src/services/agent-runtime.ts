@@ -290,9 +290,9 @@ export async function waitForLOBSubmission(
 ): Promise<LOBAction | null> {
   const { getRedisClient } = await import('./redis.js');
   const key = `${LOB_PENDING_PREFIX}${arenaId}:${agentId}`;
+  const redis = await getRedisClient();
 
   while (Date.now() < deadlineMs) {
-    const redis = await getRedisClient();
     const val = await redis.get(key);
     if (val) {
       try {

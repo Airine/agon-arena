@@ -45,6 +45,46 @@ export function ipRateLimit(
 }
 
 /**
+ * User ID-based rate limiter using Redis counters.
+ * Requires auth middleware to have run first (sets req.user).
+ * If no userId is present, passes through (ipRateLimit handles unauthenticated).
+ *
+ * @param windowSecs - Time window in seconds
+ * @param maxRequests - Max requests per window per userId
+ * @param keyPrefix - Redis key prefix (e.g. 'rl:global:auth')
+ */
+export function userRateLimit(
+  windowSecs: number,
+  maxRequests: number,
+  keyPrefix: string,
+): RequestHandler {
+  return async (req, res, next) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const userId = (req as any).user?.id;
+    if (!userId) { next(); return; }
+    try {
+      const redis = await getRedisClient();
+      const key = `${keyPrefix}:${userId}`;
+      const current = await redis.incr(key);
+      if (current === 1) await redis.expire(key, windowSecs);
+      if (current > maxRequests) {
+        res.status(429).json({
+          error: 'Rate limit exceeded',
+          code: 'RATE_LIMITED',
+          retryable: true,
+          retryAfterMs: windowSecs * 1000,
+        });
+        return;
+      }
+      next();
+    } catch (err) {
+      console.error('[RateLimit] Redis error:', err);
+      next();
+    }
+  };
+}
+
+/**
  * Compute a device fingerprint from request headers.
  * The fingerprint is a SHA-256 hash of stable browser signals.
  * Used to detect account farm patterns from the same device.
