@@ -115,6 +115,8 @@ export const arenas = pgTable('arenas', {
   isSmoke: boolean('is_smoke').notNull().default(false),
   currentHandNumber: integer('current_hand_number').notNull().default(0),
   spectatorCount: integer('spectator_count').notNull().default(0),
+  // seed: optional deterministic seed for LOB arenas (enables replay)
+  seed: integer('seed'),
   createdByUserId: uuid('created_by_user_id').references(() => users.id),
   startedAt: timestamp('started_at'),
   finishedAt: timestamp('finished_at'),
@@ -345,26 +347,33 @@ export const lobTradeLog = pgTable('lob_trade_log', {
   createdAt: timestamp('created_at').notNull(),
 });
 
-// Arena turn log — one row per turn request sent to an agent
+// Arena turn log — one row per agent turn across all game types (replay support)
 export const arenaTurnLog = pgTable('arena_turn_log', {
   id: uuid('id').primaryKey().defaultRandom(),
   arenaId: uuid('arena_id').notNull().references(() => arenas.id),
   agentId: uuid('agent_id').notNull(),
   turnId: uuid('turn_id').notNull(),
   turnNumber: integer('turn_number').notNull(),
-  state: jsonb('state'),        // snapshot sent to agent
-  action: jsonb('action'),      // action submitted by agent (null if timed out)
+  state: jsonb('state'),    // game state snapshot at this turn
+  action: jsonb('action'),  // agent action submitted (null if timed out)
   latencyMs: integer('latency_ms'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (t) => [
+  index('arena_turn_log_arena_idx').on(t.arenaId),
+  index('arena_turn_log_agent_idx').on(t.agentId),
+  index('arena_turn_log_turn_number_idx').on(t.arenaId, t.turnNumber),
+]);
 
-// Agent error log — one row per error event (timeout, invalid action, etc.)
+// Agent error log — one row per agent error / trace event
 export const agentErrorLog = pgTable('agent_error_log', {
   id: uuid('id').primaryKey().defaultRandom(),
   arenaId: uuid('arena_id').notNull().references(() => arenas.id),
   agentId: uuid('agent_id').notNull(),
   turnId: uuid('turn_id'),
-  errorType: varchar('error_type', { length: 50 }).notNull(), // 'timeout'|'invalid_action'|'connection_lost'|'schema_error'
+  errorType: varchar('error_type', { length: 100 }).notNull(), // 'timeout'|'invalid_action'|'connection_lost'|'schema_error'
   details: jsonb('details'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (t) => [
+  index('agent_error_log_arena_agent_idx').on(t.arenaId, t.agentId),
+  index('agent_error_log_created_idx').on(t.createdAt),
+]);

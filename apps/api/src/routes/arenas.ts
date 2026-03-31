@@ -1,6 +1,6 @@
 import { Router, type Router as RouterType } from 'express';
 import { z } from 'zod';
-import { eq, and, count, sql, desc } from 'drizzle-orm';
+import { eq, and, count, sql, desc, asc } from 'drizzle-orm';
 import type { AgentActionSubmission, ActionType, HandReplayResponse } from '@agon/types';
 import { db, schema } from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -35,6 +35,7 @@ const MODE_DEFAULTS = {
 const createArenaSchema = z.object({
   name: z.string().min(3).max(100),
   mode: z.enum(['practice', 'cash', 'tournament']).default('practice'),
+  gameType: z.enum(['texas_holdem', 'lob_market_making']).optional(),
   allowSparringReplacement: z.boolean().optional(),
   maxPlayers: z.number().int().min(2).max(10).optional(),
   smallBlind: z.number().int().min(1).optional(),
@@ -45,6 +46,8 @@ const createArenaSchema = z.object({
   // buyInAmount: CHIP cost to join; must be 0 for practice
   buyInAmount: z.number().int().min(0).optional(),
   isSmoke: z.boolean().optional(),
+  // seed: optional deterministic seed for LOB arenas (enables replay)
+  seed: z.number().int().optional(),
 });
 
 const runtimeQuerySchema = z.object({
@@ -105,6 +108,7 @@ arenasRouter.post('/', requireAuth, async (req, res) => {
       .values({
         name: body.name,
         mode: body.mode,
+        ...(body.gameType !== undefined ? { gameType: body.gameType } : {}),
         allowSparringReplacement,
         maxPlayers,
         smallBlind,
@@ -114,6 +118,7 @@ arenasRouter.post('/', requireAuth, async (req, res) => {
         buyInAmount,
         isSmoke: body.isSmoke ?? false,
         createdByUserId: req.user!.userId,
+        ...(body.seed !== undefined && body.gameType === 'lob_market_making' ? { seed: body.seed } : {}),
       })
       .returning();
 
@@ -1018,5 +1023,128 @@ arenasRouter.get('/:id/hands/:handNumber/thinking', async (req, res) => {
     res.json({ handNumber, thinking });
   } catch {
     res.status(500).json({ error: 'Failed to fetch thinking' });
+  }
+});
+
+/**
+ * GET /arenas/:id/turns?limit=200&offset=0
+ * Paginated turn log for replay. Public.
+ */
+arenasRouter.get('/:id/turns', async (req, res) => {
+  try {
+    const arenaId = String(req.params['id']);
+
+    const [arena] = await db
+      .select({ id: schema.arenas.id })
+      .from(schema.arenas)
+      .where(eq(schema.arenas.id, arenaId))
+      .limit(1);
+    if (!arena) { res.status(404).json({ error: 'Arena not found' }); return; }
+
+    const rawLimit = parseInt(String(req.query['limit'] ?? '200'), 10);
+    const rawOffset = parseInt(String(req.query['offset'] ?? '0'), 10);
+    const limit = Math.min(isNaN(rawLimit) ? 200 : rawLimit, 200);
+    const offset = isNaN(rawOffset) ? 0 : rawOffset;
+
+    const [totalRow] = await db
+      .select({ total: count(schema.arenaTurnLog.id) })
+      .from(schema.arenaTurnLog)
+      .where(eq(schema.arenaTurnLog.arenaId, arenaId));
+
+    const turns = await db
+      .select({
+        id: schema.arenaTurnLog.id,
+        agentId: schema.arenaTurnLog.agentId,
+        turnId: schema.arenaTurnLog.turnId,
+        turnNumber: schema.arenaTurnLog.turnNumber,
+        state: schema.arenaTurnLog.state,
+        action: schema.arenaTurnLog.action,
+        latencyMs: schema.arenaTurnLog.latencyMs,
+        createdAt: schema.arenaTurnLog.createdAt,
+      })
+      .from(schema.arenaTurnLog)
+      .where(eq(schema.arenaTurnLog.arenaId, arenaId))
+      .orderBy(asc(schema.arenaTurnLog.turnNumber))
+      .limit(limit)
+      .offset(offset);
+
+    res.json({ turns, total: totalRow?.total ?? 0 });
+  } catch {
+    res.status(500).json({ error: 'Failed to fetch turns' });
+  }
+});
+
+/**
+ * GET /arenas/:id/turns/:turnId
+ * Single turn detail by UUID. Public.
+ */
+arenasRouter.get('/:id/turns/:turnId', async (req, res) => {
+  try {
+    const arenaId = String(req.params['id']);
+    const turnId = String(req.params['turnId']);
+
+    const [turn] = await db
+      .select()
+      .from(schema.arenaTurnLog)
+      .where(and(
+        eq(schema.arenaTurnLog.arenaId, arenaId),
+        eq(schema.arenaTurnLog.turnId, turnId),
+      ))
+      .limit(1);
+
+    if (!turn) { res.status(404).json({ error: 'Turn not found' }); return; }
+    res.json(turn);
+  } catch {
+    res.status(500).json({ error: 'Failed to fetch turn' });
+  }
+});
+
+/**
+ * GET /arenas/:id/agents/:agentId/traces?limit=50
+ * Agent error traces. Public.
+ */
+arenasRouter.get('/:id/agents/:agentId/traces', async (req, res) => {
+  try {
+    const arenaId = String(req.params['id']);
+    const agentId = String(req.params['agentId']);
+
+    const [arena] = await db
+      .select({ id: schema.arenas.id })
+      .from(schema.arenas)
+      .where(eq(schema.arenas.id, arenaId))
+      .limit(1);
+    if (!arena) { res.status(404).json({ error: 'Arena not found' }); return; }
+
+    const rawLimit = parseInt(String(req.query['limit'] ?? '50'), 10);
+    const limit = Math.min(isNaN(rawLimit) ? 50 : rawLimit, 100);
+
+    const [totalRow] = await db
+      .select({ total: count(schema.agentErrorLog.id) })
+      .from(schema.agentErrorLog)
+      .where(and(
+        eq(schema.agentErrorLog.arenaId, arenaId),
+        eq(schema.agentErrorLog.agentId, agentId),
+      ));
+
+    const traces = await db
+      .select({
+        id: schema.agentErrorLog.id,
+        agentId: schema.agentErrorLog.agentId,
+        turnId: schema.agentErrorLog.turnId,
+        errorType: schema.agentErrorLog.errorType,
+        details: schema.agentErrorLog.details,
+        createdAt: schema.agentErrorLog.createdAt,
+      })
+      .from(schema.agentErrorLog)
+      .where(and(
+        eq(schema.agentErrorLog.arenaId, arenaId),
+        eq(schema.agentErrorLog.agentId, agentId),
+      ))
+      .orderBy(desc(schema.agentErrorLog.createdAt))
+      .limit(limit);
+
+    res.json({ traces, total: totalRow?.total ?? 0 });
+  } catch {
+    res.status(500).json({ error: 'Failed to fetch traces' });
   }
 });
