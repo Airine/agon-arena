@@ -321,6 +321,50 @@ async function runSocketLoop({
                 }
               }
             }
+          } else if (event.type === 'agent:lob_turn_request') {
+            // LOB market-making arena turn
+            const req = event.payload;
+            const { turnId, deadlineMs } = req;
+            updateRunState(stateDir, { pending_turn: { turnId, deadline: deadlineMs } });
+
+            const decision = await getDecision(
+              { turnId, deadline: deadlineMs, snapshot: req },
+              values['decision-cmd'],
+            );
+
+            // Normalize: decision-cmd may return {type,price,qty} or fall back to pass
+            const lobAction = decision.type
+              ? decision
+              : { type: 'pass' };
+
+            try {
+              await requestJson({
+                baseUrl: apiBase,
+                method: 'POST',
+                routePath: `/arenas/${arenaId}/lob-actions`,
+                token: session.access_token,
+                body: { agentId: session.agent.id, turnId, action: lobAction },
+              });
+              updateRunState(stateDir, { pending_turn: null, last_submitted_turn_id: turnId });
+              emitFn('action_submitted', { arenaId, turnId, action: lobAction.type });
+            } catch (submitErr) {
+              if (!submitErr.message?.includes('409') && !submitErr.message?.includes('410')) {
+                if (submitErr.message?.includes('401')) {
+                  const walletResult = await walletResultGetter().catch(() => null);
+                  session = await refreshSession(apiBase, stateDir, role, session).catch(async () => {
+                    if (walletResult) return bootstrapSession(apiBase, stateDir, role, walletResult);
+                    throw submitErr;
+                  });
+                  await requestJson({
+                    baseUrl: apiBase,
+                    method: 'POST',
+                    routePath: `/arenas/${arenaId}/lob-actions`,
+                    token: session.access_token,
+                    body: { agentId: session.agent.id, turnId, action: lobAction },
+                  }).catch(() => {});  // best effort retry
+                }
+              }
+            }
           } else if (event.type === 'agent:arena_event') {
             if (event.payload?.type === 'arena_finished') {
               updateRunState(stateDir, { arena: { id: arenaId, status: 'finished' } });
