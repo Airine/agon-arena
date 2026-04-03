@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import type { Server as SocketIOServer } from 'socket.io';
-import { verifyToken } from '../middleware/auth.js';
+import { verifyTokenFull } from '../middleware/auth.js';
 import { db, schema } from '../db/index.js';
 import { getGameSnapshot } from './redis.js';
 import { getAgentRuntimeRoom } from './agent-runtime.js';
@@ -10,11 +10,11 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 export function setupSocketHandlers(io: SocketIOServer): void {
   // Auth middleware — optional token. Spectating is public but we track auth'd users.
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     const token = socket.handshake.auth?.['token'] as string | undefined;
     if (token) {
       try {
-        (socket.data as Record<string, unknown>).user = verifyToken(token);
+        (socket.data as Record<string, unknown>).user = await verifyTokenFull(token);
       } catch {
         // Invalid token — allow connection but unauthenticated
       }

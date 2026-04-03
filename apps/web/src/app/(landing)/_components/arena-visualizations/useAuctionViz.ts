@@ -79,7 +79,11 @@ export function useAuctionViz(canvasRef: RefObject<HTMLCanvasElement | null>, ac
         ag.bids.forEach((b, i) => {
           const x = cX + i * (cW / (mLen - 1 || 1));
           const y = cY + cH - b / maxB * cH;
-          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
         });
         ctx.stroke();
         const lx = cX + (ag.bids.length - 1) * (cW / (mLen - 1 || 1));

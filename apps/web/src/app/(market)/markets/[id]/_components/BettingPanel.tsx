@@ -16,14 +16,14 @@ export interface BettingPanelProps {
 
 interface AgentOdds {
   agentId: string;
-  /** Fraction of total betting pool wagered on this agent (0–1) */
-  fraction: number;
-  /** Multiplier: 1 / fraction */
+  /** Probability / share of the total betting pool wagered on this agent (0–1) */
+  probability: number;
+  /** Multiplier: 1 / probability */
   multiplier: number;
 }
 
 interface OddsResponse {
-  odds: Array<{ agentId: string; fraction: number }>;
+  odds: Array<{ agentId: string; odds: number }>;
 }
 
 type SubmitState =
@@ -82,40 +82,51 @@ function BettingPanelInner({
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Fetch odds, then set up polling while live
-  const fetchOdds = () => {
-    fetch(buildApiUrl(`/arenas/${arenaId}/odds`))
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data: OddsResponse | null) => {
-        if (!data?.odds) return;
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchOdds(): Promise<void> {
+      try {
+        const response = await fetch(buildApiUrl(`/arenas/${arenaId}/odds`));
+        if (!response.ok || cancelled) return;
+
+        const data = (await response.json()) as OddsResponse | null;
+        if (!data?.odds || cancelled) return;
+
         const map = new Map<string, AgentOdds>();
         for (const o of data.odds) {
-          const fraction = Math.max(o.fraction, 0.0001); // avoid /0
+          const probability = Math.max(o.odds, 0.0001); // avoid /0
           map.set(o.agentId, {
             agentId: o.agentId,
-            fraction,
-            multiplier: 1 / fraction,
+            probability,
+            multiplier: 1 / probability,
           });
         }
-        setOddsMap(map);
-      })
-      .catch(() => {})
-      .finally(() => setOddsLoading(false));
-  };
 
-  useEffect(() => {
-    fetchOdds();
+        setOddsMap(map);
+      } catch {
+        // Keep the UI in its last-known state; the skeleton only hides after the first attempt.
+      } finally {
+        if (!cancelled) {
+          setOddsLoading(false);
+        }
+      }
+    }
+
+    void fetchOdds();
 
     if (isLive) {
-      intervalRef.current = setInterval(fetchOdds, 10_000);
+      intervalRef.current = setInterval(() => {
+        void fetchOdds();
+      }, 10_000);
     }
 
     return () => {
+      cancelled = true;
       if (intervalRef.current !== null) {
         clearInterval(intervalRef.current);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [arenaId, isLive]);
 
   // Payout preview
@@ -126,7 +137,7 @@ function BettingPanelInner({
 
   // Leading agent for bar colouring
   const leadingAgentId = [...oddsMap.values()].sort(
-    (a, b) => b.fraction - a.fraction,
+    (a, b) => b.probability - a.probability,
   )[0]?.agentId;
 
   // Submit handler
@@ -238,7 +249,7 @@ function BettingPanelInner({
       <div className="betting-panel__odds-list">
         {seatedAgents.map((agent) => {
           const odds = oddsMap.get(agent.id);
-          const fraction = odds?.fraction ?? 1 / seatedAgents.length;
+          const probability = odds?.probability ?? 1 / seatedAgents.length;
           const multiplier = odds?.multiplier ?? seatedAgents.length;
           const isLeading = agent.id === leadingAgentId;
 
@@ -251,7 +262,7 @@ function BettingPanelInner({
               <div className="betting-panel__odds-bar-track">
                 <div
                   className={`betting-panel__odds-bar${isLeading ? ' betting-panel__odds-bar--lead' : ''}`}
-                  style={{ width: `${Math.round(fraction * 100)}%` }}
+                  style={{ width: `${Math.round(probability * 100)}%` }}
                 />
               </div>
             </div>

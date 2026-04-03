@@ -268,7 +268,27 @@ arenasRouter.get('/:id', async (req, res) => {
     const arenaId = String(req.params['id']);
 
     const [arena] = await db
-      .select()
+      .select({
+        id: schema.arenas.id,
+        name: schema.arenas.name,
+        gameType: schema.arenas.gameType,
+        mode: schema.arenas.mode,
+        status: schema.arenas.status,
+        allowSparringReplacement: schema.arenas.allowSparringReplacement,
+        maxPlayers: schema.arenas.maxPlayers,
+        smallBlind: schema.arenas.smallBlind,
+        bigBlind: schema.arenas.bigBlind,
+        startingStack: schema.arenas.startingStack,
+        maxHands: schema.arenas.maxHands,
+        buyInAmount: schema.arenas.buyInAmount,
+        isSmoke: schema.arenas.isSmoke,
+        currentHandNumber: schema.arenas.currentHandNumber,
+        spectatorCount: schema.arenas.spectatorCount,
+        createdByUserId: schema.arenas.createdByUserId,
+        createdAt: schema.arenas.createdAt,
+        startedAt: schema.arenas.startedAt,
+        finishedAt: schema.arenas.finishedAt,
+      })
       .from(schema.arenas)
       .where(eq(schema.arenas.id, arenaId))
       .limit(1);
@@ -302,7 +322,7 @@ arenasRouter.get('/:id', async (req, res) => {
       : reconciledArena.mode === 'cash' && (reconciledArena.buyInAmount ?? 0) === 0
       ? 'micro'
       : 'serious';
-    res.json({ ...reconciledArena, tier, seats });
+    res.json({ ...reconciledArena, seed: null, tier, seats });
   } catch {
     res.status(500).json({ error: 'Failed to fetch arena' });
   }

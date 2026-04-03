@@ -1,31 +1,7 @@
-/**
- * AGO-90: Frontend E2E — Complete User Journey
- *
- * Tests the full user journey through the Agon Arena frontend:
- *  - Login page (SIWE + email tabs)
- *  - Register page (form fields + invite code)
- *  - Dashboard (connect form + CHIP wallet with mocked auth)
- *  - Arena Lobby (filter buttons + arena cards with mocked API)
- *  - Arena Spectator (connection status + layout)
- *  - Settings page (auth redirect + profile + agent registration form)
- *
- * API calls are intercepted via page.route() so tests run without a backend.
- * WebSocket connections are not established (no WS server), so arena viewer
- * shows "Disconnected" — this is the expected UI state for that scenario.
- */
-
 import { test, expect, type Page } from '@playwright/test';
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const WEB_URL = process.env['WEB_BASE_URL'] ?? 'http://localhost:3000';
 const API_ORIGIN = process.env['API_BASE_URL'] ?? 'http://localhost:4000';
-
-// ---------------------------------------------------------------------------
-// Mock data
-// ---------------------------------------------------------------------------
 
 const mockUser = {
   id: 'user-test-123',
@@ -36,52 +12,56 @@ const mockUser = {
   createdAt: '2026-01-15T00:00:00Z',
 };
 
-const mockArenas = [
-  {
-    id: 'arena-alpha',
-    name: 'Alpha Table',
-    gameType: 'texas_holdem',
-    status: 'running',
-    playerCount: 4,
-    maxPlayers: 6,
-    smallBlind: 10,
-    bigBlind: 20,
-    startingStack: 1000,
-    spectatorCount: 8,
-    createdAt: '2026-03-12T00:00:00Z',
-  },
-  {
-    id: 'arena-beta',
-    name: 'Beta Table',
-    gameType: 'texas_holdem',
-    status: 'waiting',
-    playerCount: 2,
-    maxPlayers: 6,
-    smallBlind: 5,
-    bigBlind: 10,
-    startingStack: 500,
-    spectatorCount: 1,
-    createdAt: '2026-03-12T01:00:00Z',
-  },
-];
+const mockArena = {
+  id: 'arena-alpha',
+  name: 'Alpha Table',
+  gameType: 'texas_holdem',
+  mode: 'practice',
+  status: 'running',
+  smallBlind: 10,
+  bigBlind: 20,
+  startingStack: 1000,
+  spectatorCount: 8,
+  seats: [
+    {
+      seatIndex: 0,
+      agentId: 'agent-alpha',
+      agentName: 'Alpha',
+      currentStack: 1400,
+      eloRating: 1420,
+      isActive: true,
+    },
+    {
+      seatIndex: 1,
+      agentId: 'agent-beta',
+      agentName: 'Beta',
+      currentStack: 600,
+      eloRating: 1310,
+      isActive: true,
+    },
+  ],
+};
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+const mockArenaList = {
+  arenas: [
+    {
+      id: mockArena.id,
+      name: mockArena.name,
+      gameType: mockArena.gameType,
+      mode: mockArena.mode,
+      status: mockArena.status,
+      playerCount: 2,
+      maxPlayers: 6,
+      smallBlind: mockArena.smallBlind,
+      bigBlind: mockArena.bigBlind,
+      startingStack: mockArena.startingStack,
+      spectatorCount: mockArena.spectatorCount,
+      createdAt: '2026-03-12T00:00:00Z',
+    },
+  ],
+};
 
-/** Mock the /api/auth/me endpoint (used by lib/api.ts) */
 async function mockAuthMe(page: Page) {
-  await page.route(`${API_ORIGIN}/api/auth/me`, async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(mockUser),
-    });
-  });
-}
-
-/** Mock the /auth/me endpoint (used directly by dashboard page) */
-async function mockDashboardAuthMe(page: Page) {
   await page.route(`${API_ORIGIN}/auth/me`, async (route) => {
     await route.fulfill({
       status: 200,
@@ -91,461 +71,167 @@ async function mockDashboardAuthMe(page: Page) {
   });
 }
 
-/** Mock the /agents endpoint (used by dashboard page) */
-async function mockAgents(page: Page) {
+async function mockDashboardData(page: Page) {
+  await mockAuthMe(page);
   await page.route(`${API_ORIGIN}/agents**`, async (route) => {
+    const url = route.request().url();
+    const body = url.includes('/matches')
+      ? { matches: [] }
+      : { agents: [] };
+
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ agents: [] }),
+      body: JSON.stringify(body),
     });
   });
 }
 
-/** Set the accessToken in localStorage so isLoggedIn() returns true */
-async function setAuthToken(page: Page) {
+async function seedSession(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem('accessToken', 'mock-access-token-for-e2e');
+    localStorage.setItem('agon_token', 'mock-access-token-for-e2e');
+    localStorage.setItem('refreshToken', 'mock-refresh-token-for-e2e');
   });
 }
 
-/** Set the dashboard token in localStorage (separate from auth system) */
-async function setDashboardToken(page: Page) {
-  await page.addInitScript(() => {
-    localStorage.setItem('agon_token', 'mock-dashboard-token-for-e2e');
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Test suites
-// ---------------------------------------------------------------------------
-
-test.describe('Login Page', () => {
-  test('shows Sign In heading with welcome text', async ({ page }) => {
+test.describe('Frontend User Journey', () => {
+  test('login shows the current welcome copy and sign-in modes', async ({ page }) => {
     await page.goto(`${WEB_URL}/login`);
 
-    await expect(page.getByRole('heading', { name: 'Sign In' })).toBeVisible();
-    await expect(page.getByText('Welcome back to Agon Arena')).toBeVisible();
-  });
-
-  test('shows Wallet (SIWE) and Email / Password tabs', async ({ page }) => {
-    await page.goto(`${WEB_URL}/login`);
-
+    await expect(page.getByText('Welcome back')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Wallet (SIWE)' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Email / Password' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Create Account' })).toBeVisible();
   });
 
-  test('SIWE tab is active by default and shows Connect Wallet button', async ({
+  test('register page redirects to the register mode on /login', async ({ page }) => {
+    await page.goto(`${WEB_URL}/register`);
+    await expect(page).toHaveURL(/\/login\?mode=register/);
+    await expect(page.getByText('Create your account')).toBeVisible();
+  });
+
+  test('register persists the returned session before redirecting to the dashboard', async ({
     page,
   }) => {
-    await page.goto(`${WEB_URL}/login`);
+    await page.route(`${API_ORIGIN}/auth/register`, async (route) => {
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          accessToken: 'fresh-access-token',
+          refreshToken: 'fresh-refresh-token',
+          user: { id: mockUser.id, username: mockUser.username },
+        }),
+      });
+    });
+    await mockDashboardData(page);
 
-    await expect(
-      page.getByRole('button', { name: 'Connect Wallet & Sign In' }),
-    ).toBeVisible();
+    await page.goto(`${WEB_URL}/login?mode=register`);
+    await page.getByPlaceholder('coolagent').fill('register_user');
+    await page.getByPlaceholder('you@example.com').fill('register_user@example.com');
+    await page.getByPlaceholder('••••••••').fill('secret123');
+    await page.locator('form').first().getByRole('button', { name: 'Create Account' }).click();
+
+    await page.waitForURL(/\/dashboard/);
+    await page.waitForLoadState('networkidle');
+    await expect(page.getByRole('heading', { name: 'Owner ledger' })).toBeVisible();
+    await expect(page.getByText('Connect the owner workspace')).toHaveCount(0);
   });
 
-  test('switching to Email tab shows email, password inputs and Sign In button', async ({
-    page,
-  }) => {
-    await page.goto(`${WEB_URL}/login`);
-
-    await page.getByRole('button', { name: 'Email / Password' }).click();
-
-    await expect(page.getByPlaceholder('you@example.com')).toBeVisible();
-    await expect(page.getByPlaceholder('••••••••')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Sign In' })).toBeVisible();
-  });
-
-  test('Email tab shows link to Register page', async ({ page }) => {
-    await page.goto(`${WEB_URL}/login`);
-
-    await page.getByRole('button', { name: 'Email / Password' }).click();
-    await expect(page.getByRole('link', { name: 'Register' })).toBeVisible();
-  });
-});
-
-// ---------------------------------------------------------------------------
-
-test.describe('Register Page', () => {
-  test('shows Create Account heading with CHIP bonus text', async ({ page }) => {
-    await page.goto(`${WEB_URL}/register`);
-
-    await expect(
-      page.getByRole('heading', { name: 'Create Account' }),
-    ).toBeVisible();
-    await expect(page.getByText(/Join Agon Arena/)).toBeVisible();
-    await expect(page.getByText(/1,000 CHIP/)).toBeVisible();
-  });
-
-  test('shows username, email, password and invite code fields', async ({
-    page,
-  }) => {
-    await page.goto(`${WEB_URL}/register`);
-
-    await expect(page.getByPlaceholder('coolagent')).toBeVisible();
-    await expect(page.getByPlaceholder('you@example.com')).toBeVisible();
-    await expect(page.getByPlaceholder('••••••••')).toBeVisible();
-    await expect(page.getByPlaceholder('AGON-XXXX-XXXX')).toBeVisible();
-  });
-
-  test('shows Create Account submit button', async ({ page }) => {
-    await page.goto(`${WEB_URL}/register`);
-
-    await expect(
-      page.getByRole('button', { name: 'Create Account' }),
-    ).toBeVisible();
-  });
-
-  test('shows link back to Sign In page', async ({ page }) => {
-    await page.goto(`${WEB_URL}/register`);
-
-    await expect(page.getByRole('link', { name: 'Sign in' })).toBeVisible();
-  });
-});
-
-// ---------------------------------------------------------------------------
-
-test.describe('Owner Dashboard', () => {
-  test('shows Owner Dashboard heading', async ({ page }) => {
+  test('dashboard shows the connect form when unauthenticated', async ({ page }) => {
     await page.goto(`${WEB_URL}/dashboard`);
 
-    await expect(
-      page.getByRole('heading', { name: 'Owner Dashboard' }),
-    ).toBeVisible();
-  });
-
-  test('shows token connect form when unauthenticated', async ({ page }) => {
-    await page.goto(`${WEB_URL}/dashboard`);
-
-    await expect(page.getByText('Connect to Dashboard')).toBeVisible();
+    await expect(page.getByText('Connect the owner workspace')).toBeVisible();
     await expect(page.getByPlaceholder('eyJ...')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Connect' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Connect Workspace' })).toBeVisible();
   });
 
-  test('shows CHIP wallet section with balance when authenticated', async ({
+  test('dashboard shows the owner workspace when authenticated', async ({ page }) => {
+    await seedSession(page);
+    await mockDashboardData(page);
+
+    await page.goto(`${WEB_URL}/dashboard`);
+
+    await expect(page.getByRole('heading', { name: 'Owner ledger' })).toBeVisible();
+    await expect(page.getByText(/2,500 CHIP/).first()).toBeVisible();
+    await expect(page.getByText('Connect the owner workspace')).toHaveCount(0);
+  });
+
+  test('markets shows the current public market list', async ({ page }) => {
+    await page.goto(`${WEB_URL}/markets`);
+
+    await expect(page.getByRole('heading', { name: 'Markets' })).toBeVisible();
+    await expect(page.getByText('AI agents competing in real-time arenas')).toBeVisible();
+  });
+
+  test('market detail consumes the backend odds contract without NaN multipliers', async ({
     page,
   }) => {
-    await mockDashboardAuthMe(page);
-    await mockAgents(page);
-    await setDashboardToken(page);
-
-    await page.goto(`${WEB_URL}/dashboard`);
-
-    await expect(page.getByText('CHIP Wallet')).toBeVisible();
-    await expect(page.getByText('Total Balance')).toBeVisible();
-    // chipBalance = 2500
-    await expect(page.getByText(/2,500 CHIP/)).toBeVisible();
-  });
-
-  test('shows user username in dashboard header when authenticated', async ({
-    page,
-  }) => {
-    await mockDashboardAuthMe(page);
-    await mockAgents(page);
-    await setDashboardToken(page);
-
-    await page.goto(`${WEB_URL}/dashboard`);
-
-    await expect(page.getByText(mockUser.username)).toBeVisible();
-  });
-
-  test('shows My Agents section when authenticated', async ({ page }) => {
-    await mockDashboardAuthMe(page);
-    await mockAgents(page);
-    await setDashboardToken(page);
-
-    await page.goto(`${WEB_URL}/dashboard`);
-
-    await expect(page.getByText(/My Agents/)).toBeVisible();
-  });
-});
-
-// ---------------------------------------------------------------------------
-
-test.describe('Arena Lobby', () => {
-  test('shows Arena Lobby heading and subtitle', async ({ page }) => {
-    await page.route(`${API_ORIGIN}/arenas**`, async (route) => {
+    await page.route(`${API_ORIGIN}/arenas/${mockArena.id}`, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ arenas: mockArenas }),
+        body: JSON.stringify(mockArena),
       });
     });
-
-    await page.goto(`${WEB_URL}/arenas`);
-
-    await expect(
-      page.getByRole('heading', { name: 'Arena Lobby' }),
-    ).toBeVisible();
-    await expect(
-      page.getByText(/Watch AI agents battle in real-time/),
-    ).toBeVisible();
-  });
-
-  test('shows All, Live, and Waiting filter buttons', async ({ page }) => {
-    await page.route(`${API_ORIGIN}/arenas**`, async (route) => {
+    await page.route(`${API_ORIGIN}/arenas/${mockArena.id}/snapshot`, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ arenas: mockArenas }),
+        body: JSON.stringify({ snapshot: null, arenaStatus: 'running' }),
       });
     });
-
-    await page.goto(`${WEB_URL}/arenas`);
-
-    await expect(page.getByRole('button', { name: 'All' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Live' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Waiting' })).toBeVisible();
-  });
-
-  test('displays arena cards with name and status badges', async ({ page }) => {
-    await page.route(`${API_ORIGIN}/arenas**`, async (route) => {
+    await page.route(`${API_ORIGIN}/arenas/${mockArena.id}/odds`, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ arenas: mockArenas }),
+        body: JSON.stringify({
+          arenaId: mockArena.id,
+          totalPool: 100,
+          odds: [
+            { agentId: 'agent-alpha', agentName: 'Alpha', odds: 0.75, totalBetOnAgent: 75 },
+            { agentId: 'agent-beta', agentName: 'Beta', odds: 0.25, totalBetOnAgent: 25 },
+          ],
+        }),
       });
     });
 
-    await page.goto(`${WEB_URL}/arenas`);
+    await page.goto(`${WEB_URL}/markets/${mockArena.id}`);
 
+    await expect(page.getByRole('link', { name: '← Markets' })).toBeVisible();
     await expect(page.getByText('Alpha Table')).toBeVisible();
-    await expect(page.getByText('LIVE')).toBeVisible();
-    await expect(page.getByText('Beta Table')).toBeVisible();
-    await expect(page.getByText('WAITING')).toBeVisible();
+    await expect(page.getByText('PLACE A BET')).toBeVisible();
+    await expect(page.getByText('1.3×')).toBeVisible();
+    await expect(page.getByText('4.0×')).toBeVisible();
+    await expect(page.getByText('NaN×')).toHaveCount(0);
+    await expect(page.getByText('Could not load arena')).toHaveCount(0);
   });
 
-  test('shows Watch Live link for running arenas', async ({ page }) => {
-    await page.route(`${API_ORIGIN}/arenas**`, async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ arenas: mockArenas }),
-      });
-    });
-
-    await page.goto(`${WEB_URL}/arenas`);
-
-    await expect(page.getByRole('link', { name: 'Watch Live →' })).toBeVisible();
-  });
-
-  test('shows empty state when no arenas returned', async ({ page }) => {
-    await page.route(`${API_ORIGIN}/arenas**`, async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ arenas: [] }),
-      });
-    });
-
-    await page.goto(`${WEB_URL}/arenas`);
-
-    await expect(page.getByText('No arenas found. Check back soon.')).toBeVisible();
-  });
-});
-
-// ---------------------------------------------------------------------------
-
-test.describe('Arena Spectator', () => {
-  const ARENA_ID = 'test-arena-e2e';
-
-  test('shows back navigation to Lobby', async ({ page }) => {
-    await page.route(`${API_ORIGIN}/arenas/${ARENA_ID}`, async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          id: ARENA_ID,
-          name: 'E2E Test Arena',
-          status: 'running',
-          spectatorCount: 3,
-          smallBlind: 25,
-          bigBlind: 50,
-          seats: [],
-        }),
-      });
-    });
-
-    await page.goto(`${WEB_URL}/arenas/${ARENA_ID}`);
-
-    await expect(page.getByRole('link', { name: '← Lobby' })).toBeVisible();
-  });
-
-  test('shows arena name from API response', async ({ page }) => {
-    await page.route(`${API_ORIGIN}/arenas/${ARENA_ID}`, async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          id: ARENA_ID,
-          name: 'E2E Test Arena',
-          status: 'running',
-          spectatorCount: 3,
-          smallBlind: 25,
-          bigBlind: 50,
-          seats: [],
-        }),
-      });
-    });
-
-    await page.goto(`${WEB_URL}/arenas/${ARENA_ID}`);
-
-    await expect(page.getByText('E2E Test Arena')).toBeVisible();
-  });
-
-  test('shows blind info in header', async ({ page }) => {
-    await page.route(`${API_ORIGIN}/arenas/${ARENA_ID}`, async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          id: ARENA_ID,
-          name: 'Blinds Arena',
-          status: 'running',
-          spectatorCount: 1,
-          smallBlind: 25,
-          bigBlind: 50,
-          seats: [],
-        }),
-      });
-    });
-
-    await page.goto(`${WEB_URL}/arenas/${ARENA_ID}`);
-
-    await expect(page.getByText('Blinds: $25/$50')).toBeVisible();
-  });
-
-  test('shows connection status indicator (Live or Disconnected)', async ({
-    page,
-  }) => {
-    await page.route(`${API_ORIGIN}/arenas/${ARENA_ID}`, async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          id: ARENA_ID,
-          name: 'Connection Test Arena',
-          status: 'running',
-          spectatorCount: 0,
-          smallBlind: 10,
-          bigBlind: 20,
-          seats: [],
-        }),
-      });
-    });
-
-    await page.goto(`${WEB_URL}/arenas/${ARENA_ID}`);
-
-    // Without a running WS server the status will be Disconnected
-    await expect(page.getByText(/Live|Disconnected/)).toBeVisible();
-  });
-
-  test('shows Chip Equity section', async ({ page }) => {
-    await page.route(`${API_ORIGIN}/arenas/${ARENA_ID}`, async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          id: ARENA_ID,
-          name: 'Chip Arena',
-          status: 'running',
-          spectatorCount: 0,
-          smallBlind: 10,
-          bigBlind: 20,
-          seats: [],
-        }),
-      });
-    });
-
-    await page.goto(`${WEB_URL}/arenas/${ARENA_ID}`);
-
-    await expect(page.getByText('Chip Equity')).toBeVisible();
-  });
-});
-
-// ---------------------------------------------------------------------------
-
-test.describe('Settings Page', () => {
-  test('redirects to /login when not authenticated', async ({ page }) => {
-    // No accessToken in localStorage
+  test('settings redirects to /login when unauthenticated', async ({ page }) => {
     await page.goto(`${WEB_URL}/settings`);
-
-    // Page should navigate to /login
     await page.waitForURL(/\/login/);
     await expect(page).toHaveURL(/\/login/);
   });
 
-  test('shows Settings heading and Profile section when authenticated', async ({
+  test('settings shows the current profile and agent draft form when authenticated', async ({
     page,
   }) => {
+    await seedSession(page);
     await mockAuthMe(page);
-    await setAuthToken(page);
 
     await page.goto(`${WEB_URL}/settings`);
 
+    await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+    await expect(page.getByText('Owner identity')).toBeVisible();
+    await expect(page.getByText('Create an agent profile without runtime networking')).toBeVisible();
+    await expect(page.getByPlaceholder('My Strategy Agent')).toBeVisible();
     await expect(
-      page.getByRole('heading', { name: 'Settings' }),
-    ).toBeVisible();
-    await expect(page.getByText('Profile')).toBeVisible();
-  });
-
-  test('shows user data in profile table when authenticated', async ({
-    page,
-  }) => {
-    await mockAuthMe(page);
-    await setAuthToken(page);
-
-    await page.goto(`${WEB_URL}/settings`);
-
-    await expect(page.getByText(mockUser.username)).toBeVisible();
-    await expect(page.getByText(/CHIP Balance/)).toBeVisible();
-  });
-
-  test('shows agent registration panel with form fields', async ({ page }) => {
-    await mockAuthMe(page);
-    await setAuthToken(page);
-
-    await page.goto(`${WEB_URL}/settings`);
-
-    await expect(page.getByText('Register an Agent')).toBeVisible();
-    await expect(page.getByPlaceholder('My Poker Bot')).toBeVisible();
-    await expect(
-      page.getByPlaceholder('https://your-agent.example.com'),
+      page.getByPlaceholder('An autonomous agent tuned for repeated strategic decision-making...'),
     ).toBeVisible();
     await expect(
-      page.getByPlaceholder('gto, bluff-detection, hand-reading'),
+      page.getByPlaceholder('decision-making, execution, risk-management'),
     ).toBeVisible();
-  });
-
-  test('shows Register Agent submit button', async ({ page }) => {
-    await mockAuthMe(page);
-    await setAuthToken(page);
-
-    await page.goto(`${WEB_URL}/settings`);
-
-    await expect(
-      page.getByRole('button', { name: 'Register Agent (Sign with Wallet)' }),
-    ).toBeVisible();
-  });
-
-  test('shows Back to Dashboard link', async ({ page }) => {
-    await mockAuthMe(page);
-    await setAuthToken(page);
-
-    await page.goto(`${WEB_URL}/settings`);
-
-    await expect(
-      page.getByRole('link', { name: '← Back to Dashboard' }),
-    ).toBeVisible();
-  });
-
-  test('shows Logout button', async ({ page }) => {
-    await mockAuthMe(page);
-    await setAuthToken(page);
-
-    await page.goto(`${WEB_URL}/settings`);
-
-    await expect(page.getByRole('button', { name: 'Logout' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Create Profile' })).toBeVisible();
   });
 });

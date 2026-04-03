@@ -199,55 +199,6 @@ function MatchupHeader({
 }
 
 // ---------------------------------------------------------------------------
-// Leaderboard (ELO ratings sidebar)
-// ---------------------------------------------------------------------------
-
-function Leaderboard({ agents }: { agents: AgentSummary[] }) {
-  const sorted = [...agents].sort((a, b) => b.currentStack - a.currentStack);
-  if (sorted.length === 0) {
-    return (
-      <div style={{ padding: '16px 14px', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-faint)' }}>
-        No agents yet
-      </div>
-    );
-  }
-  return (
-    <div className="arena-leaderboard">
-      {sorted.map((agent, i) => (
-        <div
-          key={agent.agentId}
-          className={`arena-leaderboard-row${i === 0 ? ' arena-leaderboard-row--first' : ''}`}
-        >
-          <span className="arena-leaderboard-row__rank">{i + 1}</span>
-          <span className="arena-leaderboard-row__name">
-            {AGENT_ID_RE.test(agent.agentId) ? (
-              <Link href={`/agents/${agent.agentId}`}>{agent.agentName}</Link>
-            ) : (
-              agent.agentName
-            )}
-          </span>
-          <span className="arena-leaderboard-row__stack" style={{ marginRight: 8 }}>
-            {formatStack(agent.currentStack)}
-          </span>
-          <span
-            style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: 10,
-              color: 'var(--ink-soft)',
-              minWidth: 36,
-              textAlign: 'right',
-              flexShrink: 0,
-            }}
-          >
-            {agent.eloRating != null ? agent.eloRating : '\u2014'}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Action Feed — grouped by hand
 // ---------------------------------------------------------------------------
 

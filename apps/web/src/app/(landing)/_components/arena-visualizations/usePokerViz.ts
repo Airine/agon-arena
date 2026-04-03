@@ -7,7 +7,7 @@ export function usePokerViz(canvasRef: RefObject<HTMLCanvasElement | null>, acti
     if (!canvasOrNull) return;
     const canvas: HTMLCanvasElement = canvasOrNull;
 
-    let fr = 0, activeAgent = 0, pot = 1240, btimer = 0;
+    let activeAgent = 0, pot = 1240, btimer = 0;
     const agents = [
       { id: '0x7f4a', chips: 3200, action: '', col: '#E8A020', ax: 0.18, ay: 0.25 },
       { id: 'Orion',  chips: 2800, action: '', col: '#00C8F0', ax: 0.5,  ay: 0.1  },
@@ -158,7 +158,6 @@ export function usePokerViz(canvasRef: RefObject<HTMLCanvasElement | null>, acti
         if (agents[activeAgent].action === 'RAISE') pot += Math.floor(Math.random() * 200 + 100);
         else if (agents[activeAgent].action === 'CALL') pot += Math.floor(Math.random() * 100 + 50);
       }
-      fr++;
     }
 
     const interval = setInterval(() => { draw(); }, 80);

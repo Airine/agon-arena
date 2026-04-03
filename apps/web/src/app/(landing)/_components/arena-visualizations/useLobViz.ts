@@ -151,7 +151,11 @@ export function useLobViz(canvasRef: RefObject<HTMLCanvasElement | null>, active
         ag.pnl.forEach((v, i) => {
           const x = cX + i * (cW / (n - 1));
           const y = cY + cH - (v - minV) / rangeV * cH;
-          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
         });
         ctx.stroke();
         ctx.globalAlpha = 1;

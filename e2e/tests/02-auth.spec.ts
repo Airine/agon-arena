@@ -3,16 +3,17 @@ import { uniqueUser, registerUser, generateEthAccount, buildSiweMessage } from '
 
 test.describe('Authentication', () => {
   const user = uniqueUser();
-  let token: string;
+  let accessToken: string;
 
   test('POST /auth/register creates user and returns JWT', async ({ request }) => {
     const res = await request.post('/auth/register', { data: user });
     expect(res.status()).toBe(201);
 
     const body = await res.json();
-    expect(body.token).toBeTruthy();
+    expect(body.accessToken).toBeTruthy();
+    expect(body.refreshToken).toBeTruthy();
     expect(body.user.username).toBe(user.username);
-    token = body.token;
+    accessToken = body.accessToken;
   });
 
   test('POST /auth/register rejects duplicate email', async ({ request }) => {
@@ -34,7 +35,8 @@ test.describe('Authentication', () => {
     expect(res.status()).toBe(200);
 
     const body = await res.json();
-    expect(body.token).toBeTruthy();
+    expect(body.accessToken).toBeTruthy();
+    expect(body.refreshToken).toBeTruthy();
     expect(body.user.username).toBe(user.username);
   });
 
@@ -47,7 +49,7 @@ test.describe('Authentication', () => {
 
   test('GET /auth/me with valid token', async ({ request }) => {
     const res = await request.get('/auth/me', {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${accessToken}` },
     });
     expect(res.status()).toBe(200);
 
@@ -81,12 +83,9 @@ test.describe('JWT Token Lifecycle', () => {
   let refreshToken: string;
 
   test.beforeAll(async ({ request }) => {
-    const { token: t } = await registerUser(request);
-    // registerUser calls /auth/register which returns token+refreshToken
-    const res = await request.post('/auth/register', { data: uniqueUser() });
-    const body = await res.json();
-    accessToken = body.token;
-    refreshToken = body.refreshToken;
+    const { accessToken: t, refreshToken: r } = await registerUser(request);
+    accessToken = t;
+    refreshToken = r;
   });
 
   test('POST /auth/token/refresh exchanges refreshToken for new pair', async ({ request }) => {
@@ -96,12 +95,12 @@ test.describe('JWT Token Lifecycle', () => {
     expect(res.status()).toBe(200);
 
     const body = await res.json();
-    expect(body.token).toBeTruthy();
+    expect(body.accessToken).toBeTruthy();
     expect(body.refreshToken).toBeTruthy();
     // New tokens are different from old (rotation)
     expect(body.refreshToken).not.toBe(refreshToken);
     // Update for subsequent tests
-    accessToken = body.token;
+    accessToken = body.accessToken;
     refreshToken = body.refreshToken;
   });
 
@@ -122,7 +121,7 @@ test.describe('JWT Token Lifecycle', () => {
     expect(res.status()).toBe(401);
 
     // Update state
-    accessToken = newBody.token;
+    accessToken = newBody.accessToken;
     refreshToken = newBody.refreshToken;
   });
 
@@ -186,7 +185,7 @@ test.describe('SIWE Authentication', () => {
     expect(res.status()).toBe(200);
 
     const body = await res.json();
-    expect(body.token).toBeTruthy();
+    expect(body.accessToken).toBeTruthy();
     expect(body.refreshToken).toBeTruthy();
     expect(body.user.walletAddress).toBe(account.address.toLowerCase());
   });

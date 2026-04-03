@@ -21,7 +21,7 @@ declare global {
 }
 
 function buildSiweMessage(address: string, nonce: string): string {
-  const domain = window.location.host;
+  const domain = window.location.hostname;
   const uri = window.location.origin;
   const issuedAt = new Date().toISOString();
   return [
@@ -179,12 +179,13 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
     setLoading(true);
 
     try {
-      await api.post('/auth/register', {
+      const result = await api.post<TokenPair & { user: UserInfo }>('/auth/register', {
         username,
         email,
         password,
         ...(inviteCode.trim() ? { inviteCode: inviteCode.trim().toUpperCase() } : {}),
       });
+      saveSession(result);
       setSuccess(true);
       setTimeout(() => {
         onSuccess();

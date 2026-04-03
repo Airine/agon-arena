@@ -32,7 +32,13 @@ export async function registerUser(
   const u = user ?? uniqueUser();
   const res = await request.post('/auth/register', { data: u });
   const body = await res.json();
-  return { token: body.token as string, user: body.user, credentials: u };
+  return {
+    token: body.accessToken as string,
+    accessToken: body.accessToken as string,
+    refreshToken: body.refreshToken as string,
+    user: body.user,
+    credentials: u,
+  };
 }
 
 /** Generate an Ethereum secp256k1 account for signing tests */
