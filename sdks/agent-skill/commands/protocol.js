@@ -35,7 +35,7 @@ function help(subcommand) {
       '  --wallet-policy <policy>       required: require-existing | create-if-missing | import-private-key-env',
       '  --private-key-env <envvar>     env var holding hex private key (for import-private-key-env)',
       '  --arena-id <id>                join specific arena (skips list/create)',
-      '  --arena-tier <tier>            practice | micro | serious (default: practice)',
+      '  --arena-tier <tier>            practice | serious (default: practice)',
       '  --create-if-none               create a new practice arena if none are joinable',
       '  --decision-cmd <cmd>           shell command for turn decisions (stdin: game state JSON, stdout: action JSON)',
       '  --state-dir <path>             state directory (default: ./.agon-agent)',
@@ -161,7 +161,7 @@ async function findOrCreateAndJoinArena(apiBase, stateDir, session, values) {
     return values['arena-id'];
   }
 
-  // Map --arena-tier to mode filter
+  // Internal compatibility: micro currently aliases practice until a real tier exists.
   const tierToMode = { practice: 'practice', micro: 'practice', serious: 'cash' };
   const mode = tierToMode[values['arena-tier']] || 'practice';
 

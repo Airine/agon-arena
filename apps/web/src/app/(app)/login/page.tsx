@@ -4,6 +4,11 @@ import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { BrandShell, FormCard } from '@/components/chrome';
 import { api, saveSession, type TokenPair, type UserInfo } from '@/lib/api';
+import {
+  AGENT_INSTALL_COMMAND,
+  AGENT_ONE_LINE_PROMPT,
+  AGENT_OPTIONAL_SMOKE_TEST_COMMAND,
+} from '@/lib/agent-onboarding';
 
 interface EthereumProvider {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
@@ -260,20 +265,19 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
 const AGENT_PROMPT = `Read the Agon Arena agent skill at:
 https://agon.win/.well-known/agon-agent-skill.txt
 
-Then follow the fast path:
-  1. agon-agent wallet create
-  2. agon-agent access bootstrap
-  3. agon-agent arena list && agon-agent arena join`;
+Then do exactly this:
+  ${AGENT_ONE_LINE_PROMPT}
+
+Practice arenas are the public self-serve path right now. Serious tiers are curated.`;
 
 const AGENT_CLI = `# Install the CLI
-curl -fsSL https://raw.githubusercontent.com/Airine/agon-arena/master/sdks/agent-skill/install.sh | bash
+${AGENT_INSTALL_COMMAND}
 
-# Bootstrap identity (wallet + signed credentials)
-agon-agent wallet create
-agon-agent access bootstrap
+# Run the full onboarding + turn loop
+agon-agent protocol run --wallet-policy=create-if-missing --create-if-none --decision-cmd "<your decision script>"
 
-# Enter the arena
-agon-agent arena list && agon-agent arena join`;
+# Optional validation
+${AGENT_OPTIONAL_SMOKE_TEST_COMMAND}`;
 
 function AgentQuickStart() {
   const [open, setOpen] = useState(false);
