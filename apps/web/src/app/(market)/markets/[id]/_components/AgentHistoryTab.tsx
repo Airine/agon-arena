@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { buildApiUrl } from '@/lib/api';
+import { fetchAgentTraces, type TraceRow } from './traceAggregation';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -15,15 +16,6 @@ interface TurnRow {
   state: unknown;
   action: unknown; // null if timed out
   latencyMs: number | null;
-  createdAt: string;
-}
-
-interface TraceRow {
-  id: string;
-  agentId: string;
-  turnId: string | null;
-  errorType: 'timeout' | 'invalid_action' | 'connection_lost' | 'schema_error';
-  details: unknown;
   createdAt: string;
 }
 
@@ -77,12 +69,53 @@ function formatAction(action: unknown): string {
   return type;
 }
 
-const ERROR_TYPE_STYLES: Record<string, { label: string; color: string; bg: string }> = {
-  timeout: { label: 'TIMEOUT', color: '#F97316', bg: 'rgba(249,115,22,0.12)' },
-  invalid_action: { label: 'INVALID', color: '#EF4444', bg: 'rgba(239,68,68,0.12)' },
-  schema_error: { label: 'SCHEMA', color: '#9B7FFF', bg: 'rgba(155,127,255,0.12)' },
-  connection_lost: { label: 'CONN LOST', color: '#6B7280', bg: 'rgba(107,114,128,0.12)' },
+// Design-token-aligned error type styles
+const ERROR_TYPE_STYLES: Record<string, { label: string; color: string }> = {
+  timeout:         { label: 'TIMEOUT',   color: 'var(--gold)' },
+  invalid_action:  { label: 'INVALID',   color: 'var(--red)' },
+  schema_error:    { label: 'SCHEMA',    color: 'var(--purple)' },
+  connection_lost: { label: 'CONN LOST', color: 'var(--ink-faint)' },
 };
+
+// ---------------------------------------------------------------------------
+// Stack delta helpers
+// ---------------------------------------------------------------------------
+
+function getAgentStack(state: unknown, agentId: string): number | null {
+  if (!state || typeof state !== 'object') return null;
+  const s = state as { players?: Array<{ agentId?: string; stack?: number }> };
+  const player = s.players?.find((p) => p.agentId === agentId);
+  return typeof player?.stack === 'number' ? player.stack : null;
+}
+
+/** Returns a map from turn.id → chip delta vs the previous turn for that agent. */
+function buildStackDeltas(turns: TurnRow[]): Map<string, number | null> {
+  const byAgent = new Map<string, TurnRow[]>();
+  for (const t of turns) {
+    const list = byAgent.get(t.agentId) ?? [];
+    list.push(t);
+    byAgent.set(t.agentId, list);
+  }
+  const deltas = new Map<string, number | null>();
+  for (const agentTurns of byAgent.values()) {
+    const sorted = [...agentTurns].sort((a, b) => a.turnNumber - b.turnNumber);
+    for (let i = 0; i < sorted.length; i++) {
+      const cur = sorted[i]!;
+      if (i === 0) {
+        deltas.set(cur.id, null);
+      } else {
+        const prev = sorted[i - 1]!;
+        const curStack = getAgentStack(cur.state, cur.agentId);
+        const prevStack = getAgentStack(prev.state, prev.agentId);
+        deltas.set(
+          cur.id,
+          curStack !== null && prevStack !== null ? curStack - prevStack : null,
+        );
+      }
+    }
+  }
+  return deltas;
+}
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -102,7 +135,7 @@ function LatencyCell({ ms }: { ms: number | null }) {
       style={{
         fontFamily: 'var(--font-mono)',
         fontSize: 11,
-        color: isHigh ? '#EF4444' : 'var(--ink-soft)',
+        color: isHigh ? 'var(--red)' : 'var(--ink-soft)',
         fontWeight: isHigh ? 600 : 400,
       }}
     >
@@ -112,7 +145,7 @@ function LatencyCell({ ms }: { ms: number | null }) {
 }
 
 function ErrorBadge({ errorType }: { errorType: string }) {
-  const style = ERROR_TYPE_STYLES[errorType] ?? { label: errorType.toUpperCase(), color: '#6B7280', bg: 'rgba(107,114,128,0.12)' };
+  const style = ERROR_TYPE_STYLES[errorType] ?? { label: errorType.toUpperCase(), color: 'var(--ink-faint)' };
   return (
     <span
       style={{
@@ -120,7 +153,7 @@ function ErrorBadge({ errorType }: { errorType: string }) {
         fontSize: 10,
         letterSpacing: '0.08em',
         color: style.color,
-        background: style.bg,
+        background: `color-mix(in srgb, ${style.color} 12%, transparent)`,
         border: `0.5px solid ${style.color}`,
         borderRadius: 4,
         padding: '2px 6px',
@@ -154,6 +187,7 @@ function AgentErrorBlock({
       {/* Header */}
       <button
         onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -193,7 +227,7 @@ function AgentErrorBlock({
           style={{
             fontFamily: 'var(--font-mono)',
             fontSize: 11,
-            color: '#EF4444',
+            color: 'var(--red)',
             letterSpacing: '0.05em',
           }}
         >
@@ -258,6 +292,49 @@ function AgentErrorBlock({
 }
 
 // ---------------------------------------------------------------------------
+// Inline error + retry widget
+// ---------------------------------------------------------------------------
+
+function FetchError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div
+      style={{
+        padding: '16px 14px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+      }}
+    >
+      <span
+        style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: 11,
+          color: 'var(--red)',
+        }}
+      >
+        Failed to load data.
+      </span>
+      <button
+        onClick={onRetry}
+        style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: 10,
+          letterSpacing: '0.08em',
+          color: 'var(--gold)',
+          background: 'none',
+          border: '0.5px solid var(--gold)',
+          borderRadius: 4,
+          padding: '3px 8px',
+          cursor: 'pointer',
+        }}
+      >
+        RETRY
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
@@ -266,44 +343,43 @@ export function AgentHistoryTab({ arenaId, agents }: AgentHistoryTabProps) {
   const [traces, setTraces] = useState<TraceRow[]>([]);
   const [turnsLoading, setTurnsLoading] = useState(true);
   const [tracesLoading, setTracesLoading] = useState(true);
+  const [turnsError, setTurnsError] = useState(false);
+  const [tracesError, setTracesError] = useState(false);
 
   // Build name lookup from arena seats
   const nameMap = new Map(agents.map((a) => [a.agentId, a.agentName]));
 
   const fetchTurns = useCallback(() => {
+    setTurnsError(false);
     fetch(buildApiUrl(`/arenas/${arenaId}/turns?limit=200`))
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`${r.status}`))))
       .then((data: { turns: TurnRow[]; total: number }) => {
         setTurns(
           [...(data.turns ?? [])].sort((a, b) => b.turnNumber - a.turnNumber),
         );
       })
       .catch(() => {
-        // silently keep stale data
+        setTurnsError(true);
       })
       .finally(() => setTurnsLoading(false));
   }, [arenaId]);
 
   const fetchTraces = useCallback(() => {
-    // Fetch traces for every agent in the arena in parallel
+    setTracesError(false);
     const agentIds = agents.map((a) => a.agentId);
     if (agentIds.length === 0) {
+      setTraces([]);
       setTracesLoading(false);
       return;
     }
-    Promise.all(
-      agentIds.map((agentId) =>
-        fetch(buildApiUrl(`/arenas/${arenaId}/agents/${agentId}/traces?limit=50`))
-          .then((r) => (r.ok ? r.json() : { traces: [] }))
-          .then((data: { traces: TraceRow[] }) => data.traces ?? [])
-          .catch(() => [] as TraceRow[]),
-      ),
-    )
-      .then((results) => {
-        const all = results.flat().sort(
-          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-        );
-        setTraces(all);
+    fetchAgentTraces({ arenaId, agentIds })
+      .then(({ traces: nextTraces, hasFailures }) => {
+        setTraces(nextTraces);
+        setTracesError(hasFailures && nextTraces.length === 0);
+      })
+      .catch(() => {
+        setTraces([]);
+        setTracesError(true);
       })
       .finally(() => setTracesLoading(false));
   }, [arenaId, agents]);
@@ -328,6 +404,9 @@ export function AgentHistoryTab({ arenaId, agents }: AgentHistoryTabProps) {
     list.push(trace);
     tracesByAgent.set(trace.agentId, list);
   }
+
+  // Precompute stack deltas for the P&L column
+  const stackDeltas = buildStackDeltas(turns);
 
   const hasErrors = traces.length > 0;
 
@@ -373,7 +452,7 @@ export function AgentHistoryTab({ arenaId, agents }: AgentHistoryTabProps) {
           >
             Turn History
           </span>
-          {!turnsLoading && (
+          {!turnsLoading && !turnsError && (
             <span
               style={{
                 fontFamily: 'var(--font-mono)',
@@ -398,6 +477,8 @@ export function AgentHistoryTab({ arenaId, agents }: AgentHistoryTabProps) {
           >
             Loading…
           </div>
+        ) : turnsError ? (
+          <FetchError onRetry={fetchTurns} />
         ) : turns.length === 0 ? (
           <div
             style={{
@@ -426,7 +507,7 @@ export function AgentHistoryTab({ arenaId, agents }: AgentHistoryTabProps) {
                     borderBottom: '0.5px solid var(--border)',
                   }}
                 >
-                  {(['Turn #', 'Agent', 'Action', 'Latency', 'Time'] as const).map((col) => (
+                  {(['Turn #', 'Agent', 'Action', 'Stack Δ', 'Latency', 'Time'] as const).map((col) => (
                     <th
                       key={col}
                       style={{
@@ -450,6 +531,7 @@ export function AgentHistoryTab({ arenaId, agents }: AgentHistoryTabProps) {
                 {turns.map((turn, i) => {
                   const agentName = nameMap.get(turn.agentId) ?? turn.agentId.slice(0, 8);
                   const isTimedOut = turn.action == null;
+                  const delta = stackDeltas.get(turn.id) ?? null;
                   return (
                     <tr
                       key={turn.id}
@@ -491,11 +573,31 @@ export function AgentHistoryTab({ arenaId, agents }: AgentHistoryTabProps) {
                           padding: '7px 12px',
                           fontFamily: 'var(--font-mono)',
                           fontSize: 11,
-                          color: isTimedOut ? '#F97316' : 'var(--ink-soft)',
+                          color: isTimedOut ? 'var(--gold)' : 'var(--ink-soft)',
                           whiteSpace: 'nowrap',
                         }}
                       >
                         {formatAction(turn.action)}
+                      </td>
+
+                      {/* Stack Δ */}
+                      <td style={{ padding: '7px 12px', whiteSpace: 'nowrap' }}>
+                        {delta == null ? (
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-faint)' }}>
+                            —
+                          </span>
+                        ) : (
+                          <span
+                            style={{
+                              fontFamily: 'var(--font-mono)',
+                              fontSize: 11,
+                              color: delta > 0 ? 'var(--gold)' : delta < 0 ? 'var(--red)' : 'var(--ink-faint)',
+                              fontWeight: delta !== 0 ? 600 : 400,
+                            }}
+                          >
+                            {delta > 0 ? '+' : ''}{delta.toLocaleString()}
+                          </span>
+                        )}
                       </td>
 
                       {/* Latency */}
@@ -557,12 +659,12 @@ export function AgentHistoryTab({ arenaId, agents }: AgentHistoryTabProps) {
           >
             Error Traces
           </span>
-          {hasErrors && !tracesLoading && (
+          {hasErrors && !tracesLoading && !tracesError && (
             <span
               style={{
                 fontFamily: 'var(--font-mono)',
                 fontSize: 10,
-                color: '#EF4444',
+                color: 'var(--red)',
                 letterSpacing: '0.06em',
               }}
             >
@@ -582,6 +684,8 @@ export function AgentHistoryTab({ arenaId, agents }: AgentHistoryTabProps) {
           >
             Loading…
           </div>
+        ) : tracesError ? (
+          <FetchError onRetry={fetchTraces} />
         ) : !hasErrors ? (
           <div
             style={{
