@@ -68,14 +68,14 @@ app.use(cors({ origin: allowedOrigins }));
 app.use(express.json({ limit: '1mb' }));
 app.use((_req, res, next) => { res.setHeader('X-API-Version', '1'); next(); });
 
-// Global rate limiting (before all routes)
-app.use(ipRateLimit(60, 20, 'rl:global:unauth'));      // 20 req/min per IP (unauthenticated baseline)
-app.use(userRateLimit(60, 200, 'rl:global:auth'));      // 200 req/min per userId (authenticated)
-
-// Health check
+// Health check stays outside global rate limiting so probes/canaries never get throttled.
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// Global rate limiting (before all routes)
+app.use(ipRateLimit(60, 20, 'rl:global:unauth'));      // 20 req/min per IP (unauthenticated baseline)
+app.use(userRateLimit(60, 200, 'rl:global:auth'));      // 200 req/min per userId (authenticated)
 
 // Anti-fraud: IP rate limits on auth endpoints (applied before route handlers)
 app.use('/auth/siwe', ipRateLimit(60, 10, 'rl:siwe'));            // 10 SIWE requests per min per IP

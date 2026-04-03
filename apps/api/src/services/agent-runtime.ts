@@ -156,7 +156,7 @@ export async function publishTurnRequest(turn: AgentTurnRequest): Promise<void> 
     latencyMs: null,
   }).catch(err => console.error('[TurnLog] insert failed', err));
 
-  // Fire-and-forget: enforce max 200 rows per arena
+  // Fire-and-forget: deterministically retain only the newest 200 rows per arena
   db.delete(schema.arenaTurnLog)
     .where(and(
       eq(schema.arenaTurnLog.arenaId, turn.arenaId),
