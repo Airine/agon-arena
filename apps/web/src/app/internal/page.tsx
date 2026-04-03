@@ -60,6 +60,7 @@ export default async function InternalCommandCenterPage() {
   const blockerItems = summary.data.blockerQueue?.items ?? [];
   const runtimeIssues = summary.data.runtimeRedZone?.issues ?? [];
   const releaseGate = summary.data.releaseGate;
+  const recentSuccessfulAgents = summary.data.recentSuccessfulAgents?.items ?? [];
 
   return (
     <div className="page-stack">
@@ -187,6 +188,38 @@ export default async function InternalCommandCenterPage() {
       </div>
 
       <div className="supporting-grid">
+        <SurfaceCard tone="console" className="surface-card--padded">
+          <SectionTitle eyebrow="Recent Wins" title="Latest successful agents" />
+          {recentSuccessfulAgents.length === 0 ? (
+            <EmptyState
+              title="No successful agents yet"
+              description="Once agents reach first action or completed arena, the latest successes will appear here."
+            />
+          ) : (
+            <div className="console-list">
+              {recentSuccessfulAgents.map((item) => (
+                <div key={item.id} className="console-row-card">
+                  <div className="console-row-card__body">
+                    <div className="console-row-card__title">
+                      <h3>{item.displayName}</h3>
+                      <StatusBadge label={formatStageLabel(item.stage)} tone="success" />
+                    </div>
+                    <p className="console-row-card__copy">
+                      {item.arenaName
+                        ? `Arena: ${item.arenaName}`
+                        : 'No arena label recorded'}
+                    </p>
+                    <div className="console-row-card__meta">
+                      <span>{new Date(item.occurredAt).toLocaleString()}</span>
+                      {item.arenaId ? <span>{item.arenaId}</span> : null}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </SurfaceCard>
+
         <SurfaceCard tone="console" className="surface-card--padded">
           <SectionTitle eyebrow="Queue" title="Alpha blocker queue" />
           {blockerItems.length === 0 ? (

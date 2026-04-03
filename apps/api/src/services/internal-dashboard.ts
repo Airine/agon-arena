@@ -18,6 +18,7 @@ const DEFAULT_RELEASE_GATES = [
 
 type InternalAlphaStatus = typeof schema.internalAlphaContacts.$inferSelect.status;
 type InternalReleaseGateStatus = typeof schema.internalReleaseGates.$inferSelect.status;
+type InternalReleaseGateWireStatus = 'pass' | 'watch' | 'blocked';
 
 export interface ListInternalAlphaContactsInput {
   ownerSubject?: string;
@@ -38,12 +39,21 @@ export interface UpdateInternalAlphaContactInput {
 }
 
 export interface UpdateInternalReleaseGateInput {
-  status?: InternalReleaseGateStatus;
+  status?: InternalReleaseGateWireStatus;
   note?: string | null;
   evidenceUrl?: string | null;
 }
 
 class NotFoundError extends Error {}
+
+function isMissingRelationError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === '42P01'
+  );
+}
 
 function asIso(value: Date | null | undefined): string | null {
   return value ? value.toISOString() : null;
@@ -66,6 +76,45 @@ function computeVerdict(gates: Array<{ status: InternalReleaseGateStatus }>): In
   if (gates.some((gate) => gate.status === 'at_risk')) return 'at_risk';
   if (gates.length > 0 && gates.every((gate) => gate.status === 'ready')) return 'ready';
   return 'unknown';
+}
+
+function toPublicReleaseGateVerdict(
+  verdict: InternalReleaseGateStatus,
+): 'ready' | 'watch' | 'blocked' {
+  if (verdict === 'ready') return 'ready';
+  if (verdict === 'blocked') return 'blocked';
+  return 'watch';
+}
+
+function toWireReleaseGateStatus(
+  status: InternalReleaseGateStatus,
+): InternalReleaseGateWireStatus {
+  if (status === 'ready') return 'pass';
+  if (status === 'blocked') return 'blocked';
+  return 'watch';
+}
+
+function fromWireReleaseGateStatus(
+  status: InternalReleaseGateWireStatus,
+): InternalReleaseGateStatus {
+  if (status === 'pass') return 'ready';
+  if (status === 'blocked') return 'blocked';
+  return 'at_risk';
+}
+
+function runtimeIssueSeverity(
+  errorType: string,
+): 'info' | 'warning' | 'danger' {
+  switch (errorType) {
+    case 'invalid_action':
+    case 'schema_error':
+      return 'danger';
+    case 'timeout':
+    case 'connection_lost':
+      return 'warning';
+    default:
+      return 'info';
+  }
 }
 
 async function countFunnelStage(stage: string, since: Date, until?: Date): Promise<number> {
@@ -200,7 +249,7 @@ async function getSummaryFunnel() {
   let largestDropOffStage: string | null = null;
   let largestDrop = -1;
   const stages = counts.map((item, index) => {
-    const conversionFromPrevious = index === 0 || previous === 0
+    const conversionRate = index === 0 || previous === 0
       ? null
       : Number((item.count / previous).toFixed(4));
     const drop = index === 0 ? 0 : previous - item.count;
@@ -211,7 +260,7 @@ async function getSummaryFunnel() {
     previous = item.count;
     return {
       ...item,
-      conversionFromPrevious,
+      conversionRate,
     };
   });
 
@@ -220,6 +269,65 @@ async function getSummaryFunnel() {
     stages,
     largestDropOffStage,
   };
+}
+
+async function getRecentSuccessfulAgents() {
+  const recentEvents = await db
+    .select({
+      id: schema.internalFunnelEvents.id,
+      stage: schema.internalFunnelEvents.stage,
+      agentId: schema.internalFunnelEvents.agentId,
+      userId: schema.internalFunnelEvents.userId,
+      arenaId: schema.internalFunnelEvents.arenaId,
+      occurredAt: schema.internalFunnelEvents.occurredAt,
+    })
+    .from(schema.internalFunnelEvents)
+    .where(or(
+      eq(schema.internalFunnelEvents.stage, 'first_action_submitted'),
+      eq(schema.internalFunnelEvents.stage, 'completed_arena'),
+    ))
+    .orderBy(desc(schema.internalFunnelEvents.occurredAt))
+    .limit(20);
+
+  const deduped = recentEvents.filter((event, index, all) =>
+    all.findIndex((candidate) => candidate.agentId === event.agentId) === index,
+  ).slice(0, 5);
+
+  return Promise.all(
+    deduped.map(async (event) => {
+      const [contact] = await db
+        .select({ displayName: schema.internalAlphaContacts.displayName })
+        .from(schema.internalAlphaContacts)
+        .where(or(
+          eq(schema.internalAlphaContacts.agentId, event.agentId),
+          eq(schema.internalAlphaContacts.userId, event.userId),
+        ))
+        .limit(1);
+
+      const [agent] = await db
+        .select({ name: schema.agents.name })
+        .from(schema.agents)
+        .where(eq(schema.agents.id, event.agentId))
+        .limit(1);
+
+      const [arena] = event.arenaId
+        ? await db
+            .select({ name: schema.arenas.name })
+            .from(schema.arenas)
+            .where(eq(schema.arenas.id, event.arenaId))
+            .limit(1)
+        : [];
+
+      return {
+        id: event.id,
+        displayName: contact?.displayName ?? agent?.name ?? event.agentId,
+        stage: event.stage,
+        occurredAt: event.occurredAt.toISOString(),
+        arenaId: event.arenaId,
+        arenaName: arena?.name ?? null,
+      };
+    }),
+  );
 }
 
 async function getBlockerQueue() {
@@ -248,9 +356,36 @@ async function getBlockerQueue() {
   );
 
   const items = [
-    ...stuckOver24h.map((contact) => ({ contactId: contact.id, reason: 'stuck_over_24h', displayName: contact.displayName })),
-    ...overdueFollowUps.map((contact) => ({ contactId: contact.id, reason: 'follow_up_overdue', displayName: contact.displayName })),
-    ...missingOwnerNote.map((contact) => ({ contactId: contact.id, reason: 'recent_progress_missing_note', displayName: contact.displayName })),
+    ...stuckOver24h.map((contact) => ({
+      id: contact.id,
+      title: contact.displayName,
+      owner: contact.ownerEmail,
+      reason: 'stuck_over_24h',
+      ageHours: contact.lastActivityAt
+        ? Math.floor((now - contact.lastActivityAt.getTime()) / (60 * 60 * 1000))
+        : null,
+      nextFollowUpAt: asIso(contact.nextFollowUpAt),
+    })),
+    ...overdueFollowUps.map((contact) => ({
+      id: contact.id,
+      title: contact.displayName,
+      owner: contact.ownerEmail,
+      reason: 'follow_up_overdue',
+      ageHours: contact.lastActivityAt
+        ? Math.floor((now - contact.lastActivityAt.getTime()) / (60 * 60 * 1000))
+        : null,
+      nextFollowUpAt: asIso(contact.nextFollowUpAt),
+    })),
+    ...missingOwnerNote.map((contact) => ({
+      id: contact.id,
+      title: contact.displayName,
+      owner: contact.ownerEmail,
+      reason: 'recent_progress_missing_note',
+      ageHours: contact.lastActivityAt
+        ? Math.floor((now - contact.lastActivityAt.getTime()) / (60 * 60 * 1000))
+        : null,
+      nextFollowUpAt: asIso(contact.nextFollowUpAt),
+    })),
   ].slice(0, 10);
 
   return {
@@ -263,14 +398,30 @@ async function getBlockerQueue() {
 
 async function getReleaseGateSummary() {
   const gates = await ensureReleaseGates();
+  const unmetConditions = gates
+    .filter((gate) => gate.status !== 'ready')
+    .map((gate) => gate.gateKey);
+  const evidenceLinks = gates
+    .map((gate) => gate.evidenceUrl)
+    .filter((value): value is string => typeof value === 'string' && value.length > 0);
+  const lastUpdatedAt = [...gates]
+    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0]?.updatedAt ?? null;
 
   return {
-    verdict: computeVerdict(gates),
+    verdict: toPublicReleaseGateVerdict(computeVerdict(gates)),
     unmetCount: gates.filter((gate) => gate.status !== 'ready').length,
+    unmetConditions,
+    evidenceLinks,
+    updatedAt: asIso(lastUpdatedAt),
     gates: gates.map((gate) => ({
       id: gate.id,
       gateKey: gate.gateKey,
-      status: gate.status,
+      status:
+        gate.status === 'ready'
+          ? 'pass'
+          : gate.status === 'blocked'
+            ? 'blocked'
+            : 'watch',
       note: gate.note,
       evidenceUrl: gate.evidenceUrl,
       updatedBySubject: gate.updatedBySubject,
@@ -280,20 +431,116 @@ async function getReleaseGateSummary() {
   };
 }
 
+async function getRuntimeRedZone() {
+  const rows = await db
+    .select({
+      id: schema.agentErrorLog.id,
+      agentId: schema.agentErrorLog.agentId,
+      errorType: schema.agentErrorLog.errorType,
+      details: schema.agentErrorLog.details,
+      createdAt: schema.agentErrorLog.createdAt,
+      agentName: schema.agents.name,
+    })
+    .from(schema.agentErrorLog)
+    .leftJoin(schema.agents, eq(schema.agentErrorLog.agentId, schema.agents.id))
+    .orderBy(desc(schema.agentErrorLog.createdAt))
+    .limit(5);
+
+  return rows.map((row) => {
+    const detail =
+      typeof row.details === 'object' && row.details !== null && 'message' in row.details
+        ? String((row.details as Record<string, unknown>).message)
+        : row.errorType;
+
+    return {
+      id: row.id,
+      label: `${row.agentName ?? row.agentId} · ${row.errorType}`,
+      severity: runtimeIssueSeverity(row.errorType),
+      detail,
+      metric: row.createdAt.toISOString(),
+    };
+  });
+}
+
 export async function getInternalSummary() {
-  const [activationOverview, funnel, blockerQueue, releaseGate] = await Promise.all([
-    getActivationOverview(),
-    getSummaryFunnel(),
-    getBlockerQueue(),
-    getReleaseGateSummary(),
+  const partials: string[] = [];
+
+  async function withFallback<T>(
+    label: string,
+    run: () => Promise<T>,
+    fallback: T,
+  ): Promise<T> {
+    try {
+      return await run();
+    } catch (error) {
+      if (isMissingRelationError(error)) {
+        partials.push(`${label}:missing_relation`);
+        return fallback;
+      }
+
+      throw error;
+    }
+  }
+
+  const [
+    activationOverview,
+    funnelSummary,
+    blockerQueue,
+    releaseGate,
+    runtimeIssues,
+    recentSuccessfulAgents,
+  ] = await Promise.all([
+    withFallback('activation_overview', getActivationOverview, {
+      newAgentsToday: 0,
+      newAgents7d: 0,
+      newAgentsPrior7d: 0,
+      firstActionSubmittedToday: 0,
+      firstActionSubmitted7d: 0,
+      firstActionSubmittedPrior7d: 0,
+      completedArenasToday: 0,
+      completedArenas7d: 0,
+      completedArenasPrior7d: 0,
+      largestBlockerLabel: null,
+    }),
+    withFallback('funnel_summary', getSummaryFunnel, {
+      windowDays: 7,
+      stages: [],
+      largestDropOffStage: null,
+    }),
+    withFallback('blocker_queue', getBlockerQueue, {
+      stuckOver24h: 0,
+      followUpOverdue: 0,
+      missingOwnerNote: 0,
+      items: [],
+    }),
+    withFallback('release_gates', getReleaseGateSummary, {
+      verdict: 'watch' as const,
+      unmetCount: 0,
+      unmetConditions: [],
+      evidenceLinks: [],
+      updatedAt: null,
+      gates: [],
+    }),
+    withFallback('runtime_red_zone', getRuntimeRedZone, []),
+    withFallback('recent_successful_agents', getRecentSuccessfulAgents, []),
   ]);
 
   return {
     asOf: new Date().toISOString(),
     activationOverview,
-    funnel,
-    blockerQueue,
+    funnelSummary,
+    recentSuccessfulAgents: {
+      items: recentSuccessfulAgents,
+    },
+    blockerQueue: {
+      items: blockerQueue.items,
+    },
+    runtimeRedZone: {
+      issues: runtimeIssues,
+    },
     releaseGate,
+    partials,
+    funnel: funnelSummary,
     dataSources: {
       funnel: { status: 'ok', mode: 'materialized_db' },
       alphaContacts: { status: 'ok', mode: 'postgres' },
@@ -512,7 +759,7 @@ export async function listInternalReleaseGates() {
   return gates.map((gate) => ({
     id: gate.id,
     gateKey: gate.gateKey,
-    status: gate.status,
+    status: toWireReleaseGateStatus(gate.status),
     note: gate.note,
     evidenceUrl: gate.evidenceUrl,
     updatedBySubject: gate.updatedBySubject,
@@ -529,7 +776,7 @@ export async function updateInternalReleaseGate(
   const [updated] = await db
     .update(schema.internalReleaseGates)
     .set({
-      ...(input.status !== undefined ? { status: input.status } : {}),
+      ...(input.status !== undefined ? { status: fromWireReleaseGateStatus(input.status) } : {}),
       ...(input.note !== undefined ? { note: input.note } : {}),
       ...(input.evidenceUrl !== undefined ? { evidenceUrl: input.evidenceUrl } : {}),
       updatedBySubject: actor.subject,
@@ -546,7 +793,7 @@ export async function updateInternalReleaseGate(
   return {
     id: updated.id,
     gateKey: updated.gateKey,
-    status: updated.status,
+    status: toWireReleaseGateStatus(updated.status),
     note: updated.note,
     evidenceUrl: updated.evidenceUrl,
     updatedBySubject: updated.updatedBySubject,

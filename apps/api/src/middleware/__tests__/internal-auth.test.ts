@@ -75,4 +75,25 @@ describe('requireInternalAuth', () => {
       displayName: 'Staff Example',
     });
   });
+
+  it('accepts the web/session header aliases used by the Next.js middleware bridge', () => {
+    process.env['INTERNAL_AUTH_SHARED_SECRET'] = 'phase-1-secret';
+    const req = makeReq({
+      'x-internal-subject': 'staff-123',
+      'x-internal-email': 'staff@example.com',
+      'x-internal-display-name': 'Staff Example',
+      'x-internal-auth-secret': 'phase-1-secret',
+    });
+    const res = makeRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    requireInternalAuth(req, res, next);
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(req.internalUser).toEqual({
+      subject: 'staff-123',
+      email: 'staff@example.com',
+      displayName: 'Staff Example',
+    });
+  });
 });

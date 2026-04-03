@@ -26,7 +26,7 @@ const alphaContactStatusEnum = z.enum([
   'lost',
 ]);
 
-const releaseGateStatusEnum = z.enum(['unknown', 'blocked', 'at_risk', 'ready']);
+const releaseGateStatusEnum = z.enum(['pass', 'watch', 'blocked']);
 
 const alphaListQuerySchema = z.object({
   ownerSubject: z.string().min(1).optional(),

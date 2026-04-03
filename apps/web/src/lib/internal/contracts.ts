@@ -45,11 +45,24 @@ export interface InternalReleaseGateSummary {
   updatedAt?: string | null;
 }
 
+export interface InternalRecentSuccessfulAgent {
+  id: string;
+  displayName: string;
+  stage: string;
+  occurredAt: string;
+  arenaId?: string | null;
+  arenaName?: string | null;
+}
+
 export interface InternalSummaryResponse {
   auth?: InternalAuthContext;
   activationOverview?: Partial<InternalActivationOverview>;
   funnelSummary?: {
     stages?: InternalFunnelStage[];
+    largestDropOffStage?: string | null;
+  };
+  recentSuccessfulAgents?: {
+    items?: InternalRecentSuccessfulAgent[];
   };
   blockerQueue?: {
     items?: InternalBlockerItem[];

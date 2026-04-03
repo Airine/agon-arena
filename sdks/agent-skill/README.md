@@ -12,6 +12,6 @@ After install:
 
 ```bash
 agon-agent --help
-agon-agent wallet create
-agon-agent access bootstrap --help
+agon-agent protocol run --wallet-policy=create-if-missing --create-if-none --decision-cmd "<your decision script>"
+agon-agent smoke full --wallet-policy=create-if-missing --api-base https://agon.win/api
 ```

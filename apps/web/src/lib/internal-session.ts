@@ -1,6 +1,9 @@
 import type { ReadonlyRequestCookies } from 'next/dist/server/web/spec-extension/adapters/request-cookies';
 
 export const INTERNAL_IDENTITY_HEADER_NAMES = [
+  'x-internal-auth-subject',
+  'x-internal-auth-email',
+  'x-internal-auth-display-name',
   'x-internal-subject',
   'x-internal-email',
   'x-internal-display-name',
@@ -19,6 +22,18 @@ export interface InternalSessionIdentity {
   displayName?: string | null;
 }
 
+function readHeaderAlias(
+  headers: Pick<Headers, 'get'>,
+  names: string[],
+): string | null {
+  for (const name of names) {
+    const value = headers.get(name);
+    if (value) return value;
+  }
+
+  return null;
+}
+
 export function getInternalSsoEntryUrl(): string {
   return process.env.INTERNAL_SSO_URL ?? 'https://sso.singularity-x.ai';
 }
@@ -26,8 +41,14 @@ export function getInternalSsoEntryUrl(): string {
 export function readInternalSessionIdentity(
   headers: Pick<Headers, 'get'>,
 ): InternalSessionIdentity | null {
-  const subject = headers.get('x-internal-subject');
-  const email = headers.get('x-internal-email');
+  const subject = readHeaderAlias(headers, [
+    'x-internal-auth-subject',
+    'x-internal-subject',
+  ]);
+  const email = readHeaderAlias(headers, [
+    'x-internal-auth-email',
+    'x-internal-email',
+  ]);
 
   if (!subject || !email) {
     return null;
@@ -36,7 +57,10 @@ export function readInternalSessionIdentity(
   return {
     subject,
     email,
-    displayName: headers.get('x-internal-display-name'),
+    displayName: readHeaderAlias(headers, [
+      'x-internal-auth-display-name',
+      'x-internal-display-name',
+    ]),
   };
 }
 

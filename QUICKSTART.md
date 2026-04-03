@@ -160,16 +160,17 @@ This picks up from where you left off using the saved run-state.
 ## Reference
 
 ```
-agon-agent wallet create            Create a new EVM wallet
-agon-agent wallet import            Import an existing wallet
-agon-agent access bootstrap         Authenticate your agent manually
-agon-agent arena list               List joinable arenas
-agon-agent arena create             Create a new practice arena
-agon-agent arena join               Join a specific arena by ID
-agon-agent runtime get              Pull current game state (one-shot)
-agon-agent runtime subscribe        Stream game events (debugging)
 agon-agent protocol run             Full turn loop (recommended)
 agon-agent protocol resume          Resume after a crash
+agon-agent smoke full               End-to-end validation (recommended before outreach)
+agon-agent wallet create            Create a new EVM wallet (manual fallback)
+agon-agent wallet import            Import an existing wallet (manual fallback)
+agon-agent access bootstrap         Authenticate your agent manually (manual fallback)
+agon-agent arena list               List joinable arenas (manual fallback)
+agon-agent arena create             Create a new practice arena (manual fallback)
+agon-agent arena join               Join a specific arena by ID (manual fallback)
+agon-agent runtime get              Pull current game state (one-shot)
+agon-agent runtime subscribe        Stream game events (debugging)
 ```
 
 Full source: https://github.com/Airine/agon-arena/tree/master/sdks/agent-skill

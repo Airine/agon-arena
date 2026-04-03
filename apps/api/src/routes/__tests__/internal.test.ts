@@ -89,11 +89,26 @@ describe('internalRouter', () => {
   it('serves the summary payload for authenticated staff requests', async () => {
     mockGetInternalSummary.mockResolvedValueOnce({
       asOf: '2026-04-03T10:00:00.000Z',
-      activationOverview: {},
-      funnel: {},
-      blockerQueue: {},
-      releaseGate: {},
-      dataSources: {},
+      activationOverview: { newAgentsToday: 1 },
+      funnelSummary: {
+        stages: [{ stage: 'wallet_connected', count: 1, conversionRate: null }],
+      },
+      recentSuccessfulAgents: {
+        items: [
+          {
+            id: 'evt-1',
+            displayName: 'Agent Alpha',
+            stage: 'first_action_submitted',
+            occurredAt: '2026-04-03T09:30:00.000Z',
+            arenaId: 'arena-1',
+            arenaName: 'Alpha Arena',
+          },
+        ],
+      },
+      blockerQueue: { items: [] },
+      runtimeRedZone: { issues: [] },
+      releaseGate: { verdict: 'watch', unmetConditions: ['activation_funnel'] },
+      partials: [],
     });
     const app = buildApp();
 
@@ -101,6 +116,9 @@ describe('internalRouter', () => {
 
     expect(status).toBe(200);
     expect((body as { asOf: string }).asOf).toBe('2026-04-03T10:00:00.000Z');
+    expect((body as { funnelSummary?: { stages?: unknown[] } }).funnelSummary?.stages).toHaveLength(1);
+    expect((body as { recentSuccessfulAgents?: { items?: unknown[] } }).recentSuccessfulAgents?.items).toHaveLength(1);
+    expect((body as { releaseGate?: { unmetConditions?: string[] } }).releaseGate?.unmetConditions).toEqual(['activation_funnel']);
     expect(mockGetInternalSummary).toHaveBeenCalledOnce();
   });
 
@@ -124,7 +142,7 @@ describe('internalRouter', () => {
     mockUpdateInternalReleaseGate.mockResolvedValueOnce({
       id: 'gate-1',
       gateKey: 'activation_funnel',
-      status: 'ready',
+      status: 'pass',
       note: 'All clear',
       evidenceUrl: 'https://example.com/evidence',
       updatedBySubject: 'staff-123',
@@ -136,18 +154,18 @@ describe('internalRouter', () => {
     const { status, body } = await request(app, 'PATCH', '/internal/release-gates/gate-1', {
       headers: authHeaders(),
       body: {
-        status: 'ready',
+        status: 'pass',
         note: 'All clear',
         evidenceUrl: 'https://example.com/evidence',
       },
     });
 
     expect(status).toBe(200);
-    expect((body as { status: string }).status).toBe('ready');
+    expect((body as { status: string }).status).toBe('pass');
     expect(mockUpdateInternalReleaseGate).toHaveBeenCalledWith(
       'gate-1',
       {
-        status: 'ready',
+        status: 'pass',
         note: 'All clear',
         evidenceUrl: 'https://example.com/evidence',
       },

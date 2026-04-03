@@ -23,10 +23,31 @@ function readHeader(value: string | string[] | undefined): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
+function readHeaderAlias(
+  headers: Request['headers'],
+  names: string[],
+): string | undefined {
+  for (const name of names) {
+    const value = readHeader(headers[name.toLowerCase()]);
+    if (value) return value;
+  }
+
+  return undefined;
+}
+
 export function requireInternalAuth(req: Request, res: Response, next: NextFunction): void {
-  const subject = readHeader(req.headers['x-internal-auth-subject']);
-  const email = readHeader(req.headers['x-internal-auth-email']);
-  const displayName = readHeader(req.headers['x-internal-auth-display-name']);
+  const subject = readHeaderAlias(req.headers, [
+    'x-internal-auth-subject',
+    'x-internal-subject',
+  ]);
+  const email = readHeaderAlias(req.headers, [
+    'x-internal-auth-email',
+    'x-internal-email',
+  ]);
+  const displayName = readHeaderAlias(req.headers, [
+    'x-internal-auth-display-name',
+    'x-internal-display-name',
+  ]);
 
   if (!subject || !email) {
     res.status(401).json({ error: 'Missing or invalid internal auth headers' });

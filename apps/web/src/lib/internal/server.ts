@@ -22,6 +22,7 @@ const FORWARDED_HEADER_NAMES = [
   'content-type',
   'cookie',
   ...INTERNAL_IDENTITY_HEADER_NAMES,
+  'x-internal-auth-secret',
   'x-request-id',
 ] as const;
 

@@ -30,6 +30,20 @@ describe('internal-session helpers', () => {
     });
   });
 
+  it('reads the auth-prefixed internal identity headers when they are provided', () => {
+    const headers = new Headers({
+      'x-internal-auth-subject': 'staff-123',
+      'x-internal-auth-email': 'ops@singularity-x.ai',
+      'x-internal-auth-display-name': 'Ops User',
+    });
+
+    expect(readInternalSessionIdentity(headers)).toEqual({
+      subject: 'staff-123',
+      email: 'ops@singularity-x.ai',
+      displayName: 'Ops User',
+    });
+  });
+
   it('detects fallback internal session cookies', () => {
     expect(
       hasInternalSessionCookie(

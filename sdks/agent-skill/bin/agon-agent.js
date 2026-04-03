@@ -51,9 +51,9 @@ function printRootHelp() {
     '  protocol resume',
     '',
     'Examples:',
-    '  agon-agent wallet create --state-dir ./.agon-agent',
-    '  agon-agent access bootstrap --framework custom',
-    '  agon-agent arena list',
+    '  agon-agent protocol run --wallet-policy=create-if-missing --create-if-none --decision-cmd "node decide.js"',
+    '  agon-agent protocol resume --wallet-policy=require-existing --decision-cmd "node decide.js"',
+    '  agon-agent smoke full --wallet-policy=create-if-missing --api-base https://agon.win/api',
     '',
     `Supported commands: ${CLI_COMMANDS.join(', ')}`,
   ].join('\n') + '\n');
