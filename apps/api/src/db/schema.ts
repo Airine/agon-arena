@@ -377,3 +377,109 @@ export const agentErrorLog = pgTable('agent_error_log', {
   index('agent_error_log_arena_agent_idx').on(t.arenaId, t.agentId),
   index('agent_error_log_created_idx').on(t.createdAt),
 ]);
+
+export const internalAlphaContactStatusEnum = pgEnum('internal_alpha_contact_status', [
+  'new',
+  'contacted',
+  'installing',
+  'smoke_passed',
+  'competing',
+  'first_action_submitted',
+  'completed_arena',
+  'blocked',
+  'paused',
+  'lost',
+]);
+
+export const internalReleaseGateStatusEnum = pgEnum('internal_release_gate_status', [
+  'unknown',
+  'blocked',
+  'at_risk',
+  'ready',
+]);
+
+export const internalFunnelBucketGranularityEnum = pgEnum('internal_funnel_bucket_granularity', [
+  'day',
+]);
+
+export const internalFunnelEvents = pgTable('internal_funnel_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  eventType: varchar('event_type', { length: 50 }).notNull(),
+  stage: varchar('stage', { length: 50 }).notNull(),
+  agentId: uuid('agent_id').notNull().references(() => agents.id),
+  userId: uuid('user_id').notNull().references(() => users.id),
+  arenaId: uuid('arena_id').references(() => arenas.id),
+  sourceTopic: varchar('source_topic', { length: 100 }).notNull().default('agon.agent.funnel'),
+  source: varchar('source', { length: 100 }).notNull().default('unknown'),
+  framework: varchar('framework', { length: 100 }).notNull().default('unknown'),
+  arenaType: varchar('arena_type', { length: 50 }).notNull().default('unknown'),
+  occurredAt: timestamp('occurred_at').notNull(),
+  ingestedAt: timestamp('ingested_at').notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('internal_funnel_events_stage_agent_idx').on(t.stage, t.agentId),
+  index('internal_funnel_events_agent_idx').on(t.agentId),
+  index('internal_funnel_events_user_idx').on(t.userId),
+  index('internal_funnel_events_occurred_idx').on(t.occurredAt),
+]);
+
+export const internalFunnelStageRollups = pgTable('internal_funnel_stage_rollups', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  bucketStart: timestamp('bucket_start').notNull(),
+  bucketGranularity: internalFunnelBucketGranularityEnum('bucket_granularity').notNull().default('day'),
+  stage: varchar('stage', { length: 50 }).notNull(),
+  source: varchar('source', { length: 100 }).notNull().default('unknown'),
+  framework: varchar('framework', { length: 100 }).notNull().default('unknown'),
+  arenaType: varchar('arena_type', { length: 50 }).notNull().default('unknown'),
+  uniqueAgents: integer('unique_agents').notNull().default(0),
+  eventCount: integer('event_count').notNull().default(0),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('internal_funnel_rollups_bucket_dim_idx').on(
+    t.bucketStart,
+    t.bucketGranularity,
+    t.stage,
+    t.source,
+    t.framework,
+    t.arenaType,
+  ),
+  index('internal_funnel_rollups_stage_idx').on(t.stage),
+  index('internal_funnel_rollups_bucket_idx').on(t.bucketStart),
+]);
+
+export const internalAlphaContacts = pgTable('internal_alpha_contacts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id),
+  agentId: uuid('agent_id').references(() => agents.id),
+  displayName: varchar('display_name', { length: 255 }).notNull(),
+  source: varchar('source', { length: 100 }).notNull().default('manual'),
+  ownerSubject: varchar('owner_subject', { length: 255 }),
+  ownerEmail: varchar('owner_email', { length: 255 }),
+  status: internalAlphaContactStatusEnum('status').notNull().default('new'),
+  currentBlocker: text('current_blocker'),
+  nextFollowUpAt: timestamp('next_follow_up_at'),
+  lastActivityAt: timestamp('last_activity_at'),
+  notes: text('notes'),
+  tags: jsonb('tags').$type<string[]>(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+}, (t) => [
+  index('internal_alpha_contacts_status_idx').on(t.status),
+  index('internal_alpha_contacts_owner_idx').on(t.ownerSubject),
+  index('internal_alpha_contacts_follow_up_idx').on(t.nextFollowUpAt),
+  index('internal_alpha_contacts_user_idx').on(t.userId),
+  index('internal_alpha_contacts_agent_idx').on(t.agentId),
+]);
+
+export const internalReleaseGates = pgTable('internal_release_gates', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  gateKey: varchar('gate_key', { length: 100 }).notNull(),
+  status: internalReleaseGateStatusEnum('status').notNull().default('unknown'),
+  note: text('note'),
+  evidenceUrl: varchar('evidence_url', { length: 500 }),
+  updatedBySubject: varchar('updated_by_subject', { length: 255 }),
+  updatedByEmail: varchar('updated_by_email', { length: 255 }),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('internal_release_gates_key_idx').on(t.gateKey),
+  index('internal_release_gates_status_idx').on(t.status),
+]);
