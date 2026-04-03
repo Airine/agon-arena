@@ -15,6 +15,7 @@
  *   headers: { event_type, schema_version: '1' }
  */
 import { Kafka, type Producer, type ProducerRecord } from 'kafkajs';
+import { materializeInternalFunnelEvent } from './internal-funnel.js';
 
 const TOPIC_ACTIONS = 'agon.game.actions';
 const TOPIC_HANDS   = 'agon.game.hands';
@@ -165,6 +166,9 @@ export function publishEvent(event: KafkaEvent): void {
  * Publish an agent funnel stage event. Fire-and-forget.
  */
 export function publishFunnelEvent(event: AgentFunnelEvent): void {
+  materializeInternalFunnelEvent(event).catch((err: Error) => {
+    console.warn('[InternalFunnel] Failed to materialize event:', err.message);
+  });
   publishEvent(event);
 }
 

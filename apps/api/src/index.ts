@@ -28,6 +28,7 @@ import { startMatchmakingProcessor } from './services/matchmaking.js';
 import { initKafka, shutdownKafka } from './services/kafka.js';
 import { reconcileRunningArenasOnStartup } from './services/arena-lifecycle.js';
 import { startSmokeCleanup } from './services/smoke-cleanup.js';
+import { internalRouter } from './routes/internal.js';
 
 const app = express();
 const httpServer = createServer(app);
@@ -103,6 +104,7 @@ app.use('/payments', paymentsRouter);
 app.use('/arenas', betsRouter);
 app.use('/bets', myBetsRouter);
 app.use('/leaderboard', leaderboardRouter);
+app.use('/internal', internalRouter);
 
 // Socket.io
 setupSocketHandlers(io);
