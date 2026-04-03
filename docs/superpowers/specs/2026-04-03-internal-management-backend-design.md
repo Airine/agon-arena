@@ -98,6 +98,21 @@ Authentication is handled by `sso.singularity-x.ai`.
 
 The internal frontend should treat SSO as the only valid entry path. Users reaching `/internal` without a valid internal SSO session are redirected into the SSO flow.
 
+Version 1 assumption:
+- an upstream SSO integration or edge/proxy layer converts the Singularity session into a backend-verifiable internal identity on requests to `/internal/*`
+
+Required backend shape:
+
+```ts
+interface InternalAuthContext {
+  subject: string;      // stable SSO subject, primary identity key
+  email: string;
+  displayName?: string;
+}
+```
+
+This is intentionally separate from the existing `req.user` product auth model. Product auth identifies Agon users and agents. Internal auth identifies staff.
+
 ### Authorization
 
 Version 1 has one permission bucket:
@@ -111,6 +126,10 @@ The internal backend must still enforce access on the API side. The UI hiding a 
 
 Required rule:
 - every `/internal/*` API route validates internal SSO-backed identity server-side before returning data or accepting writes
+
+Required implementation rule:
+- internal auth middleware must not reuse product JWT assumptions from `requireAuth`
+- `/internal/*` should get its own middleware and request context
 
 ## Information Architecture
 
@@ -330,6 +349,52 @@ The internal backend should reuse these existing sources where possible:
 
 Do not duplicate these into new internal-only tables unless the read-model step requires materialization for performance.
 
+### Read model rule
+
+The internal backend must not query Kafka directly from page requests.
+
+Version 1 read path:
+- operational pages read from Agon DB tables and internal materialized read-model tables
+- a background consumer, cron job, or scheduled sync process is responsible for converting funnel events into queryable rollups
+
+This keeps `/internal` page loads deterministic and removes Kafka availability from the request path.
+
+Recommended read-model tables:
+
+#### `internal_funnel_events`
+
+Purpose:
+- optional raw normalized copy of activation events for internal analysis
+
+Fields:
+- `id`
+- `event_type`
+- `stage`
+- `agent_id`
+- `user_id`
+- `arena_id`
+- `occurred_at`
+- `source_topic`
+- `ingested_at`
+
+#### `internal_funnel_stage_rollups`
+
+Purpose:
+- query-friendly summary table for `Command Center` and `Funnel`
+
+Fields:
+- `bucket_start`
+- `bucket_granularity`
+- `stage`
+- `source`
+- `framework`
+- `arena_type`
+- `unique_agents`
+- `event_count`
+- `updated_at`
+
+The exact physical shape can change during planning, but the architectural rule does not: `/internal/funnel` reads from a materialized source, not Kafka live.
+
 ### New editable data
 
 Two internal business tables are enough for v1.
@@ -340,7 +405,8 @@ Fields:
 - `id`
 - `display_name`
 - `source`
-- `owner_user_id`
+- `owner_subject`
+- `owner_email`
 - `status`
 - `current_blocker`
 - `next_follow_up_at`
@@ -353,6 +419,11 @@ Fields:
 Purpose:
 - operational roster and workflow state
 
+Meaning of owner:
+- the internal teammate responsible for follow-up
+- not the Agon product `users.id`
+- identity comes from Singularity SSO, so owner fields use staff identity keys, not product-user UUIDs
+
 #### `internal_release_gates`
 
 Fields:
@@ -361,7 +432,8 @@ Fields:
 - `status`
 - `note`
 - `evidence_url`
-- `updated_by`
+- `updated_by_subject`
+- `updated_by_email`
 - `updated_at`
 
 Purpose:
@@ -396,6 +468,7 @@ Recommended endpoints:
 
 - `GET /internal/funnel`
   - funnel counts, conversions, trends, breakdowns
+  - reads from materialized internal read model, not Kafka directly
 
 - `GET /internal/alpha-contacts`
   - alpha roster table
@@ -434,6 +507,12 @@ Approved model:
 - `Runtime Health`
 
 These can poll on a short interval or use a lightweight streaming path later. Polling is acceptable for v1 if kept efficient.
+
+Target:
+- summary polling interval: 15-30s
+- runtime health polling interval: 10-15s
+
+No websocket requirement for v1 internal pages.
 
 ### Standard refresh surfaces
 
@@ -560,10 +639,11 @@ Manual verification checklist:
 ### Phase 1
 
 - route shell
-- SSO guard
+- internal auth middleware + SSO session bridge
 - Command Center
 - Alpha Pipeline
 - Release Gate
+- first funnel materialization path
 
 ### Phase 2
 
