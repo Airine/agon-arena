@@ -5,8 +5,7 @@ import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { useLang } from '@/lib/useLang';
 
-// No pages suppress the nav — it shows everywhere for consistency
-const NO_NAV_PATHS: string[] = [];
+const NO_NAV_PREFIXES = ['/internal'];
 
 const NAV_LINKS = [
   { href: '/markets', label: 'Markets' },
@@ -38,7 +37,7 @@ export function TopNav() {
     setScrolled(window.scrollY > 20);
   }, [pathname]);
 
-  if (NO_NAV_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}?`))) {
+  if (NO_NAV_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     return null;
   }
 
