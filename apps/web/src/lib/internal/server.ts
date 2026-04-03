@@ -4,7 +4,12 @@ import type {
   InternalReleaseGatesResponse,
   InternalSummaryResponse,
 } from './contracts';
+import {
+  INTERNAL_IDENTITY_HEADER_NAMES,
+} from '@/lib/internal-session';
 import { buildApiUrl } from '@/lib/api';
+
+export { getInternalSsoEntryUrl } from '@/lib/internal-session';
 
 type InternalFetchResult<T> =
   | { kind: 'ok'; status: number; data: T }
@@ -16,9 +21,7 @@ const FORWARDED_HEADER_NAMES = [
   'authorization',
   'content-type',
   'cookie',
-  'x-internal-display-name',
-  'x-internal-email',
-  'x-internal-subject',
+  ...INTERNAL_IDENTITY_HEADER_NAMES,
   'x-request-id',
 ] as const;
 
@@ -125,8 +128,4 @@ export async function proxyInternalResponse(
 ): Promise<Response> {
   const headers = buildForwardHeaders(request.headers);
   return requestInternal(path, { method: request.method, ...init }, headers);
-}
-
-export function getInternalSsoEntryUrl(): string {
-  return process.env.INTERNAL_SSO_URL ?? 'https://sso.singularity-x.ai';
 }
