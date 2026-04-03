@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import {
+  getInternalDevBypassIdentity,
   getInternalSsoEntryUrl,
   hasInternalSession,
 } from '@/lib/internal-session';
@@ -16,6 +17,25 @@ export function middleware(request: NextRequest) {
 
   if (!pathname.startsWith('/internal') && !pathname.startsWith('/api/internal')) {
     return NextResponse.next();
+  }
+
+  const devBypass = getInternalDevBypassIdentity();
+  if (devBypass) {
+    const headers = new Headers(request.headers);
+    headers.set('x-internal-auth-subject', devBypass.subject);
+    headers.set('x-internal-auth-email', devBypass.email);
+    if (devBypass.displayName) {
+      headers.set('x-internal-auth-display-name', devBypass.displayName);
+    }
+    if (devBypass.secret) {
+      headers.set('x-internal-auth-secret', devBypass.secret);
+    }
+
+    return NextResponse.next({
+      request: {
+        headers,
+      },
+    });
   }
 
   if (hasInternalSession(request.headers, request.cookies)) {

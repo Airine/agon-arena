@@ -50,6 +50,20 @@ export function requireInternalAuth(req: Request, res: Response, next: NextFunct
   ]);
 
   if (!subject || !email) {
+    if (process.env['INTERNAL_AUTH_DEV_BYPASS'] === '1') {
+      req.internalUser = {
+        subject: process.env['INTERNAL_DEV_SUBJECT'] ?? 'dev-internal-user',
+        email: process.env['INTERNAL_DEV_EMAIL'] ?? 'dev@example.com',
+        ...(process.env['INTERNAL_DEV_NAME']
+          ? { displayName: process.env['INTERNAL_DEV_NAME'] }
+          : {}),
+      };
+      next();
+      return;
+    }
+  }
+
+  if (!subject || !email) {
     res.status(401).json({ error: 'Missing or invalid internal auth headers' });
     return;
   }

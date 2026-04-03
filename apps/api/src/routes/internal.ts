@@ -70,7 +70,11 @@ internalRouter.get('/summary', async (_req, res) => {
 internalRouter.get('/alpha-contacts', async (req, res) => {
   try {
     const query = alphaListQuerySchema.parse(req.query);
-    res.json(await listInternalAlphaContacts(query));
+    const result = await listInternalAlphaContacts(query);
+    res.json({
+      contacts: result.items,
+      nextCursor: result.nextCursor,
+    });
   } catch (error) {
     if (error instanceof z.ZodError) {
       res.status(400).json({ error: 'Validation failed', details: error.flatten() });
@@ -123,7 +127,7 @@ internalRouter.patch('/alpha-contacts/:id', async (req, res) => {
 
 internalRouter.get('/release-gates', async (_req, res) => {
   try {
-    res.json(await listInternalReleaseGates());
+    res.json({ gates: await listInternalReleaseGates() });
   } catch (error) {
     console.error('[internal] release gate list failed', error);
     res.status(500).json({ error: 'Failed to load release gates' });

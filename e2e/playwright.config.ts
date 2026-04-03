@@ -24,7 +24,7 @@ export default defineConfig({
     {
       // Frontend browser tests — complete user journey through the Next.js UI
       name: 'frontend-e2e',
-      testMatch: '**/05-frontend-user-journey.spec.ts',
+      testMatch: ['**/05-frontend-user-journey.spec.ts', '**/09-internal-console.spec.ts'],
       use: {
         ...devices['Desktop Chrome'],
         baseURL: process.env['WEB_BASE_URL'] ?? 'http://localhost:3000',

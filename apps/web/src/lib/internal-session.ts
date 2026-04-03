@@ -22,6 +22,10 @@ export interface InternalSessionIdentity {
   displayName?: string | null;
 }
 
+export interface InternalDevBypassIdentity extends InternalSessionIdentity {
+  secret?: string | null;
+}
+
 function readHeaderAlias(
   headers: Pick<Headers, 'get'>,
   names: string[],
@@ -36,6 +40,19 @@ function readHeaderAlias(
 
 export function getInternalSsoEntryUrl(): string {
   return process.env.INTERNAL_SSO_URL ?? 'https://sso.singularity-x.ai';
+}
+
+export function getInternalDevBypassIdentity(): InternalDevBypassIdentity | null {
+  if (process.env.INTERNAL_AUTH_DEV_BYPASS !== '1') {
+    return null;
+  }
+
+  return {
+    subject: process.env.INTERNAL_DEV_SUBJECT ?? 'dev-internal-user',
+    email: process.env.INTERNAL_DEV_EMAIL ?? 'dev@example.com',
+    displayName: process.env.INTERNAL_DEV_NAME ?? 'Dev User',
+    secret: process.env.INTERNAL_AUTH_SHARED_SECRET ?? null,
+  };
 }
 
 export function readInternalSessionIdentity(

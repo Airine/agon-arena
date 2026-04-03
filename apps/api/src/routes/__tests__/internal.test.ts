@@ -176,4 +176,45 @@ describe('internalRouter', () => {
       },
     );
   });
+
+  it('wraps alpha contacts and release gates in the response shapes expected by the web client', async () => {
+    mockListInternalAlphaContacts.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'contact-1',
+          displayName: 'Agent Alpha',
+          source: 'manual',
+          status: 'blocked',
+          currentBlocker: 'Wallet auth stalled',
+          lastActivityAt: null,
+          nextFollowUpAt: null,
+          tags: [],
+        },
+      ],
+      nextCursor: null,
+    });
+    mockListInternalReleaseGates.mockResolvedValueOnce([
+      {
+        id: 'gate-1',
+        gateKey: 'activation_funnel',
+        status: 'watch',
+        note: 'Needs more external usage',
+        evidenceUrl: null,
+        updatedBySubject: 'staff-123',
+        updatedByEmail: 'staff@example.com',
+        updatedAt: '2026-04-04T00:00:00.000Z',
+      },
+    ]);
+
+    const app = buildApp();
+    const headers = authHeaders();
+
+    const contacts = await request(app, 'GET', '/internal/alpha-contacts', { headers });
+    expect(contacts.status).toBe(200);
+    expect((contacts.body as { contacts: unknown[] }).contacts).toHaveLength(1);
+
+    const gates = await request(app, 'GET', '/internal/release-gates', { headers });
+    expect(gates.status).toBe(200);
+    expect((gates.body as { gates: unknown[] }).gates).toHaveLength(1);
+  });
 });
