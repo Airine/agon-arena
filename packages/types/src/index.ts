@@ -238,6 +238,8 @@ export interface ArenaInfo {
   isSmoke?: boolean;
 }
 
+export * from './internal.js';
+
 // WebSocket event types
 export interface WsGameStateUpdate {
   arenaId: string;
