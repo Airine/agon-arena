@@ -1,6 +1,6 @@
 import { Router, type Router as RouterType } from 'express';
 import { z } from 'zod';
-import { eq, and, desc, or } from 'drizzle-orm';
+import { eq, and, desc, or, count, not, isNull, like } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
 import { chipService } from '../services/chip.js';
@@ -87,16 +87,36 @@ router.post('/', requireAuth, async (req, res) => {
 });
 
 /**
- * GET /agents - List agents. Optional ?ownerId= filter.
+ * GET /agents — List agents with optional filters and pagination.
+ *
+ * Query params:
+ *   ownerId      UUID — filter to a specific owner's agents
+ *   excludeBots  1|0 (default 0) — hide bot:// agents and null-url agents
+ *   limit        1–100 (default 50)
+ *   offset       ≥0   (default 0)
  */
 router.get('/', async (req, res) => {
   try {
     const ownerId = req.query['ownerId'] as string | undefined;
+    const excludeBots = (req.query['excludeBots'] as string) === '1';
+    const limit = Math.min(Math.max(1, parseInt(String(req.query['limit'] ?? '50'), 10) || 50), 100);
+    const offset = Math.max(0, parseInt(String(req.query['offset'] ?? '0'), 10) || 0);
 
     const conditions = [eq(schema.agents.isActive, true)];
     if (ownerId) {
       conditions.push(eq(schema.agents.ownerId, ownerId));
     }
+    if (excludeBots) {
+      conditions.push(not(like(schema.agents.apiUrl, 'bot://%'))!);
+    }
+
+    const whereClause = and(...conditions);
+
+    const [countResult] = await db
+      .select({ total: count() })
+      .from(schema.agents)
+      .where(whereClause);
+    const total = Number(countResult?.total ?? 0);
 
     const agents = await db
       .select({
@@ -115,11 +135,12 @@ router.get('/', async (req, res) => {
         createdAt: schema.agents.createdAt,
       })
       .from(schema.agents)
-      .where(and(...conditions))
+      .where(whereClause)
       .orderBy(desc(schema.agents.eloRating))
-      .limit(50);
+      .limit(limit)
+      .offset(offset);
 
-    res.json({ agents });
+    res.json({ agents, meta: { limit, offset, total, excludeBots } });
   } catch {
     res.status(500).json({ error: 'Failed to list agents' });
   }

@@ -9,6 +9,8 @@ import {
   setGameSnapshot,
   type ArenaSnapshot,
 } from './redis.js';
+import { enqueueArena, getArenaOwner } from '../lib/arena-queue.js';
+import { childLogger } from '../lib/logger.js';
 
 const ORPHANED_RUNNING_ARENA_TIMEOUT_MS = 15_000;
 
@@ -167,6 +169,7 @@ export async function getResolvedArenaSnapshot<T extends ArenaRowLike>(arena: T)
 }
 
 export async function reconcileRunningArenasOnStartup(): Promise<void> {
+  const log = childLogger({});
   const runningArenas = await db
     .select({
       id: schema.arenas.id,
@@ -174,11 +177,65 @@ export async function reconcileRunningArenasOnStartup(): Promise<void> {
       currentHandNumber: schema.arenas.currentHandNumber,
       startedAt: schema.arenas.startedAt,
       finishedAt: schema.arenas.finishedAt,
+      smallBlind: schema.arenas.smallBlind,
+      bigBlind: schema.arenas.bigBlind,
+      startingStack: schema.arenas.startingStack,
+      maxHands: schema.arenas.maxHands,
     })
     .from(schema.arenas)
     .where(eq(schema.arenas.status, 'running'));
 
   for (const arena of runningArenas) {
-    await maybeFinalizeOrphanedRunningArena(arena);
+    // Skip arenas that already have an active worker owner
+    const owner = await getArenaOwner(arena.id);
+    if (owner) {
+      log.info({ arenaId: arena.id, owner }, '[Lifecycle] Arena has active owner — skipping reconcile');
+      continue;
+    }
+
+    // Check heartbeat — if still fresh, a worker is running (owner key may have expired)
+    const heartbeat = await getArenaLoopHeartbeat(arena.id);
+    if (heartbeat && Date.now() - heartbeat < ORPHANED_RUNNING_ARENA_TIMEOUT_MS) {
+      log.info({ arenaId: arena.id }, '[Lifecycle] Arena heartbeat is fresh — skipping reconcile');
+      continue;
+    }
+
+    // Arena is orphaned — load persisted seats and re-queue for recovery
+    const seats = await db
+      .select({
+        seatIndex: schema.arenaSeats.seatIndex,
+        currentStack: schema.arenaSeats.currentStack,
+        agentId: schema.agents.id,
+        agentName: schema.agents.name,
+        apiUrl: schema.agents.apiUrl,
+      })
+      .from(schema.arenaSeats)
+      .innerJoin(schema.agents, eq(schema.arenaSeats.agentId, schema.agents.id))
+      .where(and(
+        eq(schema.arenaSeats.arenaId, arena.id),
+        eq(schema.arenaSeats.isActive, true),
+      ))
+      .orderBy(schema.arenaSeats.seatIndex);
+
+    if (seats.length < 2) {
+      // Not enough active players — finalize instead
+      await maybeFinalizeOrphanedRunningArena(arena);
+      continue;
+    }
+
+    const resumeFromHandNumber = (arena.currentHandNumber ?? 0) + 1;
+    log.info({ arenaId: arena.id, resumeFromHandNumber }, '[Lifecycle] Re-queuing orphaned arena for recovery');
+
+    await enqueueArena({
+      arenaId: arena.id,
+      arena: {
+        smallBlind: arena.smallBlind,
+        bigBlind: arena.bigBlind,
+        startingStack: arena.startingStack,
+        maxHands: arena.maxHands ?? undefined,
+      },
+      seats,
+      resumeFromHandNumber,
+    });
   }
 }

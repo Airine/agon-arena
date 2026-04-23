@@ -59,6 +59,7 @@ const submitActionSchema = z.object({
   turnId: z.string().uuid(),
   action: z.enum(['fold', 'check', 'call', 'raise', 'all_in']),
   amount: z.number().int().positive().optional(),
+  expression: z.string().max(10).optional(),
 });
 
 /**
@@ -193,12 +194,23 @@ arenasRouter.post(
 );
 
 /**
- * GET /arenas - List arenas. Optional ?status= and ?mode= filters.
+ * GET /arenas — List arenas with pagination and filtering.
+ *
+ * Query params:
+ *   status        waiting|running|finished|cancelled
+ *   mode          practice|cash|tournament
+ *   limit         1–100 (default 20)
+ *   offset        ≥0   (default 0)
+ *   excludeBotOnly  1|0 (default 1) — hide arenas where every seat is a bot:// agent
  */
 arenasRouter.get('/', async (req, res) => {
   try {
     const status = req.query['status'] as string | undefined;
     const mode = req.query['mode'] as string | undefined;
+    const limit = Math.min(Math.max(1, parseInt(String(req.query['limit'] ?? '20'), 10) || 20), 100);
+    const offset = Math.max(0, parseInt(String(req.query['offset'] ?? '0'), 10) || 0);
+    // excludeBotOnly=1 (default): require at least one non-bot seat
+    const excludeBotOnly = (req.query['excludeBotOnly'] as string) !== '0';
 
     // Subquery for player count
     const playerCountSq = db
@@ -211,7 +223,48 @@ arenasRouter.get('/', async (req, res) => {
       .groupBy(schema.arenaSeats.arenaId)
       .as('seat_counts');
 
-    let query = db
+    const conditions = [];
+    conditions.push(eq(schema.arenas.isSmoke, false));
+
+    if (status && ['waiting', 'running', 'finished', 'cancelled'].includes(status)) {
+      conditions.push(eq(schema.arenas.status, status as 'waiting' | 'running' | 'finished' | 'cancelled'));
+    }
+    if (mode && ['practice', 'cash', 'tournament'].includes(mode)) {
+      conditions.push(eq(schema.arenas.mode, mode as 'practice' | 'cash' | 'tournament'));
+    }
+
+    // Exclude arenas where every seat is a bot:// agent.
+    // Pass 0-seat waiting arenas (no seats → not bot-only yet).
+    // Pass arenas with at least one non-bot seat (NULL api_url = real user agent).
+    // Omit is_active so finished arenas where the real player lost are not hidden.
+    if (excludeBotOnly) {
+      conditions.push(
+        sql<boolean>`(
+          NOT EXISTS (
+            SELECT 1 FROM ${schema.arenaSeats} _s2
+            WHERE _s2.arena_id = ${schema.arenas.id}
+          )
+          OR EXISTS (
+            SELECT 1 FROM ${schema.arenaSeats} _s
+            INNER JOIN ${schema.agents} _a ON _a.id = _s.agent_id
+            WHERE _s.arena_id = ${schema.arenas.id}
+              AND (_a.api_url IS NULL OR _a.api_url NOT LIKE 'bot://%')
+          )
+        )`,
+      );
+    }
+
+    const whereClause = and(...conditions);
+
+    // Total count for pagination (no JOIN needed — conditions are on arenas or subqueries)
+    const [countResult] = await db
+      .select({ total: count() })
+      .from(schema.arenas)
+      .where(whereClause);
+    const total = Number(countResult?.total ?? 0);
+
+    // Main query
+    const arenas = await db
       .select({
         id: schema.arenas.id,
         name: schema.arenas.name,
@@ -233,19 +286,11 @@ arenasRouter.get('/', async (req, res) => {
       })
       .from(schema.arenas)
       .leftJoin(playerCountSq, eq(schema.arenas.id, playerCountSq.arenaId))
-      .$dynamic();
+      .where(whereClause)
+      .orderBy(desc(schema.arenas.createdAt))
+      .limit(limit)
+      .offset(offset);
 
-    const conditions = [];
-    conditions.push(eq(schema.arenas.isSmoke, false));
-    if (status && ['waiting', 'running', 'finished', 'cancelled'].includes(status)) {
-      conditions.push(eq(schema.arenas.status, status as 'waiting' | 'running' | 'finished' | 'cancelled'));
-    }
-    if (mode && ['practice', 'cash', 'tournament'].includes(mode)) {
-      conditions.push(eq(schema.arenas.mode, mode as 'practice' | 'cash' | 'tournament'));
-    }
-    query = query.where(conditions.length === 1 ? conditions[0]! : and(...conditions));
-
-    const arenas = await query.limit(50);
     const arenasWithTier = arenas.map((a) => ({
       ...a,
       tier: a.mode === 'practice'
@@ -254,7 +299,8 @@ arenasRouter.get('/', async (req, res) => {
         ? 'micro'
         : 'serious',
     }));
-    res.json({ arenas: arenasWithTier });
+
+    res.json({ arenas: arenasWithTier, meta: { limit, offset, total, excludeBotOnly } });
   } catch {
     res.status(500).json({ error: 'Failed to list arenas' });
   }

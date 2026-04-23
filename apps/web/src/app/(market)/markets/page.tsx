@@ -2,6 +2,7 @@ import { Suspense } from 'react';
 import { buildApiUrl } from '@/lib/api';
 import { MarketShell } from '@/components/chrome';
 import MarketFilters from './_components/MarketFilters';
+import Link from 'next/link';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -10,7 +11,7 @@ import MarketFilters from './_components/MarketFilters';
 interface Arena {
   id: string;
   name: string;
-  gameType: string; // 'texas_holdem' | etc
+  gameType: string;
   mode: 'practice' | 'cash' | 'tournament';
   status: 'waiting' | 'running' | 'finished' | 'cancelled';
   playerCount: number;
@@ -18,13 +19,29 @@ interface Arena {
   smallBlind: number;
   bigBlind: number;
   startingStack: number;
+  buyInAmount?: number;
   spectatorCount: number;
+  tier: 'practice' | 'micro' | 'serious';
   createdAt: string;
+}
+
+interface ArenaMeta {
+  limit: number;
+  offset: number;
+  total: number;
+  excludeBotOnly: boolean;
 }
 
 interface ArenasResponse {
   arenas: Arena[];
+  meta: ArenaMeta;
 }
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const PAGE_SIZE = 20;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -42,7 +59,7 @@ function formatGameType(gameType: string): string {
 
 function calcPrizePool(arena: Arena): string {
   if (arena.mode === 'practice') return 'FREE';
-  const buyIn = arena.startingStack;
+  const buyIn = arena.buyInAmount ?? arena.startingStack;
   const total = buyIn * arena.playerCount;
   return `${total.toLocaleString()} CHIP`;
 }
@@ -71,14 +88,26 @@ function timeDisplay(arena: Arena): string {
 // Data fetching
 // ---------------------------------------------------------------------------
 
-async function fetchArenas(): Promise<Arena[]> {
+async function fetchArenas(opts: {
+  page: number;
+  showBotOnly: boolean;
+  status?: string;
+}): Promise<ArenasResponse> {
   try {
-    const res = await fetch(buildApiUrl('/arenas'), { next: { revalidate: 10 } });
-    if (!res.ok) return [];
-    const data: ArenasResponse = await res.json();
-    return data.arenas ?? [];
+    const offset = (opts.page - 1) * PAGE_SIZE;
+    const excludeBotOnly = opts.showBotOnly ? '0' : '1';
+    const qs = new URLSearchParams({
+      limit: String(PAGE_SIZE),
+      offset: String(offset),
+      excludeBotOnly,
+    });
+    if (opts.status) qs.set('status', opts.status);
+
+    const res = await fetch(buildApiUrl(`/arenas?${qs.toString()}`), { next: { revalidate: 10 } });
+    if (!res.ok) return { arenas: [], meta: { limit: PAGE_SIZE, offset, total: 0, excludeBotOnly: !opts.showBotOnly } };
+    return res.json() as Promise<ArenasResponse>;
   } catch {
-    return [];
+    return { arenas: [], meta: { limit: PAGE_SIZE, offset: 0, total: 0, excludeBotOnly: !opts.showBotOnly } };
   }
 }
 
@@ -126,16 +155,63 @@ function ArenaCard({ arena }: { arena: Arena }) {
 }
 
 // ---------------------------------------------------------------------------
-// Empty state (inline — MarketShell/chrome components built in parallel)
+// Pagination
 // ---------------------------------------------------------------------------
 
-function EmptyState() {
+function Pagination({
+  page,
+  total,
+  pageSize,
+  currentSearch,
+}: {
+  page: number;
+  total: number;
+  pageSize: number;
+  currentSearch: Record<string, string>;
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  if (totalPages <= 1) return null;
+
+  const prevParams = new URLSearchParams({ ...currentSearch, page: String(page - 1) });
+  const nextParams = new URLSearchParams({ ...currentSearch, page: String(page + 1) });
+
+  return (
+    <div className="markets-page__pagination">
+      {page > 1 ? (
+        <Link href={`/markets?${prevParams.toString()}`} className="markets-page__page-btn">
+          ← Prev
+        </Link>
+      ) : (
+        <span className="markets-page__page-btn markets-page__page-btn--disabled">← Prev</span>
+      )}
+      <span className="markets-page__page-info">
+        Page {page} of {totalPages}
+        <span className="markets-page__page-total"> ({total.toLocaleString()} arenas)</span>
+      </span>
+      {page < totalPages ? (
+        <Link href={`/markets?${nextParams.toString()}`} className="markets-page__page-btn">
+          Next →
+        </Link>
+      ) : (
+        <span className="markets-page__page-btn markets-page__page-btn--disabled">Next →</span>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Empty state
+// ---------------------------------------------------------------------------
+
+function EmptyState({ showBotOnly }: { showBotOnly: boolean }) {
   return (
     <div className="markets-empty-state">
       <div className="markets-empty-state__mark">AA</div>
       <p className="markets-empty-state__title">No arenas found</p>
       <p className="markets-empty-state__body">
-        Check back soon — new arenas launch regularly.
+        {showBotOnly
+          ? 'No arenas match this filter.'
+          : 'No real-participant arenas yet. Try enabling "Show Bot-Only" to see test arenas.'}
       </p>
     </div>
   );
@@ -146,22 +222,24 @@ function EmptyState() {
 // ---------------------------------------------------------------------------
 
 interface PageProps {
-  searchParams: Promise<{ type?: string; sort?: string }>;
+  searchParams: Promise<{ type?: string; sort?: string; page?: string; showBotOnly?: string }>;
 }
 
 export default async function MarketsPage({ searchParams }: PageProps) {
   const params = await searchParams;
   const typeFilter = params.type ?? '';
   const sortBy = params.sort ?? 'prize';
+  const page = Math.max(1, parseInt(params.page ?? '1', 10) || 1);
+  const showBotOnly = params.showBotOnly === '1';
 
-  const allArenas = await fetchArenas();
+  const { arenas: fetchedArenas, meta } = await fetchArenas({ page, showBotOnly });
 
-  // Filter by game type
+  // Client-filterable (within the fetched page) — game type
   let arenas = typeFilter
-    ? allArenas.filter((a) => a.gameType === typeFilter)
-    : allArenas;
+    ? fetchedArenas.filter((a) => a.gameType === typeFilter)
+    : fetchedArenas;
 
-  // Sort
+  // Sort within page
   if (sortBy === 'prize') {
     arenas = [...arenas].sort(
       (a, b) => b.startingStack * b.playerCount - a.startingStack * a.playerCount,
@@ -169,7 +247,6 @@ export default async function MarketsPage({ searchParams }: PageProps) {
   } else if (sortBy === 'bets') {
     arenas = [...arenas].sort((a, b) => b.spectatorCount - a.spectatorCount);
   } else if (sortBy === 'ending') {
-    // running first, then waiting, then finished/cancelled
     const order: Record<Arena['status'], number> = {
       running: 0,
       waiting: 1,
@@ -178,6 +255,21 @@ export default async function MarketsPage({ searchParams }: PageProps) {
     };
     arenas = [...arenas].sort((a, b) => order[a.status] - order[b.status]);
   }
+
+  const currentSearch: Record<string, string> = {
+    ...(typeFilter ? { type: typeFilter } : {}),
+    sort: sortBy,
+    page: String(page),
+    ...(showBotOnly ? { showBotOnly: '1' } : {}),
+  };
+
+  // Bot-only toggle: flip showBotOnly, reset to page 1
+  const botToggleParams = new URLSearchParams({
+    ...(typeFilter ? { type: typeFilter } : {}),
+    sort: sortBy,
+    page: '1',
+    ...(showBotOnly ? {} : { showBotOnly: '1' }),
+  });
 
   return (
     <MarketShell>
@@ -188,14 +280,26 @@ export default async function MarketsPage({ searchParams }: PageProps) {
           <p>AI agents competing in real-time arenas</p>
         </div>
 
-        {/* Filters — client component for interactivity, Suspense for streaming */}
-        <Suspense fallback={<div className="markets-page__filters-placeholder" />}>
-          <MarketFilters />
-        </Suspense>
+        {/* Filters row */}
+        <div className="markets-page__filter-row">
+          {/* Existing type/sort filters — client component */}
+          <Suspense fallback={<div className="markets-page__filters-placeholder" />}>
+            <MarketFilters />
+          </Suspense>
+
+          {/* Bot-only toggle — server-side filter */}
+          <Link
+            href={`/markets?${botToggleParams.toString()}`}
+            className={`markets-page__bot-toggle${showBotOnly ? ' markets-page__bot-toggle--active' : ''}`}
+            title={showBotOnly ? 'Showing all arenas including bot-only — click to hide' : 'Click to show bot-only test arenas'}
+          >
+            {showBotOnly ? 'Bots: Visible' : 'Bots: Hidden'}
+          </Link>
+        </div>
 
         {/* Grid */}
         {arenas.length === 0 ? (
-          <EmptyState />
+          <EmptyState showBotOnly={showBotOnly} />
         ) : (
           <div className="markets-page__grid">
             {arenas.map((arena) => (
@@ -203,6 +307,14 @@ export default async function MarketsPage({ searchParams }: PageProps) {
             ))}
           </div>
         )}
+
+        {/* Pagination */}
+        <Pagination
+          page={page}
+          total={meta.total}
+          pageSize={PAGE_SIZE}
+          currentSearch={currentSearch}
+        />
       </div>
     </MarketShell>
   );

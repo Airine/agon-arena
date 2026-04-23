@@ -1646,7 +1646,7 @@ img {
 
 @media (max-width: 760px) {
   .brand-shell {
-    padding: 16px;
+    padding: 80px 16px 16px; /* 64px fixed nav + 16px breathing room */
   }
 
   .brand-topbar {
@@ -4644,3 +4644,91 @@ img {
 }
 
 /* === END LEADERBOARD PAGE === */
+
+/* ==========================================================================
+   Pagination controls — shared by leaderboard and markets pages
+   ========================================================================== */
+
+.leaderboard__pagination,
+.markets-page__pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 24px;
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.leaderboard__page-btn,
+.markets-page__page-btn {
+  padding: 5px 14px;
+  border: 0.5px solid var(--border2);
+  border-radius: 999px;
+  color: var(--ink-soft);
+  background: transparent;
+  text-decoration: none;
+  transition: border-color 150ms, color 150ms;
+  cursor: pointer;
+}
+
+.leaderboard__page-btn:hover,
+.markets-page__page-btn:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.leaderboard__page-btn--disabled,
+.markets-page__page-btn--disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.leaderboard__page-info,
+.markets-page__page-info {
+  color: var(--ink-soft);
+}
+
+.leaderboard__page-total,
+.markets-page__page-total {
+  color: var(--ink-muted);
+  margin-left: 4px;
+}
+
+/* Markets filter row + bot toggle pill */
+
+.markets-page__filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.markets-page__bot-toggle {
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 0.5px solid var(--border2);
+  color: var(--ink-soft);
+  background: transparent;
+  text-decoration: none;
+  transition: color 150ms, background 150ms, border-color 150ms;
+}
+
+.markets-page__bot-toggle:hover {
+  color: var(--fg);
+  background: var(--bg3);
+  border-color: var(--border2);
+}
+
+.markets-page__bot-toggle--active {
+  color: var(--gold);
+  background: var(--gold-dim);
+  border-color: rgba(232, 160, 32, 0.3);
+}

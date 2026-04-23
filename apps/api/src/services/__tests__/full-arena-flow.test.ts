@@ -212,7 +212,7 @@ vi.mock('../chip.js', async (importOriginal) => {
 // ---------------------------------------------------------------------------
 // Import the system under test AFTER mocks are declared
 // ---------------------------------------------------------------------------
-import { startGame } from '../orchestrator.js';
+import { runGameLoop } from '../orchestrator.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -284,7 +284,7 @@ describe('full arena flow — 2 bot agents, 3 hands, mocked infrastructure', () 
   });
 
   it('arena finishes — DB receives status=finished update', async () => {
-    startGame(ARENA_ID, ARENA_CONFIG, SEATS);
+    void runGameLoop(ARENA_ID, ARENA_CONFIG, SEATS).catch(() => {});
 
     // Advance fake timers to drain all pending sleeps, then flush micro-tasks.
     await vi.runAllTimersAsync();
@@ -305,7 +305,7 @@ describe('full arena flow — 2 bot agents, 3 hands, mocked infrastructure', () 
 
     const TOTAL_START = STARTING_STACK * SEATS.length;
 
-    startGame(ARENA_ID, ARENA_CONFIG, SEATS);
+    void runGameLoop(ARENA_ID, ARENA_CONFIG, SEATS).catch(() => {});
     await vi.runAllTimersAsync();
     await waitForArenaFinished();
 
@@ -382,7 +382,7 @@ describe('full arena flow — 2 bot agents, 3 hands, mocked infrastructure', () 
   });
 
   it('settlement written — gameHands rows inserted for each hand', async () => {
-    startGame(ARENA_ID, ARENA_CONFIG, SEATS);
+    void runGameLoop(ARENA_ID, ARENA_CONFIG, SEATS).catch(() => {});
     await vi.runAllTimersAsync();
     await waitForArenaFinished();
 
@@ -412,7 +412,7 @@ describe('full arena flow — 2 bot agents, 3 hands, mocked infrastructure', () 
   });
 
   it('agent stats updated — handsPlayed incremented for both agents after each hand', async () => {
-    startGame(ARENA_ID, ARENA_CONFIG, SEATS);
+    void runGameLoop(ARENA_ID, ARENA_CONFIG, SEATS).catch(() => {});
     await vi.runAllTimersAsync();
     await waitForArenaFinished();
 
@@ -431,7 +431,7 @@ describe('full arena flow — 2 bot agents, 3 hands, mocked infrastructure', () 
   });
 
   it('gameActions recorded — every bot action produces a DB row', async () => {
-    startGame(ARENA_ID, ARENA_CONFIG, SEATS);
+    void runGameLoop(ARENA_ID, ARENA_CONFIG, SEATS).catch(() => {});
     await vi.runAllTimersAsync();
     await waitForArenaFinished();
 
@@ -472,7 +472,7 @@ describe('full arena flow — 2 bot agents, 3 hands, mocked infrastructure', () 
   });
 
   it('VRF seed revealed — every hand gets a vrfSeed update after it ends', async () => {
-    startGame(ARENA_ID, ARENA_CONFIG, SEATS);
+    void runGameLoop(ARENA_ID, ARENA_CONFIG, SEATS).catch(() => {});
     await vi.runAllTimersAsync();
     await waitForArenaFinished();
 
@@ -489,7 +489,7 @@ describe('full arena flow — 2 bot agents, 3 hands, mocked infrastructure', () 
   });
 
   it('currentHandNumber advances — arena row updated on each hand', async () => {
-    startGame(ARENA_ID, ARENA_CONFIG, SEATS);
+    void runGameLoop(ARENA_ID, ARENA_CONFIG, SEATS).catch(() => {});
     await vi.runAllTimersAsync();
     await waitForArenaFinished();
 

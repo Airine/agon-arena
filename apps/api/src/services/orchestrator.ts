@@ -23,6 +23,8 @@ import { publishEvent, publishFunnelEvent } from './kafka.js';
 import { chipService } from './chip.js';
 import { resolveBotAction } from './bot.js';
 import { settleBets } from './bet-settlement.js';
+import { enqueueArena } from '../lib/arena-queue.js';
+import { childLogger } from '../lib/logger.js';
 
 const DEFAULT_ACTION_ROUND_MIN_MS = 5_000;
 const MAX_HANDS = 100; // Max hands per arena session
@@ -30,7 +32,7 @@ const MAX_HANDS = 100; // Max hands per arena session
 // Track when each hand ended (arenaId:handNumber -> timestamp) for thinking upload window
 export const handEndedAt = new Map<string, number>();
 
-interface SeatInfo {
+export interface SeatInfo {
   seatIndex: number;
   currentStack: number;
   agentId: string;
@@ -38,7 +40,7 @@ interface SeatInfo {
   apiUrl: string | null;
 }
 
-interface ArenaConfig {
+export interface ArenaConfig {
   smallBlind: number;
   bigBlind: number;
   startingStack: number;
@@ -55,22 +57,23 @@ export function resolveActionRoundMinMs(): number {
 }
 
 /**
- * Start the game loop for an arena. Runs asynchronously.
+ * Start the game loop for an arena by pushing it onto the Redis work queue.
+ * A worker process dequeues and runs it — the main API event loop is not blocked.
  */
 export function startGame(arenaId: string, arena: ArenaConfig, seats: SeatInfo[]): void {
-  runGameLoop(arenaId, arena, seats).catch((err) => {
-    console.error(`[Orchestrator] Arena ${arenaId} game loop crashed:`, err);
-    // Mark arena as finished on unrecoverable error
-    clearArenaLoopHeartbeat(arenaId).catch(() => {});
-    db.update(schema.arenas)
-      .set({ status: 'finished', finishedAt: new Date() })
-      .where(eq(schema.arenas.id, arenaId))
-      .then(() => {})
-      .catch(() => {});
+  enqueueArena({ arenaId, arena, seats }).catch((err) => {
+    childLogger({ arenaId }).error({ err }, '[Orchestrator] Failed to enqueue arena');
   });
 }
 
-async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[]): Promise<void> {
+export async function runGameLoop(
+  arenaId: string,
+  arena: ArenaConfig,
+  seats: SeatInfo[],
+  options?: { resumeFromHandNumber?: number },
+): Promise<void> {
+  const log = childLogger({ arenaId });
+  const startHandNumber = options?.resumeFromHandNumber ?? 1;
   let dealerIndex = 0;
   const agentUrls = new Map(seats.map((s) => [s.agentId, s.apiUrl]));
   const handLimit = resolveArenaHandLimit(arena);
@@ -89,10 +92,10 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
     if (row) agentOwnerIds.set(seat.agentId, row.ownerId);
   }
 
-  // Track stacks across hands
-  const stacks = new Map(seats.map((s) => [s.agentId, arena.startingStack]));
+  // Initialize stacks from persisted currentStack (correct for both fresh start and recovery)
+  const stacks = new Map(seats.map((s) => [s.agentId, s.currentStack]));
 
-  for (let handNumber = 1; handNumber <= handLimit; handNumber++) {
+  for (let handNumber = startHandNumber; handNumber <= handLimit; handNumber++) {
     // Build active player list (agents with chips)
     const activePlayers = seats.filter((s) => (stacks.get(s.agentId) ?? 0) > 0);
     if (activePlayers.length < 2) break;
@@ -115,27 +118,29 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
     const { state: initialState, deck } = createGame(config, vrf.seed);
     const gameState = { ...initialState, handNumber };
 
-    // Create hand record in DB
-    const [handRecord] = await db
-      .insert(schema.gameHands)
-      .values({
-        arenaId,
-        handNumber,
-        stage: gameState.stage,
-        dealerIndex,
-        communityCards: [],
-        potAmount: gameState.pots.reduce((sum, p) => sum + p.amount, 0),
-        vrfCommit: vrf.commit,
-        vrfSignature: vrf.signature,
-        // vrfSeed is null until revealed after hand
-      })
-      .returning();
-
-    // Update arena hand number
-    await db
-      .update(schema.arenas)
-      .set({ currentHandNumber: handNumber })
-      .where(eq(schema.arenas.id, arenaId));
+    // Create hand record and advance arena hand number atomically.
+    // Both writes must succeed together: if the worker dies between them,
+    // recovery would re-insert the same handNumber and hit the unique index.
+    const [handRecord] = await db.transaction(async (tx) => {
+      const [record] = await tx
+        .insert(schema.gameHands)
+        .values({
+          arenaId,
+          handNumber,
+          stage: gameState.stage,
+          dealerIndex,
+          communityCards: [],
+          potAmount: gameState.pots.reduce((sum, p) => sum + p.amount, 0),
+          vrfCommit: vrf.commit,
+          vrfSignature: vrf.signature,
+        })
+        .returning();
+      await tx
+        .update(schema.arenas)
+        .set({ currentHandNumber: handNumber })
+        .where(eq(schema.arenas.id, arenaId));
+      return [record];
+    });
 
     // Broadcast hand start
     getIO().to(`arena:${arenaId}`).emit('hand:start', {
@@ -232,6 +237,10 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
         if (!submission) {
           throw new Error(`Pending turn disappeared before submission for agent ${actor.agentId}`);
         }
+        // Apply expression before processAction so structuredClone carries it forward
+        if (submission.expression) {
+          currentState.players[actorIdx]!.expression = submission.expression.slice(0, 10);
+        }
         action = toPlayerAction(submission, validActions, currentState);
       }
       const responseTimeMs = Date.now() - startTime;
@@ -285,7 +294,7 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
       // AGO-68: trigger first-bet invite rewards for non-fold actions
       if (action.type !== 'fold') {
         triggerFirstBetRewards(actor.agentId).catch((err) => {
-          console.error('[InviteReward] First-bet trigger error:', err);
+          log.error({ err }, '[InviteReward] First-bet trigger error');
         });
       }
 
@@ -474,8 +483,7 @@ async function runGameLoop(arenaId: string, arena: ArenaConfig, seats: SeatInfo[
   try {
     await settleBets(arenaId, winnerAgentIds);
   } catch (err) {
-    console.error(`[Orchestrator] settleBets failed for arena ${arenaId}:`, err);
-    // Non-fatal: arena should still be marked finished
+    log.error({ err }, '[Orchestrator] settleBets failed — arena will still be marked finished');
   }
 
   await db

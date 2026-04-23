@@ -2,13 +2,37 @@ import { and, eq } from 'drizzle-orm';
 import type { Server as SocketIOServer } from 'socket.io';
 import { verifyTokenFull } from '../middleware/auth.js';
 import { db, schema } from '../db/index.js';
-import { getGameSnapshot } from './redis.js';
+import { getGameSnapshot, getRedisClient } from './redis.js';
 import { getAgentRuntimeRoom } from './agent-runtime.js';
 import { getAgentPendingTurn, getAgentRuntimeSnapshot } from './redis.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+const WS_RATE_LIMIT_WINDOW_SECS = 60;
+const WS_RATE_LIMIT_MAX_CONNS = 20;
+const SPECTATOR_CAP_PER_ARENA = 500;
+
 export function setupSocketHandlers(io: SocketIOServer): void {
+  // Per-IP WebSocket connection rate limit (20 connections per minute per IP).
+  io.use(async (socket, next) => {
+    const xff = socket.handshake.headers['x-forwarded-for'];
+    const ip = (typeof xff === 'string' ? xff.split(',')[0]?.trim() : undefined)
+      ?? socket.handshake.address;
+    try {
+      const redis = await getRedisClient();
+      const key = `rl:ws:${ip}`;
+      const count = await redis.incr(key);
+      if (count === 1) await redis.expire(key, WS_RATE_LIMIT_WINDOW_SECS);
+      if (count > WS_RATE_LIMIT_MAX_CONNS) {
+        socket.disconnect(true);
+        return;
+      }
+    } catch {
+      // Redis unavailable — fail open
+    }
+    next();
+  });
+
   // Auth middleware — optional token. Spectating is public but we track auth'd users.
   io.use(async (socket, next) => {
     const token = socket.handshake.auth?.['token'] as string | undefined;
@@ -35,9 +59,28 @@ export function setupSocketHandlers(io: SocketIOServer): void {
     });
 
     // subscribe — join a spectator room AND receive current game state immediately
-    socket.on('subscribe', (payload: unknown) => {
+    socket.on('subscribe', async (payload: unknown) => {
       const arenaId = (payload as Record<string, unknown>)?.['arenaId'];
       if (typeof arenaId !== 'string' || !UUID_RE.test(arenaId)) return;
+
+      // Enforce per-arena spectator cap
+      try {
+        const redis = await getRedisClient();
+        const capKey = `arena:spectators:${arenaId}`;
+        const count = await redis.sCard(capKey);
+        if (count >= SPECTATOR_CAP_PER_ARENA) {
+          socket.emit('arena:full', { arenaId });
+          return;
+        }
+        await redis.sAdd(capKey, socket.id);
+        await redis.expire(capKey, 86400); // 24h TTL — evicts orphaned ids after crashes/restarts
+        socket.on('disconnect', () => {
+          redis.sRem(capKey, socket.id).catch(() => {});
+        });
+      } catch {
+        // Redis unavailable — allow subscription without cap enforcement
+      }
+
       socket.join(`arena:${arenaId}`);
       // Push current game snapshot to the newly subscribed spectator
       getGameSnapshot(arenaId)

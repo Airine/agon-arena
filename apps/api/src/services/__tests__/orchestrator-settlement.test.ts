@@ -237,7 +237,7 @@ vi.mock('../chip.js', () => ({
   },
 }));
 
-import { resolveArenaHandLimit, resolveActionRoundMinMs, startGame } from '../orchestrator.js';
+import { resolveArenaHandLimit, resolveActionRoundMinMs, runGameLoop } from '../orchestrator.js';
 
 // ─── Pure helper tests ────────────────────────────────────────────────────────
 
@@ -357,10 +357,10 @@ describe('Orchestrator settlement integration', () => {
    * settleBets has been called. Returns all observable mock state.
    */
   async function runOneArena(arenaId: string) {
-    startGame(arenaId, arenaConfig, [
+    void runGameLoop(arenaId, arenaConfig, [
       { seatIndex: 0, currentStack: 1000, agentId: 'agent-a', agentName: 'BotA', apiUrl: 'bot://call' },
       { seatIndex: 1, currentStack: 1000, agentId: 'agent-b', agentName: 'BotB', apiUrl: 'bot://call' },
-    ]);
+    ]).catch(() => {});
 
     // Wait until the loop reaches settlement
     await vi.waitFor(
@@ -438,10 +438,10 @@ describe('Orchestrator settlement integration', () => {
     setupIntegrationMocks();
     mockSettleBets.mockRejectedValue(new Error('settlement exploded'));
 
-    startGame(`${ARENA_ID}-err`, arenaConfig, [
+    void runGameLoop(`${ARENA_ID}-err`, arenaConfig, [
       { seatIndex: 0, currentStack: 1000, agentId: 'agent-a', agentName: 'BotA', apiUrl: 'bot://call' },
       { seatIndex: 1, currentStack: 1000, agentId: 'agent-b', agentName: 'BotB', apiUrl: 'bot://call' },
-    ]);
+    ]).catch(() => {});
 
     await vi.waitFor(
       () => {

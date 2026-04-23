@@ -22,6 +22,8 @@ interface LeaderboardMeta {
   limit: number;
   offset: number;
   total: number;
+  excludeBots: boolean;
+  minHandsPlayed: number;
 }
 
 interface LeaderboardResponse {
@@ -31,6 +33,14 @@ interface LeaderboardResponse {
 
 type Metric = 'elo_rating' | 'total_chips_won' | 'hands_won';
 type Period = 'all' | '30d' | '7d';
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const VALID_METRICS: Metric[] = ['elo_rating', 'total_chips_won', 'hands_won'];
+const VALID_PERIODS: Period[] = ['all', '30d', '7d'];
+const PAGE_SIZE = 25;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -67,14 +77,23 @@ function winRate(agent: LeaderboardAgent): string {
 // Data fetching
 // ---------------------------------------------------------------------------
 
-async function fetchLeaderboard(metric: Metric, period: Period): Promise<LeaderboardResponse> {
+async function fetchLeaderboard(
+  metric: Metric,
+  period: Period,
+  page: number,
+  showBots: boolean,
+): Promise<LeaderboardResponse> {
   try {
-    const url = buildApiUrl(`/leaderboard?metric=${metric}&period=${period}&limit=50`);
+    const offset = (page - 1) * PAGE_SIZE;
+    const excludeBots = showBots ? '0' : '1';
+    const url = buildApiUrl(
+      `/leaderboard?metric=${metric}&period=${period}&limit=${PAGE_SIZE}&offset=${offset}&excludeBots=${excludeBots}&minHandsPlayed=1`,
+    );
     const res = await fetch(url, { next: { revalidate: 30 } });
-    if (!res.ok) return { agents: [], meta: { metric, period, limit: 50, offset: 0, total: 0 } };
+    if (!res.ok) return { agents: [], meta: { metric, period, limit: PAGE_SIZE, offset, total: 0, excludeBots: !showBots, minHandsPlayed: 1 } };
     return res.json() as Promise<LeaderboardResponse>;
   } catch {
-    return { agents: [], meta: { metric, period, limit: 50, offset: 0, total: 0 } };
+    return { agents: [], meta: { metric, period, limit: PAGE_SIZE, offset: 0, total: 0, excludeBots: !showBots, minHandsPlayed: 1 } };
   }
 }
 
@@ -96,7 +115,7 @@ function FilterPills({
   return (
     <div className="leaderboard__pills">
       {options.map((opt) => {
-        const params = new URLSearchParams({ ...currentSearch, [paramKey]: opt.value });
+        const params = new URLSearchParams({ ...currentSearch, [paramKey]: opt.value, page: '1' });
         return (
           <Link
             key={opt.value}
@@ -107,6 +126,53 @@ function FilterPills({
           </Link>
         );
       })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Pagination
+// ---------------------------------------------------------------------------
+
+function Pagination({
+  page,
+  total,
+  pageSize,
+  currentSearch,
+  basePath,
+}: {
+  page: number;
+  total: number;
+  pageSize: number;
+  currentSearch: Record<string, string>;
+  basePath: string;
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  if (totalPages <= 1) return null;
+
+  const prevParams = new URLSearchParams({ ...currentSearch, page: String(page - 1) });
+  const nextParams = new URLSearchParams({ ...currentSearch, page: String(page + 1) });
+
+  return (
+    <div className="leaderboard__pagination">
+      {page > 1 ? (
+        <Link href={`${basePath}?${prevParams.toString()}`} className="leaderboard__page-btn">
+          ← Prev
+        </Link>
+      ) : (
+        <span className="leaderboard__page-btn leaderboard__page-btn--disabled">← Prev</span>
+      )}
+      <span className="leaderboard__page-info">
+        Page {page} of {totalPages}
+        <span className="leaderboard__page-total"> ({total.toLocaleString()} agents)</span>
+      </span>
+      {page < totalPages ? (
+        <Link href={`${basePath}?${nextParams.toString()}`} className="leaderboard__page-btn">
+          Next →
+        </Link>
+      ) : (
+        <span className="leaderboard__page-btn leaderboard__page-btn--disabled">Next →</span>
+      )}
     </div>
   );
 }
@@ -144,9 +210,11 @@ function RankCell({ rank }: { rank: number }) {
 function LeaderboardTable({
   agents,
   metric,
+  rankOffset,
 }: {
   agents: LeaderboardAgent[];
   metric: Metric;
+  rankOffset: number;
 }) {
   return (
     <div className="leaderboard__table">
@@ -164,15 +232,13 @@ function LeaderboardTable({
           className="leaderboard__table-row"
         >
           <span className="leaderboard__col--rank">
-            <RankCell rank={i + 1} />
+            <RankCell rank={rankOffset + i + 1} />
           </span>
           <span className="leaderboard__col--agent">
             <AgentAvatar name={agent.name} avatarUrl={agent.avatarUrl} />
             <span className="leaderboard__agent-name">{agent.name}</span>
           </span>
-          <span
-            className="leaderboard__col--metric leaderboard__col--right leaderboard__mono"
-          >
+          <span className="leaderboard__col--metric leaderboard__col--right leaderboard__mono">
             {metricValue(agent, metric)}
           </span>
           <span className="leaderboard__col--secondary leaderboard__col--right leaderboard__mono">
@@ -194,16 +260,18 @@ function LeaderboardTable({
 function LeaderboardCards({
   agents,
   metric,
+  rankOffset,
 }: {
   agents: LeaderboardAgent[];
   metric: Metric;
+  rankOffset: number;
 }) {
   return (
     <div className="leaderboard__cards">
       {agents.map((agent, i) => (
         <Link key={agent.id} href={`/agents/${agent.id}`} className="leaderboard__card">
           <div className="leaderboard__card-rank">
-            <RankCell rank={i + 1} />
+            <RankCell rank={rankOffset + i + 1} />
           </div>
           <AgentAvatar name={agent.name} avatarUrl={agent.avatarUrl} />
           <div className="leaderboard__card-body">
@@ -224,13 +292,15 @@ function LeaderboardCards({
 // Empty state
 // ---------------------------------------------------------------------------
 
-function EmptyState() {
+function EmptyState({ showBots }: { showBots: boolean }) {
   return (
     <div className="leaderboard__empty">
       <div className="leaderboard__empty-mark">AA</div>
       <p className="leaderboard__empty-title">No arena results yet</p>
       <p className="leaderboard__empty-body">
-        Be the first agent to complete a match.
+        {showBots
+          ? 'Be the first agent to complete a match.'
+          : 'No real agents have competed yet. Try enabling "Show Bots" to see all entries.'}
       </p>
       <Link href="/markets" className="button-secondary" style={{ marginTop: '16px' }}>
         Browse Arenas →
@@ -240,28 +310,29 @@ function EmptyState() {
 }
 
 // ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const VALID_METRICS: Metric[] = ['elo_rating', 'total_chips_won', 'hands_won'];
-const VALID_PERIODS: Period[] = ['all', '30d', '7d'];
-
-// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
 interface PageProps {
-  searchParams: Promise<{ metric?: string; period?: string }>;
+  searchParams: Promise<{ metric?: string; period?: string; page?: string; showBots?: string }>;
 }
 
 export default async function LeaderboardPage({ searchParams }: PageProps) {
   const params = await searchParams;
   const metric: Metric = (VALID_METRICS.includes(params.metric as Metric) ? params.metric : 'elo_rating') as Metric;
   const period: Period = (VALID_PERIODS.includes(params.period as Period) ? params.period : 'all') as Period;
+  const page = Math.max(1, parseInt(params.page ?? '1', 10) || 1);
+  const showBots = params.showBots === '1';
 
-  const { agents } = await fetchLeaderboard(metric, period);
+  const { agents, meta } = await fetchLeaderboard(metric, period, page, showBots);
+  const rankOffset = (page - 1) * PAGE_SIZE;
 
-  const currentSearch: Record<string, string> = { metric, period };
+  const currentSearch: Record<string, string> = {
+    metric,
+    period,
+    page: String(page),
+    ...(showBots ? { showBots: '1' } : {}),
+  };
 
   const metricOptions = [
     { value: 'elo_rating', label: 'ELO Rating' },
@@ -274,6 +345,14 @@ export default async function LeaderboardPage({ searchParams }: PageProps) {
     { value: '30d', label: '30 Days' },
     { value: '7d', label: '7 Days' },
   ];
+
+  // Toggle URL: flip showBots, reset to page 1
+  const botToggleParams = new URLSearchParams({
+    metric,
+    period,
+    page: '1',
+    ...(showBots ? {} : { showBots: '1' }),
+  });
 
   return (
     <MarketShell>
@@ -298,21 +377,39 @@ export default async function LeaderboardPage({ searchParams }: PageProps) {
             paramKey="period"
             currentSearch={currentSearch}
           />
+          {/* Bot toggle */}
+          <div className="leaderboard__pills">
+            <Link
+              href={`/leaderboard?${botToggleParams.toString()}`}
+              className={`leaderboard__pill${showBots ? ' leaderboard__pill--active' : ''}`}
+              title={showBots ? 'Currently showing bot agents — click to hide' : 'Click to include bot agents'}
+            >
+              {showBots ? 'Bots: Visible' : 'Bots: Hidden'}
+            </Link>
+          </div>
         </div>
 
         {/* Content */}
         {agents.length === 0 ? (
-          <EmptyState />
+          <EmptyState showBots={showBots} />
         ) : (
           <>
             {/* Desktop table */}
             <div className="leaderboard__desktop">
-              <LeaderboardTable agents={agents} metric={metric} />
+              <LeaderboardTable agents={agents} metric={metric} rankOffset={rankOffset} />
             </div>
             {/* Mobile cards */}
             <div className="leaderboard__mobile">
-              <LeaderboardCards agents={agents} metric={metric} />
+              <LeaderboardCards agents={agents} metric={metric} rankOffset={rankOffset} />
             </div>
+            {/* Pagination */}
+            <Pagination
+              page={page}
+              total={meta.total}
+              pageSize={PAGE_SIZE}
+              currentSearch={currentSearch}
+              basePath="/leaderboard"
+            />
           </>
         )}
       </div>

@@ -64,23 +64,30 @@ export default function AgentPlazaPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<LeaderboardTab>('all-time');
+  const [showBots, setShowBots] = useState(false); // default: hide bot:// agents
 
   useEffect(() => {
+    let cancelled = false;
+
     function fetchAgents() {
-      fetch(buildApiUrl('/agents'))
+      const qs = new URLSearchParams({ excludeBots: showBots ? '0' : '1' });
+      fetch(buildApiUrl(`/agents?${qs.toString()}`))
         .then((res) => res.json())
         .then((data: { agents: Agent[] }) => {
-          setAgents(data.agents ?? []);
-          setError(null);
+          if (!cancelled) {
+            setAgents(data.agents ?? []);
+            setError(null);
+          }
         })
-        .catch(() => setError('Failed to load agents'))
-        .finally(() => setLoading(false));
+        .catch(() => { if (!cancelled) setError('Failed to load agents'); })
+        .finally(() => { if (!cancelled) setLoading(false); });
     }
 
+    setLoading(true);
     fetchAgents();
     const interval = setInterval(fetchAgents, 30000);
-    return () => clearInterval(interval);
-  }, []);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [showBots]);
 
   const displayed = useMemo(() => applyTab(agents, tab), [agents, tab]);
   const bestAgent = displayed[0] ?? null;
@@ -142,6 +149,14 @@ export default function AgentPlazaPage() {
                     {item.label}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  onClick={() => setShowBots((v) => !v)}
+                  className={`pill-button ${showBots ? 'pill-button--active' : ''}`}
+                  title={showBots ? 'Showing bot agents — click to hide' : 'Click to show bot agents'}
+                >
+                  {showBots ? 'Bots: Visible' : 'Bots: Hidden'}
+                </button>
               </div>
             }
           />

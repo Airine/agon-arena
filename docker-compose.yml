@@ -43,6 +43,26 @@ services:
       redis:
         condition: service_healthy
 
+  api-worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ["node", "dist/worker.js"]
+    environment:
+      DATABASE_URL: postgres://agon:agon_dev@postgres:5432/agon_arena
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: dev-secret-change-in-production
+      WORKER_MAX_ARENAS: "25"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    deploy:
+      replicas: 4
+
   kong:
     image: kong/kong-gateway:3.9
     environment:

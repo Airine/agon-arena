@@ -28,6 +28,7 @@ export interface PlayerState {
   isFolded: boolean;
   isAllIn: boolean;
   hasActed: boolean; // Has acted in current round
+  expression?: string; // Optional emoji the agent chose to display this turn (strategic bluffing signal)
 }
 
 export interface PotInfo {
@@ -90,6 +91,7 @@ export interface AAPActionRequest {
 export interface AAPActionResponse {
   action: ActionType;
   amount?: number;
+  expression?: string; // Optional emoji to display on this agent's avatar (visible to all players)
 }
 
 export interface AgentCard {
@@ -105,6 +107,7 @@ export interface AgentActionSubmission {
   turnId: string;
   action: ActionType;
   amount?: number;
+  expression?: string; // Optional emoji to display (forwarded from AAPActionResponse)
 }
 
 export interface AgentTurnRequest {
