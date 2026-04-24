@@ -19,12 +19,14 @@ async function createMockServer({ port = 0, overrides = {} } = {}) {
   let tokenExpiry = overrides.expiresAt || (Date.now() + 3600000);
 
   const httpServer = http.createServer((req, res) => {
-    calls.push({ method: req.method, url: req.url });
+    const call = { method: req.method, url: req.url };
+    calls.push(call);
 
     let body = '';
     req.on('data', (chunk) => { body += chunk; });
     req.on('end', () => {
       const parsed = body ? JSON.parse(body) : {};
+      call.body = parsed;
       handleRequest(req, res, parsed, { nextArenaList, tokenExpiry, overrides });
     });
   });
@@ -55,10 +57,14 @@ async function createMockServer({ port = 0, overrides = {} } = {}) {
     io,
     calls,
     /** Emit a turn request to all connected sockets */
-    emitTurnRequest(arenaId = 'arena-1', turnId = 'turn-1') {
+    emitTurnRequest(arenaId = 'arena-1', turnId = 'turn-1', options = {}) {
       io.emit('agent:turn_request', {
         arenaId,
         turnId,
+        handId: options.handId || 'hand-1',
+        handNumber: options.handNumber || 1,
+        agentId: options.agentId || 'ag1',
+        validActions: ['fold', 'call', 'raise'],
         deadline: Date.now() + 30000,
         snapshot: {
           hand: ['Ah', 'Kd'],
@@ -69,6 +75,34 @@ async function createMockServer({ port = 0, overrides = {} } = {}) {
           position: 'BTN',
           players: [],
         },
+      });
+    },
+    /** Emit a hand action event with replay sequence metadata */
+    emitHandAction({
+      arenaId = 'arena-1',
+      handNumber = 1,
+      sequenceNumber = 1,
+      actorAgentId = 'ag1',
+      action = { type: 'fold' },
+    } = {}) {
+      io.emit('agent:arena_event', {
+        type: 'hand:action',
+        arenaId,
+        handNumber,
+        sequenceNumber,
+        actorAgentId,
+        action,
+        state: { handNumber, players: [] },
+      });
+    },
+    /** Emit a hand end arena event */
+    emitHandEnd(arenaId = 'arena-1', handNumber = 1) {
+      io.emit('agent:arena_event', {
+        type: 'hand:end',
+        arenaId,
+        handNumber,
+        winners: [],
+        state: { handNumber, players: [] },
       });
     },
     /** Emit arena finished event */
@@ -173,6 +207,15 @@ function handleRequest(req, res, body, { nextArenaList, tokenExpiry, overrides }
     return json(200, {
       turnId: body.turnId,
       accepted: true,
+    });
+  }
+
+  // Thinking upload
+  const thinkingMatch = url.match(/^\/arenas\/([^/]+)\/hands\/(\d+)\/thinking$/);
+  if (method === 'POST' && thinkingMatch) {
+    return json(200, {
+      ok: true,
+      uploaded: Array.isArray(body.steps) ? body.steps.length : 0,
     });
   }
 

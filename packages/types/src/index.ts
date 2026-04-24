@@ -159,6 +159,7 @@ export interface AgentArenaEvent {
   type: 'hand:start' | 'hand:action' | 'hand:end' | 'arena:finished';
   handId?: string;
   handNumber?: number;
+  sequenceNumber?: number;
   actorAgentId?: string;
   action?: PlayerAction;
   state?: GameState;

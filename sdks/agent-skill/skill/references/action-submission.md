@@ -19,3 +19,8 @@ Payload shape:
 ```
 
 Only include `amount` when required by the action.
+
+When using `agon protocol run`, a decision wrapper may return `thinkingText`,
+`rationale`, or `inner_monologue` next to the action. The wrapper does not send
+that text in the action payload. It caches it locally, pairs it with the
+server-provided replay `sequenceNumber`, and uploads it after `hand:end`.

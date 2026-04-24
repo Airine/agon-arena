@@ -11,6 +11,7 @@ const { connectRuntimeSocket } = require('../lib/socket');
 const { persistSession } = require('../lib/session');
 const { loadSession, loadRunState, updateRunState, ensureStateLayout } = require('../lib/state');
 const { getWalletForRole, createWallet, importWallet } = require('../lib/wallet');
+const { uploadThinking } = require('./thinking');
 const {
   DEFAULT_API_BASE,
   DEFAULT_STATE_DIR,
@@ -284,6 +285,83 @@ async function getDecision(payload, decisionCmd) {
   });
 }
 
+function thinkingTextFromDecision(decision) {
+  const text =
+    decision?.thinkingText ??
+    decision?.thinking_text ??
+    decision?.rationale ??
+    decision?.inner_monologue;
+  if (typeof text !== 'string') return null;
+  const trimmed = text.trim();
+  return trimmed ? trimmed.slice(0, 10_000) : null;
+}
+
+function handNumberFromTurn(turn) {
+  const handNumber = turn?.handNumber ?? turn?.state?.handNumber;
+  const parsed = Number(handNumber);
+  return Number.isInteger(parsed) ? parsed : null;
+}
+
+function createThinkingBuffer({ apiBase, arenaId, getToken, agentId, emitFn }) {
+  const queuedByHand = new Map();
+  const stepsByHand = new Map();
+
+  function rememberDecision(turn, decision) {
+    const thinkingText = thinkingTextFromDecision(decision);
+    const handNumber = handNumberFromTurn(turn);
+    if (!thinkingText || handNumber === null) return;
+
+    const queue = queuedByHand.get(handNumber) || [];
+    queue.push({ thinkingText });
+    queuedByHand.set(handNumber, queue);
+  }
+
+  function observeAction(eventPayload) {
+    if (eventPayload?.type !== 'hand:action') return;
+    if (eventPayload.actorAgentId !== agentId) return;
+    if (!Number.isInteger(eventPayload.handNumber) || !Number.isInteger(eventPayload.sequenceNumber)) return;
+
+    const queue = queuedByHand.get(eventPayload.handNumber) || [];
+    const next = queue.shift();
+    if (!next) return;
+    queuedByHand.set(eventPayload.handNumber, queue);
+
+    const steps = stepsByHand.get(eventPayload.handNumber) || [];
+    steps.push({
+      sequenceNumber: eventPayload.sequenceNumber,
+      thinkingText: next.thinkingText,
+    });
+    stepsByHand.set(eventPayload.handNumber, steps);
+  }
+
+  async function flushHand(handNumber) {
+    if (!Number.isInteger(handNumber)) return;
+    const steps = stepsByHand.get(handNumber) || [];
+    if (steps.length === 0) return;
+
+    try {
+      const result = await uploadThinking({
+        apiBase,
+        token: getToken(),
+        arenaId,
+        handNumber,
+        steps,
+      });
+      stepsByHand.delete(handNumber);
+      queuedByHand.delete(handNumber);
+      emitFn('thinking_uploaded', { arenaId, handNumber, uploaded: result.uploaded ?? steps.length });
+    } catch (error) {
+      emitFn('thinking_upload_failed', { arenaId, handNumber, error: error.message });
+    }
+  }
+
+  return {
+    flushHand,
+    observeAction,
+    rememberDecision,
+  };
+}
+
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -361,6 +439,13 @@ async function runSocketLoop({
   let retryDelayMs = 1000;
   let session = initialSession;
   let finished = false;
+  const thinkingBuffer = createThinkingBuffer({
+    apiBase,
+    arenaId,
+    getToken: () => session.access_token,
+    agentId: session.agent.id,
+    emitFn,
+  });
 
   while (!finished) {
     try {
@@ -384,6 +469,7 @@ async function runSocketLoop({
             tuiWriter?.(turn);
 
             const decision = await getDecision(decisionInputFromTurn(turn), values['decision-cmd']);
+            thinkingBuffer.rememberDecision(turn, decision);
 
             const submitPayload = { agentId: session.agent.id, turnId, action: decision.action };
             if (decision.amount !== undefined) submitPayload.amount = decision.amount;
@@ -466,6 +552,7 @@ async function runSocketLoop({
           } else if (event.type === 'agent:runtime_snapshot') {
             tuiWriter?.(event.payload);
           } else if (event.type === 'agent:arena_event') {
+            thinkingBuffer.observeAction(event.payload);
             if (event.payload?.state) {
               tuiWriter?.({
                 arenaId,
@@ -477,6 +564,9 @@ async function runSocketLoop({
                 pendingTurn: null,
                 updatedAt: Date.now(),
               });
+            }
+            if (event.payload?.type === 'hand:end') {
+              await thinkingBuffer.flushHand(event.payload.handNumber);
             }
             if (event.payload?.type === 'arena_finished' || event.payload?.type === 'arena:finished') {
               updateRunState(stateDir, { arena: { id: arenaId, status: 'finished' } });

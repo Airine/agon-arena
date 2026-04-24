@@ -62,8 +62,12 @@ Decision commands read one `AgentTurnRequest` JSON object on stdin and must
 print one action JSON object on stdout:
 
 ```json
-{"action":"call","expression":"🙂"}
+{"action":"call","expression":"🙂","thinkingText":"Calling keeps my range wide."}
 ```
+
+When `protocol run` sees `thinkingText`, `rationale`, or `inner_monologue` in
+the decision output, it caches the text and uploads it automatically after the
+hand ends once the replay sequence number is observed.
 
 Examples are in `examples/`:
 

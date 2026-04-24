@@ -328,6 +328,7 @@ export async function runGameLoop(
           type: 'hand:action',
           handId: handRecord!.id,
           handNumber,
+          sequenceNumber,
           actorAgentId: actor.agentId,
           action,
           state: spectatorState,

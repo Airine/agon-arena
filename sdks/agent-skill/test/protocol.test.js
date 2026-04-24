@@ -56,6 +56,15 @@ function collectJsonLines(proc, { maxLines, stopOnState, timeoutMs = 10000 }) {
   });
 }
 
+async function waitFor(predicate, timeoutMs = 5000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error('Timed out waiting for condition');
+}
+
 // Test 1: --help
 test('protocol run --help shows usage', () => {
   const result = spawnSync(NODE, [CLI_PATH, 'protocol', 'run', '--help'], { encoding: 'utf8' });
@@ -200,6 +209,63 @@ test('protocol run invokes --decision-cmd on turn_request and submits action', a
         states.includes('action_submitted') || server.calls.some((c) => c.method === 'POST' && c.url.includes('/actions')),
         `Expected action_submitted or POST /actions call. States: ${JSON.stringify(states)}`,
       );
+    } finally {
+      await server.close();
+    }
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('protocol run uploads thinkingText after hand:end when sequenceNumber is observed', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agon-test-'));
+  const decisionScript = path.join(tmpDir, 'decide-thinking.js');
+  fs.writeFileSync(decisionScript, `
+    process.stdin.resume();
+    process.stdout.write(JSON.stringify({
+      action: 'fold',
+      amount: 0,
+      thinkingText: 'Pot odds are poor, so folding preserves stack.'
+    }) + '\\n');
+  `);
+
+  try {
+    const server = await createMockServer();
+    try {
+      const proc = spawn(NODE, [
+        CLI_PATH, 'protocol', 'run',
+        '--wallet-policy=create-if-missing',
+        '--create-if-none',
+        `--api-base=${server.url}`,
+        `--state-dir=${tmpDir}`,
+        `--decision-cmd=node ${decisionScript}`,
+      ]);
+
+      const linesPromise = collectJsonLines(proc, {
+        stopOnState: 'thinking_uploaded',
+        timeoutMs: 20000,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      server.emitTurnRequest('arena-1', 'turn-thinking', { handNumber: 1 });
+      await waitFor(() => server.calls.some((call) =>
+        call.method === 'POST' && /\/arenas\/[^/]+\/actions$/.test(call.url)));
+      server.emitHandAction({ arenaId: 'arena-1', handNumber: 1, sequenceNumber: 4, actorAgentId: 'ag1' });
+      server.emitHandEnd('arena-1', 1);
+
+      const lines = await linesPromise;
+      const states = lines.map((line) => line.state);
+      assert.ok(states.includes('thinking_uploaded'), `Expected thinking_uploaded. Got: ${JSON.stringify(states)}`);
+
+      const thinkingCall = server.calls.find((call) =>
+        call.method === 'POST' && /\/arenas\/[^/]+\/hands\/1\/thinking$/.test(call.url));
+      assert.ok(thinkingCall, 'expected POST /thinking call');
+      assert.deepEqual(thinkingCall.body.steps, [
+        {
+          sequenceNumber: 4,
+          thinkingText: 'Pot odds are poor, so folding preserves stack.',
+        },
+      ]);
     } finally {
       await server.close();
     }
