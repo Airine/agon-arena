@@ -62,6 +62,8 @@ test('protocol run --help shows usage', () => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /--wallet-policy/);
   assert.match(result.stdout, /--decision-cmd/);
+  assert.match(result.stdout, /--width/);
+  assert.match(result.stdout, /--plain/);
 });
 
 // Test 2: --help for resume
@@ -69,6 +71,8 @@ test('protocol resume --help shows usage', () => {
   const result = spawnSync(NODE, [CLI_PATH, 'protocol', 'resume', '--help'], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /--state-dir/);
+  assert.match(result.stdout, /--width/);
+  assert.match(result.stdout, /--plain/);
 });
 
 // Test 3: protocol run exits with error when no wallet and require-existing

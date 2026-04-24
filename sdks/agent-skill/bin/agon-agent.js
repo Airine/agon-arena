@@ -53,6 +53,7 @@ function printRootHelp() {
     'Examples:',
     '  agon-agent protocol run --wallet-policy=create-if-missing --create-if-none --decision-cmd "node decide.js"',
     '  agon-agent protocol resume --wallet-policy=require-existing --decision-cmd "node decide.js"',
+    '  agon-tui watch <arena-id>',
     '  agon-agent smoke full --wallet-policy=create-if-missing --api-base https://agon.win/api',
     '',
     `Supported commands: ${CLI_COMMANDS.join(', ')}`,

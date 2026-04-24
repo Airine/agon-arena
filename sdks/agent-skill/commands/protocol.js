@@ -2,6 +2,8 @@
 const { parseArgs } = require('node:util');
 const { spawnSync } = require('node:child_process');
 const readline = require('node:readline');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const { requestJson } = require('../lib/api');
 const { buildAgentAccessHeaders } = require('../lib/access');
@@ -17,6 +19,7 @@ const {
   deriveSocketOrigin,
 } = require('../lib/constants');
 const { wantsHelp } = require('../lib/cli');
+const { renderClearScreen } = require('../lib/tui');
 
 // ---------------------------------------------------------------------------
 // Help text
@@ -38,6 +41,11 @@ function help(subcommand) {
       '  --arena-tier <tier>            practice | serious (default: practice)',
       '  --create-if-none               create a new practice arena if none are joinable',
       '  --decision-cmd <cmd>           shell command for turn decisions (stdin: game state JSON, stdout: action JSON)',
+      '  --tui                          render a private ASCII table to stderr while competing',
+      '  --tui-log <path>               append private ASCII table frames to a log file instead of stderr',
+      '  --no-color                     disable ANSI colors in TUI output',
+      '  --plain                        plain TUI output (alias for no-color, no screen clearing)',
+      '  --width <n>                    target TUI render width (default: 80)',
       '  --state-dir <path>             state directory (default: ./.agon-agent)',
       '  --api-base <url>               REST API base URL',
       '  --socket-origin <url>          Socket.IO origin (defaults to API origin)',
@@ -57,6 +65,11 @@ function help(subcommand) {
       '  --wallet-policy <policy>   require-existing | create-if-missing | import-private-key-env',
       '  --private-key-env <envvar> env var holding hex private key',
       '  --decision-cmd <cmd>       shell command for turn decisions',
+      '  --tui                      render a private ASCII table to stderr while competing',
+      '  --tui-log <path>           append private ASCII table frames to a log file instead of stderr',
+      '  --no-color                 disable ANSI colors in TUI output',
+      '  --plain                    plain TUI output (alias for no-color, no screen clearing)',
+      '  --width <n>                target TUI render width (default: 80)',
       '  --state-dir <path>         state directory',
       '  --api-base <url>           REST API base URL',
       '  --reconnect-max-ms <n>     max backoff for socket reconnect',
@@ -205,10 +218,40 @@ async function findOrCreateAndJoinArena(apiBase, stateDir, session, values) {
   return arenaId;
 }
 
+function resolveDecisionTimeoutMs(payload) {
+  const deadline = payload?.deadlineMs ?? payload?.deadline;
+  if (typeof deadline === 'number' && Number.isFinite(deadline)) {
+    return Math.max(5000, deadline - Date.now() - 3000);
+  }
+  return 25000;
+}
+
+function parseDecisionOutput(stdout) {
+  const trimmed = String(stdout || '').trim();
+  if (!trimmed) return null;
+
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // Some CLIs print banners or explanations despite prompting. Prefer the
+    // last standalone JSON object so wrappers can still be forgiving.
+    const lines = trimmed.split('\n').map((line) => line.trim()).filter(Boolean).reverse();
+    for (const line of lines) {
+      if (!line.startsWith('{') || !line.endsWith('}')) continue;
+      try {
+        return JSON.parse(line);
+      } catch {
+        // keep looking
+      }
+    }
+    return null;
+  }
+}
+
 async function getDecision(payload, decisionCmd) {
   if (decisionCmd) {
     // Subprocess mode
-    const timeoutMs = Math.max(5000, payload.deadline - Date.now() - 3000);
+    const timeoutMs = resolveDecisionTimeoutMs(payload);
     const result = spawnSync(decisionCmd, {
       input: JSON.stringify(payload) + '\n',
       encoding: 'utf8',
@@ -218,11 +261,7 @@ async function getDecision(payload, decisionCmd) {
     if (result.status !== 0 || !result.stdout?.trim()) {
       return { action: 'fold', amount: 0 };  // safe default
     }
-    try {
-      return JSON.parse(result.stdout.trim());
-    } catch {
-      return { action: 'fold', amount: 0 };
-    }
+    return parseDecisionOutput(result.stdout) || { action: 'fold', amount: 0 };
   }
 
   // STDIN mode: wait for one JSON line, 25s timeout → fold
@@ -249,6 +288,58 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+function turnFromEventPayload(payload) {
+  const turn = payload?.pendingTurn || payload;
+  if (!turn || typeof turn !== 'object') return null;
+  return turn;
+}
+
+function decisionInputFromTurn(turn) {
+  if (turn?.state) return turn;
+  return {
+    ...turn,
+    deadlineMs: turn?.deadlineMs ?? turn?.deadline ?? null,
+  };
+}
+
+function pendingDeadlineMs(pendingTurn) {
+  const deadline = pendingTurn?.deadlineMs ?? pendingTurn?.deadline;
+  return typeof deadline === 'number' && Number.isFinite(deadline) ? deadline : Infinity;
+}
+
+function createTuiWriter(values, agentId) {
+  if (!values.tui && !values['tui-log']) return () => {};
+
+  const writeToFile = values['tui-log']
+    ? path.resolve(values['tui-log'])
+    : null;
+
+  if (writeToFile) {
+    fs.mkdirSync(path.dirname(writeToFile), { recursive: true });
+  }
+
+  return (snapshotOrTurn) => {
+    const plain = Boolean(values.plain);
+    const width = Math.max(40, parseInt(values.width, 10) || 80);
+    const frame = renderClearScreen(snapshotOrTurn, {
+      mode: 'private',
+      agentId,
+      color: values['no-color'] || plain ? false : undefined,
+      clear: writeToFile ? false : !plain,
+      width,
+    });
+    if (writeToFile) {
+      fs.appendFileSync(
+        writeToFile,
+        `\n# ${new Date().toISOString()}\n${frame}`,
+        'utf8',
+      );
+      return;
+    }
+    process.stderr.write(frame);
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Socket loop — shared between run and resume
 // ---------------------------------------------------------------------------
@@ -263,6 +354,7 @@ async function runSocketLoop({
   values,
   walletResultGetter,
   emitFn,
+  tuiWriter,
 }) {
   const reconnectMaxMs = parseInt(values['reconnect-max-ms']) || 30000;
   const turnDeadlineBufferMs = parseInt(values['turn-deadline-buffer-ms']) || 10000;
@@ -283,13 +375,19 @@ async function runSocketLoop({
           if (finished) return;
 
           if (event.type === 'agent:turn_request') {
-            const { turnId, deadline, snapshot } = event.payload;
+            const turn = turnFromEventPayload(event.payload);
+            if (!turn) return;
+            const turnId = turn.turnId || turn.id;
+            const deadline = turn.deadlineMs ?? turn.deadline ?? null;
+            if (!turnId) return;
             updateRunState(stateDir, { pending_turn: { turnId, deadline } });
+            tuiWriter?.(turn);
 
-            const decision = await getDecision({ turnId, deadline, snapshot }, values['decision-cmd']);
+            const decision = await getDecision(decisionInputFromTurn(turn), values['decision-cmd']);
 
             const submitPayload = { agentId: session.agent.id, turnId, action: decision.action };
             if (decision.amount !== undefined) submitPayload.amount = decision.amount;
+            if (decision.expression !== undefined) submitPayload.expression = String(decision.expression).slice(0, 10);
 
             try {
               await requestJson({
@@ -365,8 +463,22 @@ async function runSocketLoop({
                 }
               }
             }
+          } else if (event.type === 'agent:runtime_snapshot') {
+            tuiWriter?.(event.payload);
           } else if (event.type === 'agent:arena_event') {
-            if (event.payload?.type === 'arena_finished') {
+            if (event.payload?.state) {
+              tuiWriter?.({
+                arenaId,
+                agentId: session.agent.id,
+                handId: event.payload.handId || null,
+                handNumber: event.payload.handNumber || 0,
+                privateState: event.payload.state,
+                publicState: event.payload.state,
+                pendingTurn: null,
+                updatedAt: Date.now(),
+              });
+            }
+            if (event.payload?.type === 'arena_finished' || event.payload?.type === 'arena:finished') {
               updateRunState(stateDir, { arena: { id: arenaId, status: 'finished' } });
               emitFn('arena_finished', { arenaId });
               finished = true;
@@ -404,13 +516,14 @@ async function runSocketLoop({
 
       // Network error: check for urgent turn
       const runState = loadRunState(stateDir);
-      if (runState.pending_turn && runState.pending_turn.deadline - Date.now() < turnDeadlineBufferMs) {
+      if (runState.pending_turn && pendingDeadlineMs(runState.pending_turn) - Date.now() < turnDeadlineBufferMs) {
         // Urgent: don't wait, try to submit immediately
         const { turnId, deadline } = runState.pending_turn;
         const decision = await getDecision({ turnId, deadline, snapshot: {} }, values['decision-cmd'])
           .catch(() => ({ action: 'fold', amount: 0 }));
         const submitPayload = { agentId: session.agent.id, turnId, action: decision.action };
         if (decision.amount !== undefined) submitPayload.amount = decision.amount;
+        if (decision.expression !== undefined) submitPayload.expression = String(decision.expression).slice(0, 10);
         requestJson({
           baseUrl: apiBase,
           method: 'POST',
@@ -451,6 +564,11 @@ async function runProtocol(argv) {
       'arena-tier': { type: 'string', default: 'practice' },
       'create-if-none': { type: 'boolean', default: false },
       'decision-cmd': { type: 'string' },
+      tui: { type: 'boolean', default: false },
+      'tui-log': { type: 'string' },
+      'no-color': { type: 'boolean', default: false },
+      plain: { type: 'boolean', default: false },
+      width: { type: 'string', default: '80' },
       'reconnect-max-ms': { type: 'string', default: '30000' },
       'turn-deadline-buffer-ms': { type: 'string', default: '10000' },
     },
@@ -483,7 +601,7 @@ async function runProtocol(argv) {
   emit('arena_joined', { arenaId });
 
   // Step 4: Sync runtime
-  await requestJson({
+  const runtimeResult = await requestJson({
     baseUrl: apiBase,
     method: 'GET',
     routePath: `/arenas/${arenaId}/runtime?agentId=${encodeURIComponent(session.agent.id)}`,
@@ -495,6 +613,8 @@ async function runProtocol(argv) {
 
   // Wallet getter for reconnection scenarios
   const walletResultGetter = () => getWalletForRole(stateDir, role);
+  const tuiWriter = createTuiWriter(values, session.agent.id);
+  if (runtimeResult.snapshot) tuiWriter(runtimeResult.snapshot);
 
   // Step 5+: Socket loop
   await runSocketLoop({
@@ -507,6 +627,7 @@ async function runProtocol(argv) {
     values,
     walletResultGetter,
     emitFn: emit,
+    tuiWriter,
   });
 }
 
@@ -530,6 +651,11 @@ async function resumeProtocol(argv) {
       'wallet-policy': { type: 'string', default: 'require-existing' },
       'private-key-env': { type: 'string' },
       'decision-cmd': { type: 'string' },
+      tui: { type: 'boolean', default: false },
+      'tui-log': { type: 'string' },
+      'no-color': { type: 'boolean', default: false },
+      plain: { type: 'boolean', default: false },
+      width: { type: 'string', default: '80' },
       'reconnect-max-ms': { type: 'string', default: '30000' },
       'turn-deadline-buffer-ms': { type: 'string', default: '10000' },
     },
@@ -581,6 +707,7 @@ async function resumeProtocol(argv) {
 
     const submitPayload = { agentId: activeSession.agent.id, turnId: pendingTurn.turnId, action: decision.action };
     if (decision.amount !== undefined) submitPayload.amount = decision.amount;
+    if (decision.expression !== undefined) submitPayload.expression = String(decision.expression).slice(0, 10);
 
     await requestJson({
       baseUrl: apiBase,
@@ -604,6 +731,11 @@ async function resumeProtocol(argv) {
     ...(values['private-key-env'] ? [`--private-key-env=${values['private-key-env']}`] : []),
     `--arena-id=${arenaId}`,
     ...(values['decision-cmd'] ? [`--decision-cmd=${values['decision-cmd']}`] : []),
+    ...(values.tui ? ['--tui'] : []),
+    ...(values['tui-log'] ? [`--tui-log=${values['tui-log']}`] : []),
+    ...(values['no-color'] ? ['--no-color'] : []),
+    ...(values.plain ? ['--plain'] : []),
+    ...(values.width ? [`--width=${values.width}`] : []),
     `--reconnect-max-ms=${values['reconnect-max-ms']}`,
     `--turn-deadline-buffer-ms=${values['turn-deadline-buffer-ms']}`,
   ]);
