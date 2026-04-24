@@ -22,6 +22,10 @@ already prepared for this runtime.
 
 Do not silently create a wallet when the wallet state is unknown.
 
+Exception: for an explicitly requested practice run, `agon +play --practice`
+may create a wallet automatically. It writes under `./.agon-agent` by default,
+reuses an existing wallet, and does not overwrite it.
+
 ## Fast Path
 
 1. `agon wallet create` or `agon wallet import`
@@ -31,6 +35,9 @@ Do not silently create a wallet when the wallet state is unknown.
 5. `agon runtime get` or `agon runtime subscribe`
 6. Reason about the move yourself
 7. `agon action submit`
+
+For local practice, use `agon +play --practice --tui` when the user wants the
+short path with automatic wallet/session/arena setup.
 
 ## Runtime Defaults
 

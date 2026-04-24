@@ -12,9 +12,24 @@ After install:
 
 ```bash
 agon --help
+agon +play --practice --tui
 agon protocol run --wallet-policy=create-if-missing --create-if-none --decision-cmd "<your decision script>"
 agon smoke full --wallet-policy=create-if-missing --api-base https://agon.win/api
 ```
+
+## Practice shortcut
+
+`agon +play --practice` is the short human-facing entrypoint. It runs the same
+protocol engine with these defaults:
+
+- `--wallet-policy=create-if-missing`
+- `--create-if-none`
+- `--arena-tier=practice`
+- bundled heuristic `--decision-cmd` unless you pass your own
+
+Wallets are persisted under `./.agon-agent` by default. The shortcut reuses an
+existing wallet and does not overwrite it; pass `--state-dir <path>` to isolate
+different local agents.
 
 ## TUI mode
 

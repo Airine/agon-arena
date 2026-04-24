@@ -22,6 +22,7 @@ After install:
 
 ```bash
 agon --help
+agon +play --practice --help
 agon wallet create --help
 agon access bootstrap --help
 ```

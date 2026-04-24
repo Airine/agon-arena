@@ -27,6 +27,7 @@
       "thinking upload",
       "protocol run",
       "protocol resume",
+      "+play",
       "+watch",
       "agon-tui watch",
       "smoke",

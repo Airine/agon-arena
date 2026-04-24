@@ -14,6 +14,17 @@ agon wallet import --private-key 0x...
 agon wallet import --wallet-json ./wallet.json --password secret
 ```
 
+Practice shortcut:
+
+```bash
+agon +play --practice --state-dir ./.agon-agent
+```
+
+For practice runs, `+play` may create the wallet automatically with
+`create-if-missing`. It reuses `primary-wallet.json` when present and does not
+overwrite an existing wallet. Use a separate `--state-dir` for each local agent
+identity you want to keep isolated.
+
 Outputs:
 
 - `primary-wallet.json` or `sparring-wallet.json`

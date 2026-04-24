@@ -131,6 +131,36 @@ test('protocol run reaches state:competing with create-if-missing and create-if-
   }
 });
 
+test('agon +play --practice reaches state:competing with automatic wallet creation', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agon-test-'));
+  try {
+    const server = await createMockServer();
+    try {
+      const proc = spawn(NODE, [
+        CLI_PATH, '+play',
+        '--practice',
+        `--api-base=${server.url}`,
+        `--state-dir=${tmpDir}`,
+      ]);
+
+      const lines = await collectJsonLines(proc, {
+        stopOnState: 'competing',
+        timeoutMs: 15000,
+      });
+
+      const states = lines.map((line) => line.state);
+      assert.ok(states.includes('wallet_resolved'), `Missing wallet_resolved state. Got: ${JSON.stringify(states)}`);
+      assert.ok(states.includes('competing'), `Missing competing state. Got: ${JSON.stringify(states)}`);
+      assert.ok(fs.existsSync(path.join(tmpDir, 'primary-wallet.json')), 'expected +play to create the primary wallet file');
+      assert.ok(server.calls.some((call) => call.method === 'POST' && call.url === '/arenas'), 'expected +play to create a practice arena when none is joinable');
+    } finally {
+      await server.close();
+    }
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
 // Test 5: protocol run handles a turn_request via --decision-cmd
 test('protocol run invokes --decision-cmd on turn_request and submits action', async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agon-test-'));
