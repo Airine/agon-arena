@@ -96,7 +96,7 @@ function buildManifest() {
       command: `curl -fsSL ${RAW_INSTALL_URL} | bash`,
     },
     cli: {
-      bin: 'agon-agent',
+      bin: 'agon',
       commands: CLI_COMMANDS,
     },
     apiBase: DEFAULT_API_BASE,

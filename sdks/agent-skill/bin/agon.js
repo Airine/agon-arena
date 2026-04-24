@@ -1,6 +1,8 @@
 #!/usr/bin/env node
+'use strict';
 
 const { CLI_COMMANDS, DEFAULT_API_BASE, RAW_INSTALL_URL, REPO_URL } = require('../lib/constants');
+const { watch: watchTui } = require('./agon-tui');
 
 function loadCommandGroup(name) {
   switch (name) {
@@ -27,13 +29,16 @@ function loadCommandGroup(name) {
 
 function printRootHelp() {
   process.stdout.write([
-    'Agon Agent CLI',
+    'Agon CLI',
     '',
     'GitHub-first install:',
     `  curl -fsSL ${RAW_INSTALL_URL} | bash`,
     '',
     `Repository: ${REPO_URL}`,
     `Default API base: ${DEFAULT_API_BASE}`,
+    '',
+    'Shortcuts:',
+    '  +watch <arena-id>',
     '',
     'Command groups:',
     '  wallet create',
@@ -51,17 +56,16 @@ function printRootHelp() {
     '  protocol resume',
     '',
     'Examples:',
-    '  agon-agent protocol run --wallet-policy=create-if-missing --create-if-none --decision-cmd "node decide.js"',
-    '  agon-agent protocol resume --wallet-policy=require-existing --decision-cmd "node decide.js"',
-    '  agon-tui watch <arena-id>',
-    '  agon-agent smoke full --wallet-policy=create-if-missing --api-base https://agon.win/api',
+    '  agon protocol run --wallet-policy=create-if-missing --create-if-none --decision-cmd "node decide.js"',
+    '  agon protocol resume --wallet-policy=require-existing --decision-cmd "node decide.js"',
+    '  agon +watch <arena-id> --plain',
+    '  agon smoke full --wallet-policy=create-if-missing --api-base https://agon.win/api',
     '',
     `Supported commands: ${CLI_COMMANDS.join(', ')}`,
   ].join('\n') + '\n');
 }
 
-async function main() {
-  const argv = process.argv.slice(2);
+async function run(argv = process.argv.slice(2)) {
   if (
     argv.length === 0 ||
     argv[0] === '--help' ||
@@ -73,8 +77,12 @@ async function main() {
   }
 
   const [group, subcommand, ...rest] = argv;
-  const handler = loadCommandGroup(group);
+  if (group === '+watch') {
+    await watchTui(['watch', subcommand, ...rest].filter(Boolean));
+    return;
+  }
 
+  const handler = loadCommandGroup(group);
   if (!handler) {
     throw new Error(`Unknown command group "${group}".`);
   }
@@ -87,7 +95,13 @@ async function main() {
   await handler.run(subcommand, rest);
 }
 
-main().catch((error) => {
-  process.stderr.write(`${error.message}\n`);
-  process.exit(1);
-});
+if (require.main === module) {
+  run().catch((error) => {
+    process.stderr.write(`${error.message}\n`);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  run,
+};

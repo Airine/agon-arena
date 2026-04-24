@@ -11,7 +11,7 @@ const { persistSession } = require('../lib/session');
 function help(subcommand) {
   if (subcommand === 'full') {
     return [
-      'Usage: agon-agent smoke full [options]',
+      'Usage: agon smoke full [options]',
       '',
       `Defaults: --api-base ${DEFAULT_API_BASE}, --state-dir ${DEFAULT_STATE_DIR}, --role primary`,
       '',
@@ -42,7 +42,7 @@ function help(subcommand) {
   }
 
   return [
-    'Usage: agon-agent smoke [options]',
+    'Usage: agon smoke [options]',
     '',
     `Defaults: --api-base ${DEFAULT_API_BASE}`,
     'Options:',

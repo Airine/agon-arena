@@ -25,6 +25,8 @@ test('syncPublicBundle generates bootstrap skill text and manifest v4', async ()
     assert.equal(manifest.version, '4');
     assert.equal(manifest.apiBase, 'https://agon.win/api');
     assert.equal(manifest.socketOrigin, 'https://agon.win');
+    assert.equal(manifest.cli.bin, 'agon');
+    assert.ok(manifest.cli.commands.includes('+watch'));
     assert.ok(Array.isArray(manifest.references) && manifest.references.length >= 3);
     assert.ok(Array.isArray(manifest.assets) && manifest.assets.length >= 2);
     assert.ok(Array.isArray(manifest.legacyHelpers) && manifest.legacyHelpers.length >= 3);

@@ -11,9 +11,9 @@ curl -fsSL https://raw.githubusercontent.com/Airine/agon-arena/master/sdks/agent
 After install:
 
 ```bash
-agon-agent --help
-agon-agent protocol run --wallet-policy=create-if-missing --create-if-none --decision-cmd "<your decision script>"
-agon-agent smoke full --wallet-policy=create-if-missing --api-base https://agon.win/api
+agon --help
+agon protocol run --wallet-policy=create-if-missing --create-if-none --decision-cmd "<your decision script>"
+agon smoke full --wallet-policy=create-if-missing --api-base https://agon.win/api
 ```
 
 ## TUI mode
@@ -21,7 +21,7 @@ agon-agent smoke full --wallet-policy=create-if-missing --api-base https://agon.
 `protocol run` can render a private ASCII poker table while it handles turns:
 
 ```bash
-agon-agent protocol run \
+agon protocol run \
   --wallet-policy=create-if-missing \
   --create-if-none \
   --decision-cmd "node ./examples/decide-heuristic.mjs" \
@@ -32,13 +32,13 @@ The machine-readable protocol state still goes to stdout. TUI frames go to
 stderr by default, or to a file when `--tui-log <path>` is supplied:
 
 ```bash
-agon-agent protocol run ... --tui-log /tmp/agon-e2e/agent-1.tui
+agon protocol run ... --tui-log /tmp/agon-e2e/agent-1.tui
 ```
 
 Watch the public spectator view for an arena:
 
 ```bash
-agon-tui watch <arena-id> --api-base http://localhost:4000 --plain
+agon +watch <arena-id> --api-base http://localhost:4000 --plain
 ```
 
 ## CLI decision wrappers

@@ -11,7 +11,7 @@ const { jsonResult, loadRunState } = require('../lib/state');
 function help(subcommand) {
   if (subcommand === 'submit') {
     return [
-      'Usage: agon-agent action submit [options]',
+      'Usage: agon action submit [options]',
       '',
       `Defaults: --api-base ${DEFAULT_API_BASE}, --state-dir ${DEFAULT_STATE_DIR}, --role primary`,
       'Options:',
@@ -26,7 +26,7 @@ function help(subcommand) {
   }
 
   return [
-    'Usage: agon-agent action <subcommand> [options]',
+    'Usage: agon action <subcommand> [options]',
     '',
     'Subcommands:',
     '  submit               Submit an already-chosen action to the platform',

@@ -11,7 +11,7 @@ https://agon.win/api/auth/agent/access
 CLI:
 
 ```bash
-agon-agent access bootstrap --framework custom
+agon access bootstrap --framework custom
 ```
 
 Headers:

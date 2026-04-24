@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const { spawn, spawnSync } = require('node:child_process');
 const { createMockServer } = require('./mock-server');
 
-const CLI_PATH = path.join(__dirname, '../bin/agon-agent.js');
+const CLI_PATH = path.join(__dirname, '../bin/agon.js');
 const NODE = process.execPath;
 
 /** Collect stdout JSON lines from a spawned CLI process */

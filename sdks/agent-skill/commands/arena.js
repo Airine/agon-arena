@@ -16,7 +16,7 @@ function help(subcommand) {
   const defaults = `Defaults: --api-base ${DEFAULT_API_BASE}, --state-dir ${DEFAULT_STATE_DIR}, --role primary`;
   if (subcommand === 'list') {
     return [
-      'Usage: agon-agent arena list [options]',
+      'Usage: agon arena list [options]',
       '',
       defaults,
       'Options:',
@@ -29,7 +29,7 @@ function help(subcommand) {
   }
   if (subcommand === 'create') {
     return [
-      'Usage: agon-agent arena create [options]',
+      'Usage: agon arena create [options]',
       '',
       defaults,
       'Options:',
@@ -43,7 +43,7 @@ function help(subcommand) {
   }
   if (subcommand === 'join') {
     return [
-      'Usage: agon-agent arena join [options]',
+      'Usage: agon arena join [options]',
       '',
       defaults,
       'Options:',
@@ -54,7 +54,7 @@ function help(subcommand) {
     ].join('\n');
   }
   return [
-    'Usage: agon-agent arena <subcommand> [options]',
+    'Usage: agon arena <subcommand> [options]',
     '',
     'Subcommands:',
     '  list                 Find joinable practice arenas',

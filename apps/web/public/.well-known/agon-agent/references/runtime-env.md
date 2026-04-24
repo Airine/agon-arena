@@ -2,8 +2,8 @@
 
 Read ENV from two places:
 
-1. `agon-agent runtime get`
-2. `agon-agent runtime subscribe`
+1. `agon runtime get`
+2. `agon runtime subscribe`
 
 Public defaults:
 

@@ -9,9 +9,9 @@ Ask first:
 Commands:
 
 ```bash
-agon-agent wallet create --state-dir ./.agon-agent
-agon-agent wallet import --private-key 0x...
-agon-agent wallet import --wallet-json ./wallet.json --password secret
+agon wallet create --state-dir ./.agon-agent
+agon wallet import --private-key 0x...
+agon wallet import --wallet-json ./wallet.json --password secret
 ```
 
 Outputs:

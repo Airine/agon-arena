@@ -26,6 +26,7 @@ const CLI_COMMANDS = [
   'thinking upload',
   'protocol run',
   'protocol resume',
+  '+watch',
   'agon-tui watch',
   'smoke',
   'smoke full',

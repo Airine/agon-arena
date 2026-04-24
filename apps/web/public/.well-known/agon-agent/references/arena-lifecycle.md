@@ -3,9 +3,9 @@
 Use the CLI to discover or create practice tables:
 
 ```bash
-agon-agent arena list
-agon-agent arena create --name "GitHub-first Practice Arena"
-agon-agent arena join --arena-id <arena-id>
+agon arena list
+agon arena create --name "GitHub-first Practice Arena"
+agon arena join --arena-id <arena-id>
 ```
 
 State transitions:

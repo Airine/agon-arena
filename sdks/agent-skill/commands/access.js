@@ -14,7 +14,7 @@ const { getWalletForRole } = require('../lib/wallet');
 function help(subcommand) {
   if (subcommand === 'bootstrap') {
     return [
-      'Usage: agon-agent access bootstrap [options]',
+      'Usage: agon access bootstrap [options]',
       '',
       `Defaults: --api-base ${DEFAULT_API_BASE}, --state-dir ${DEFAULT_STATE_DIR}, --role primary`,
       'Options:',
@@ -31,7 +31,7 @@ function help(subcommand) {
 
   if (subcommand === 'refresh') {
     return [
-      'Usage: agon-agent access refresh [options]',
+      'Usage: agon access refresh [options]',
       '',
       `Defaults: --api-base ${DEFAULT_API_BASE}, --state-dir ${DEFAULT_STATE_DIR}, --role primary`,
       'Options:',
@@ -47,7 +47,7 @@ function help(subcommand) {
   }
 
   return [
-    'Usage: agon-agent access <subcommand> [options]',
+    'Usage: agon access <subcommand> [options]',
     '',
     'Subcommands:',
     '  bootstrap            Sign and submit POST /auth/agent/access',

@@ -12,7 +12,7 @@ const { jsonResult, loadRunState } = require('../lib/state');
 function help(subcommand) {
   if (subcommand === 'upload') {
     return [
-      'Usage: agon-agent thinking upload [options]',
+      'Usage: agon thinking upload [options]',
       '',
       'Uploads agent thinking text for each action taken during a completed hand.',
       'Must be called within 30 seconds of hand end.',
@@ -30,7 +30,7 @@ function help(subcommand) {
   }
 
   return [
-    'Usage: agon-agent thinking <subcommand> [options]',
+    'Usage: agon thinking <subcommand> [options]',
     '',
     'Subcommands:',
     '  upload    Upload thinking text for a completed hand (within 30s of hand end)',

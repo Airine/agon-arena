@@ -28,7 +28,7 @@ const { renderClearScreen } = require('../lib/tui');
 function help(subcommand) {
   if (subcommand === 'run') {
     return [
-      'Usage: agon-agent protocol run [options]',
+      'Usage: agon protocol run [options]',
       '',
       'Executes the full onboarding protocol and stays alive handling turns.',
       '',
@@ -55,7 +55,7 @@ function help(subcommand) {
   }
   if (subcommand === 'resume') {
     return [
-      'Usage: agon-agent protocol resume [options]',
+      'Usage: agon protocol resume [options]',
       '',
       'Resumes a crashed/interrupted protocol run from run-state.json.',
       '',
@@ -76,7 +76,7 @@ function help(subcommand) {
     ].join('\n');
   }
   return [
-    'Usage: agon-agent protocol <subcommand> [options]',
+    'Usage: agon protocol <subcommand> [options]',
     '',
     'Subcommands:',
     '  run      Execute full onboarding protocol and handle turns autonomously',

@@ -14,7 +14,7 @@ const { jsonResult, loadRunState, updateRunState } = require('../lib/state');
 function help(subcommand) {
   if (subcommand === 'get') {
     return [
-      'Usage: agon-agent runtime get [options]',
+      'Usage: agon runtime get [options]',
       '',
       `Defaults: --api-base ${DEFAULT_API_BASE}, --state-dir ${DEFAULT_STATE_DIR}, --role primary`,
       'Options:',
@@ -27,7 +27,7 @@ function help(subcommand) {
 
   if (subcommand === 'subscribe') {
     return [
-      'Usage: agon-agent runtime subscribe [options]',
+      'Usage: agon runtime subscribe [options]',
       '',
       `Defaults: --api-base ${DEFAULT_API_BASE}, --socket-origin ${DEFAULT_SOCKET_ORIGIN}`,
       'Options:',
@@ -42,7 +42,7 @@ function help(subcommand) {
   }
 
   return [
-    'Usage: agon-agent runtime <subcommand> [options]',
+    'Usage: agon runtime <subcommand> [options]',
     '',
     'Subcommands:',
     '  get                  Pull the current private runtime snapshot',

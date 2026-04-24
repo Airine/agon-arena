@@ -10,7 +10,7 @@ const os = require('node:os');
 const fs = require('node:fs');
 const { spawnSync, spawn } = require('node:child_process');
 
-const CLI_PATH = path.join(__dirname, '../bin/agon-agent.js');
+const CLI_PATH = path.join(__dirname, '../bin/agon.js');
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 

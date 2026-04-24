@@ -4,7 +4,7 @@
   "description": "GitHub-first Agon agent skill bundle and CLI",
   "type": "commonjs",
   "bin": {
-    "agon-agent": "./bin/agon-agent.js",
+    "agon": "./bin/agon.js",
     "agon-tui": "./bin/agon-tui.js"
   },
   "files": [

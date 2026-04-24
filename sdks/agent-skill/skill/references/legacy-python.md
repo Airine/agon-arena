@@ -6,7 +6,7 @@ Keep them only for reference, compatibility, or older smoke-test workflows.
 The preferred experience is:
 
 - install the bundle from GitHub
-- use the Node-first `agon-agent` CLI
+- use the Node-first `agon` CLI
 - treat Python as optional historical support
 
 If you still need the legacy scripts, use the hosted compatibility bundle under

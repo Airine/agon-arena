@@ -4,7 +4,7 @@ set -euo pipefail
 
 REPO_TARBALL_URL="https://codeload.github.com/Airine/agon-arena/tar.gz/refs/heads/master"
 PACKAGE_SUBDIR="agon-arena-master/sdks/agent-skill"
-AGON_AGENT_HOME="${AGON_AGENT_HOME:-$HOME/.agon/agent-skill}"
+AGON_HOME="${AGON_HOME:-${AGON_AGENT_HOME:-$HOME/.agon/agent-skill}}"
 DEFAULT_BIN_DIR="${HOME}/.local/bin"
 
 require_command() {
@@ -46,45 +46,45 @@ install_package_home() {
   curl -fsSL "${REPO_TARBALL_URL}" | tar -xz -C "${tmp_dir}"
   archive_root="${tmp_dir}/${PACKAGE_SUBDIR}"
 
-  mkdir -p "${AGON_AGENT_HOME}"
-  rm -rf "${AGON_AGENT_HOME}/bin" \
-         "${AGON_AGENT_HOME}/commands" \
-         "${AGON_AGENT_HOME}/lib" \
-         "${AGON_AGENT_HOME}/skill" \
-         "${AGON_AGENT_HOME}/tools"
-  cp -R "${archive_root}/bin" "${AGON_AGENT_HOME}/bin"
-  cp -R "${archive_root}/commands" "${AGON_AGENT_HOME}/commands"
-  cp -R "${archive_root}/lib" "${AGON_AGENT_HOME}/lib"
-  cp -R "${archive_root}/skill" "${AGON_AGENT_HOME}/skill"
-  cp -R "${archive_root}/tools" "${AGON_AGENT_HOME}/tools"
-  cp "${archive_root}/package.json" "${AGON_AGENT_HOME}/package.json"
-  cp "${archive_root}/README.md" "${AGON_AGENT_HOME}/README.md"
-  (cd "${AGON_AGENT_HOME}" && npm install --omit=dev)
+  mkdir -p "${AGON_HOME}"
+  rm -rf "${AGON_HOME}/bin" \
+         "${AGON_HOME}/commands" \
+         "${AGON_HOME}/lib" \
+         "${AGON_HOME}/skill" \
+         "${AGON_HOME}/tools"
+  cp -R "${archive_root}/bin" "${AGON_HOME}/bin"
+  cp -R "${archive_root}/commands" "${AGON_HOME}/commands"
+  cp -R "${archive_root}/lib" "${AGON_HOME}/lib"
+  cp -R "${archive_root}/skill" "${AGON_HOME}/skill"
+  cp -R "${archive_root}/tools" "${AGON_HOME}/tools"
+  cp "${archive_root}/package.json" "${AGON_HOME}/package.json"
+  cp "${archive_root}/README.md" "${AGON_HOME}/README.md"
+  (cd "${AGON_HOME}" && npm install --omit=dev)
 }
 
 install_cli_wrapper() {
   local bin_dir wrapper_path
   bin_dir="$(detect_bin_dir)"
   mkdir -p "${bin_dir}"
-  wrapper_path="${bin_dir}/agon-agent"
+  wrapper_path="${bin_dir}/agon"
 
-  cat > "${wrapper_path}" <<EOF
+cat > "${wrapper_path}" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-AGON_AGENT_HOME="\${AGON_AGENT_HOME:-${AGON_AGENT_HOME}}"
-exec node "\${AGON_AGENT_HOME}/bin/agon-agent.js" "\$@"
+AGON_HOME="\${AGON_HOME:-\${AGON_AGENT_HOME:-${AGON_HOME}}}"
+exec node "\${AGON_HOME}/bin/agon.js" "\$@"
 EOF
   chmod +x "${wrapper_path}"
 
   if ! printf '%s' "${PATH}" | tr ':' '\n' | grep -Fxq "${bin_dir}"; then
-    echo "Installed agon-agent to ${wrapper_path}" >&2
+    echo "Installed agon to ${wrapper_path}" >&2
     echo "Add ${bin_dir} to PATH to run it directly." >&2
   fi
 }
 
 sync_skill_dirs() {
-  local skill_name="agon-agent"
-  local source_dir="${AGON_AGENT_HOME}/skill"
+  local skill_name="agon"
+  local source_dir="${AGON_HOME}/skill"
   local targets=(
     "${HOME}/.codex/skills/${skill_name}"
     "${HOME}/.claude/skills/${skill_name}"
@@ -109,8 +109,8 @@ main() {
   install_cli_wrapper
   sync_skill_dirs
 
-  echo "Agon agent skill installed under ${AGON_AGENT_HOME}"
-  echo "Run: agon-agent --help"
+  echo "Agon CLI skill installed under ${AGON_HOME}"
+  echo "Run: agon --help"
 }
 
 main "$@"

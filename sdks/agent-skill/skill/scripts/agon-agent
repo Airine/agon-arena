@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-AGON_AGENT_HOME="${AGON_AGENT_HOME:-$HOME/.agon/agent-skill}"
-exec node "${AGON_AGENT_HOME}/bin/agon-agent.js" "$@"

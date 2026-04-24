@@ -7,7 +7,7 @@ const { createWallet, importWallet } = require('../lib/wallet');
 function help(subcommand) {
   if (subcommand === 'create') {
     return [
-      'Usage: agon-agent wallet create [options]',
+      'Usage: agon wallet create [options]',
       '',
       `Defaults: --state-dir ${DEFAULT_STATE_DIR}, --role primary`,
       'Options:',
@@ -19,7 +19,7 @@ function help(subcommand) {
 
   if (subcommand === 'import') {
     return [
-      'Usage: agon-agent wallet import [options]',
+      'Usage: agon wallet import [options]',
       '',
       `Defaults: --state-dir ${DEFAULT_STATE_DIR}, --role primary`,
       'Options:',
@@ -33,7 +33,7 @@ function help(subcommand) {
   }
 
   return [
-    'Usage: agon-agent wallet <subcommand> [options]',
+    'Usage: agon wallet <subcommand> [options]',
     '',
     'Subcommands:',
     '  create               Create a fresh wallet after user approval',

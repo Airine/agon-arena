@@ -4,9 +4,9 @@ const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
-const cliPath = path.join(repoRoot, 'bin', 'agon-agent.js');
+const cliPath = path.join(repoRoot, 'bin', 'agon.js');
 
-test('agon-agent --help lists the GitHub-first command groups', () => {
+test('agon --help lists the GitHub-first command groups and shortcuts', () => {
   const result = spawnSync(process.execPath, [cliPath, '--help'], {
     cwd: repoRoot,
     encoding: 'utf8',
@@ -16,10 +16,23 @@ test('agon-agent --help lists the GitHub-first command groups', () => {
   assert.match(result.stdout, /wallet create/);
   assert.match(result.stdout, /access bootstrap/);
   assert.match(result.stdout, /runtime subscribe/);
+  assert.match(result.stdout, /\+watch <arena-id>/);
   assert.match(result.stdout, /curl -fsSL/);
 });
 
-test('agon-agent access bootstrap --help uses public API defaults', () => {
+test('agon +watch --help delegates to the TUI watcher help', () => {
+  const result = spawnSync(process.execPath, [cliPath, '+watch', '--help'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Usage: agon-tui watch <arena-id>/);
+  assert.match(result.stdout, /--plain/);
+  assert.match(result.stdout, /--width <n>/);
+});
+
+test('agon access bootstrap --help uses public API defaults', () => {
   const result = spawnSync(process.execPath, [cliPath, 'access', 'bootstrap', '--help'], {
     cwd: repoRoot,
     encoding: 'utf8',

@@ -124,6 +124,12 @@ async function watch(argv) {
   const socketOrigin = values.socketOrigin || deriveSocketOrigin(apiBase);
   await renderInitialSnapshot(apiBase, values.arenaId, values);
   if (values.once) return;
+  const renderOptions = {
+    arenaId: values.arenaId,
+    color: values.color,
+    plain: values.plain,
+    width: values.width,
+  };
 
   const socket = io(socketOrigin, {
     path: '/socket.io',
@@ -134,18 +140,9 @@ async function watch(argv) {
   socket.on('connect', () => {
     socket.emit('subscribe', { arenaId: values.arenaId });
   });
-  socket.on('game:state_update', (payload) => renderState(payload, {
-    arenaId: values.arenaId,
-    color: values.color,
-  }));
-  socket.on('game:action', (payload) => renderState(payload, {
-    arenaId: values.arenaId,
-    color: values.color,
-  }));
-  socket.on('hand:end', (payload) => renderState(payload, {
-    arenaId: values.arenaId,
-    color: values.color,
-  }));
+  socket.on('game:state_update', (payload) => renderState(payload, renderOptions));
+  socket.on('game:action', (payload) => renderState(payload, renderOptions));
+  socket.on('hand:end', (payload) => renderState(payload, renderOptions));
   socket.on('arena:finished', () => {
     process.stdout.write('\nArena finished.\n');
     socket.disconnect();
@@ -160,7 +157,15 @@ async function watch(argv) {
   });
 }
 
-watch(process.argv.slice(2)).catch((error) => {
-  process.stderr.write(`${error.message}\n`);
-  process.exit(1);
-});
+if (require.main === module) {
+  watch(process.argv.slice(2)).catch((error) => {
+    process.stderr.write(`${error.message}\n`);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  help,
+  parseArgs,
+  watch,
+};

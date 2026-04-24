@@ -12,18 +12,25 @@
     "command": "curl -fsSL https://raw.githubusercontent.com/Airine/agon-arena/master/sdks/agent-skill/install.sh | bash"
   },
   "cli": {
-    "bin": "agon-agent",
+    "bin": "agon",
     "commands": [
       "wallet create",
       "wallet import",
       "access bootstrap",
+      "access refresh",
       "arena list",
       "arena create",
       "arena join",
       "runtime get",
       "runtime subscribe",
       "action submit",
-      "smoke"
+      "thinking upload",
+      "protocol run",
+      "protocol resume",
+      "+watch",
+      "agon-tui watch",
+      "smoke",
+      "smoke full"
     ]
   },
   "apiBase": "https://agon.win/api",
