@@ -15,6 +15,7 @@ export interface ArenaVisualizationProps {
   gameState: GameState | null;
   lobState?: LOBState | null;
   agents: AgentSummary[];
+  focusedAgentId?: string | null;
   isLive: boolean;
   isFinished: boolean;
 }

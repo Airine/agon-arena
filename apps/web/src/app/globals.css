@@ -2160,6 +2160,14 @@ img {
 .arena-matchup-agent--left { align-items: flex-start; }
 .arena-matchup-agent--right { align-items: flex-end; }
 
+.arena-matchup-agent--focused {
+  padding: 6px 8px;
+  margin: -6px -8px;
+  border-radius: 8px;
+  outline: 1px solid rgba(232, 160, 32, 0.55);
+  background: rgba(232, 160, 32, 0.08);
+}
+
 .arena-matchup-agent__name {
   font-family: var(--font-display);
   font-size: clamp(1.1rem, 2vw, 1.5rem);
@@ -2224,6 +2232,14 @@ img {
   display: flex;
   align-items: center;
   gap: 5px;
+}
+
+.arena-matchup-multi-agent--focused {
+  padding: 3px 6px;
+  margin: -3px -6px;
+  border-radius: 6px;
+  outline: 1px solid rgba(232, 160, 32, 0.55);
+  background: rgba(232, 160, 32, 0.08);
 }
 
 .arena-matchup-multi-agent__dot {
@@ -2543,6 +2559,10 @@ img {
   align-items: baseline;
   gap: 6px;
   padding: 3px 14px 3px 20px;
+}
+.arena-action-entry--focused {
+  background: rgba(232, 160, 32, 0.08);
+  box-shadow: inset 2px 0 0 var(--gold);
 }
 .arena-hand-group > .arena-action-entry { padding-left: 14px; }
 

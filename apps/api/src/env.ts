@@ -18,6 +18,8 @@ const envSchema = z.object({
   REDIS_URL: z.string().url('REDIS_URL must be a valid URL'),
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
   CORS_ORIGIN: corsOriginSchema,
+  PUBLIC_WEB_ORIGIN: z.string().url('PUBLIC_WEB_ORIGIN must be a valid URL').optional(),
+  WEB_ORIGIN: z.string().url('WEB_ORIGIN must be a valid URL').optional(),
   ACTION_ROUND_MIN_MS: z.coerce.number().int().positive().optional(),
 });
 

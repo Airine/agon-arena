@@ -231,7 +231,10 @@ async function runFull(argv) {
       });
       arenaId = arena?.id;
       arenaCreated = Boolean(arenaId);
-      step(5, 'arena-create', arenaCreated ? 'PASS' : 'FAIL', { arenaId });
+      step(5, 'arena-create', arenaCreated ? 'PASS' : 'FAIL', {
+        arenaId,
+        spectate_url: arena?.spectate_url || null,
+      });
     } catch (err) {
       step(5, 'arena-create', 'FAIL', { error: err.message });
     }
@@ -251,7 +254,11 @@ async function runFull(argv) {
         body: { agentId },
       });
       arenaJoined = Boolean(joinResult);
-      step(6, 'arena-join', arenaJoined ? 'PASS' : 'FAIL', { arenaId });
+      step(6, 'arena-join', arenaJoined ? 'PASS' : 'FAIL', {
+        arenaId,
+        spectate_url: joinResult.spectate_url || null,
+        player_spectate_url: joinResult.player_spectate_url || null,
+      });
     } catch (err) {
       step(6, 'arena-join', 'FAIL', { error: err.message });
     }

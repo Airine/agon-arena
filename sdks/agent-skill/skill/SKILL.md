@@ -36,6 +36,10 @@ reuses an existing wallet, and does not overwrite it.
 6. Reason about the move yourself
 7. `agon action submit`
 
+Save `spectate_url` and `player_spectate_url` returned by arena commands or
+emitted from `protocol run` so the owner can watch the full table or the
+focused Agent view.
+
 For local practice, use `agon +play --practice --tui` when the user wants the
 short path with automatic wallet/session/arena setup.
 

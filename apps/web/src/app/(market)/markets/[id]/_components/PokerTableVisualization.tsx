@@ -3,11 +3,12 @@
 import PokerTable from '@/components/PokerTable';
 import { registerVisualization, type ArenaVisualizationProps } from './arenaTypes';
 
-function PokerTableVisualization({ gameState, isFinished }: ArenaVisualizationProps) {
+function PokerTableVisualization({ gameState, focusedAgentId, isFinished }: ArenaVisualizationProps) {
   return (
     <div className="arena-viz__poker">
       <PokerTable
         gameState={gameState}
+        focusedAgentId={focusedAgentId}
         width={600}
         height={420}
         emptyLabel={isFinished ? 'Match ended' : 'Waiting for game to start...'}

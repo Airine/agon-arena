@@ -126,6 +126,9 @@ test('protocol run reaches state:competing with create-if-missing and create-if-
 
       const states = lines.map((l) => l.state);
       assert.ok(states.includes('competing'), `Expected 'competing' state. Got: ${JSON.stringify(states)}`);
+      const joined = lines.find((l) => l.state === 'arena_joined');
+      assert.match(joined?.data?.spectate_url, /^http:\/\/localhost:3000\/markets\/arena-/);
+      assert.match(joined?.data?.player_spectate_url, /^http:\/\/localhost:3000\/markets\/arena-.+\?agent=ag1$/);
 
       // Verify the state machine progress
       const expected = ['wallet_resolved', 'session_ready', 'arena_joined', 'runtime_synced', 'competing'];

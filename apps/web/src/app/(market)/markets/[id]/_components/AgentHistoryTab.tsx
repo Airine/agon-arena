@@ -27,6 +27,7 @@ interface AgentInfo {
 interface AgentHistoryTabProps {
   arenaId: string;
   agents: AgentInfo[];
+  focusedAgentId?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -338,7 +339,7 @@ function FetchError({ onRetry }: { onRetry: () => void }) {
 // Main component
 // ---------------------------------------------------------------------------
 
-export function AgentHistoryTab({ arenaId, agents }: AgentHistoryTabProps) {
+export function AgentHistoryTab({ arenaId, agents, focusedAgentId }: AgentHistoryTabProps) {
   const [turns, setTurns] = useState<TurnRow[]>([]);
   const [traces, setTraces] = useState<TraceRow[]>([]);
   const [turnsLoading, setTurnsLoading] = useState(true);
@@ -532,12 +533,16 @@ export function AgentHistoryTab({ arenaId, agents }: AgentHistoryTabProps) {
                   const agentName = nameMap.get(turn.agentId) ?? turn.agentId.slice(0, 8);
                   const isTimedOut = turn.action == null;
                   const delta = stackDeltas.get(turn.id) ?? null;
+                  const isFocused = focusedAgentId === turn.agentId;
                   return (
                     <tr
                       key={turn.id}
                       style={{
                         borderBottom: '0.5px solid var(--border)',
-                        background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.012)',
+                        background: isFocused
+                          ? 'rgba(232,160,32,0.08)'
+                          : i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.012)',
+                        boxShadow: isFocused ? 'inset 2px 0 0 var(--gold)' : undefined,
                       }}
                     >
                       {/* Turn # */}
@@ -558,9 +563,10 @@ export function AgentHistoryTab({ arenaId, agents }: AgentHistoryTabProps) {
                       <td
                         style={{
                           padding: '7px 12px',
-                          color: 'var(--ink)',
+                          color: isFocused ? 'var(--gold)' : 'var(--ink)',
                           fontFamily: 'var(--font-mono)',
                           fontSize: 11,
+                          fontWeight: isFocused ? 700 : 400,
                           whiteSpace: 'nowrap',
                         }}
                       >
@@ -702,6 +708,7 @@ export function AgentHistoryTab({ arenaId, agents }: AgentHistoryTabProps) {
           <div>
             {agents
               .filter((a) => tracesByAgent.has(a.agentId))
+              .sort((a, b) => (a.agentId === focusedAgentId ? -1 : b.agentId === focusedAgentId ? 1 : 0))
               .map((a) => (
                 <AgentErrorBlock
                   key={a.agentId}

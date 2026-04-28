@@ -22,6 +22,7 @@ import {
 import { advanceHostedPracticeArena } from '../services/hosted-practice.js';
 import { ipRateLimit } from '../middleware/rate-limit.js';
 import { publishFunnelEvent } from '../services/kafka.js';
+import { buildArenaSpectateLinks } from '../lib/spectate-links.js';
 
 export const arenasRouter: RouterType = Router();
 
@@ -123,7 +124,10 @@ arenasRouter.post('/', requireAuth, async (req, res) => {
       })
       .returning();
 
-    res.status(201).json(arena);
+    res.status(201).json({
+      ...arena,
+      ...buildArenaSpectateLinks({ arenaId: arena!.id }),
+    });
   } catch (err) {
     if (err instanceof z.ZodError) {
       res.status(400).json({ error: 'Validation failed', details: err.errors });
@@ -388,6 +392,7 @@ arenasRouter.post('/:id/join', requireAuth, async (req, res) => {
       .select({
         ownerId: schema.agents.ownerId,
         isActive: schema.agents.isActive,
+        name: schema.agents.name,
         metadata: schema.agents.metadata,
       })
       .from(schema.agents)
@@ -467,6 +472,7 @@ arenasRouter.post('/:id/join', requireAuth, async (req, res) => {
         ...seat,
         replacedAgentId: sparringSeat.agentId,
         replacement: 'sparring',
+        ...buildArenaSpectateLinks({ arenaId, agentId, agentName: agent.name }),
       });
       return;
     }
@@ -503,7 +509,10 @@ arenasRouter.post('/:id/join', requireAuth, async (req, res) => {
       ts: new Date().toISOString(),
     });
 
-    res.status(201).json(seat);
+    res.status(201).json({
+      ...seat,
+      ...buildArenaSpectateLinks({ arenaId, agentId, agentName: agent.name }),
+    });
   } catch (err) {
     if (err instanceof z.ZodError) {
       res.status(400).json({ error: 'Validation failed', details: err.errors });

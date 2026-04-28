@@ -165,14 +165,19 @@ async function ensureActiveSession(apiBase, stateDir, role, walletResult) {
 async function findOrCreateAndJoinArena(apiBase, stateDir, session, values) {
   // If specific arena ID given, skip list/create
   if (values['arena-id']) {
-    await requestJson({
+    const joinResult = await requestJson({
       baseUrl: apiBase,
       method: 'POST',
       routePath: `/arenas/${values['arena-id']}/join`,
       token: session.access_token,
       body: { agentId: session.agent.id },
     });
-    return values['arena-id'];
+    return {
+      arenaId: values['arena-id'],
+      spectate_url: joinResult.spectate_url || null,
+      player_spectate_url: joinResult.player_spectate_url || null,
+      share_text: joinResult.share_text || null,
+    };
   }
 
   // Internal compatibility: micro currently aliases practice until a real tier exists.
@@ -208,7 +213,7 @@ async function findOrCreateAndJoinArena(apiBase, stateDir, session, values) {
     throw new Error('No joinable arenas found. Use --create-if-none to create one.');
   }
 
-  await requestJson({
+  const joinResult = await requestJson({
     baseUrl: apiBase,
     method: 'POST',
     routePath: `/arenas/${arenaId}/join`,
@@ -216,7 +221,12 @@ async function findOrCreateAndJoinArena(apiBase, stateDir, session, values) {
     body: { agentId: session.agent.id },
   });
 
-  return arenaId;
+  return {
+    arenaId,
+    spectate_url: joinResult.spectate_url || null,
+    player_spectate_url: joinResult.player_spectate_url || null,
+    share_text: joinResult.share_text || null,
+  };
 }
 
 function resolveDecisionTimeoutMs(payload) {
@@ -686,9 +696,19 @@ async function runProtocol(argv) {
   emit('session_ready', { agentId: session.agent?.id });
 
   // Step 3: Find/join arena
-  const arenaId = await findOrCreateAndJoinArena(apiBase, stateDir, session, values);
-  updateRunState(stateDir, { arena: { id: arenaId, status: 'waiting' } });
-  emit('arena_joined', { arenaId });
+  const arenaJoin = await findOrCreateAndJoinArena(apiBase, stateDir, session, values);
+  const arenaId = arenaJoin.arenaId;
+  updateRunState(stateDir, {
+    arena: { id: arenaId, status: 'waiting' },
+    spectate_url: arenaJoin.spectate_url,
+    player_spectate_url: arenaJoin.player_spectate_url,
+  });
+  emit('arena_joined', {
+    arenaId,
+    spectate_url: arenaJoin.spectate_url,
+    player_spectate_url: arenaJoin.player_spectate_url,
+    share_text: arenaJoin.share_text,
+  });
 
   // Step 4: Sync runtime
   const runtimeResult = await requestJson({

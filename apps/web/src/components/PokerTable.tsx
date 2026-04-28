@@ -5,6 +5,7 @@ import type { GameState } from '@agon/types';
 
 interface PokerTableProps {
   gameState: GameState | null;
+  focusedAgentId?: string | null;
   width?: number;
   height?: number;
   emptyLabel?: string;
@@ -94,6 +95,7 @@ function drawCard(
 
 export default function PokerTable({
   gameState,
+  focusedAgentId = null,
   width = 800,
   height = 540,
   emptyLabel,
@@ -102,8 +104,8 @@ export default function PokerTable({
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Keep latest props readable inside the rAF loop without restarting it
-  const propsRef = useRef({ gameState, width, height, emptyLabel, isTerminalEmptyState });
-  propsRef.current = { gameState, width, height, emptyLabel, isTerminalEmptyState };
+  const propsRef = useRef({ gameState, focusedAgentId, width, height, emptyLabel, isTerminalEmptyState });
+  propsRef.current = { gameState, focusedAgentId, width, height, emptyLabel, isTerminalEmptyState };
 
   // Animation state (mutable refs — no re-renders needed)
   const pulseRef        = useRef(0);      // drives active-glow pulse (sin wave)
@@ -135,7 +137,7 @@ export default function PokerTable({
     }
 
     function loop() {
-      const { gameState: gs, width: W, height: H, emptyLabel: el, isTerminalEmptyState: ite } =
+      const { gameState: gs, focusedAgentId: fai, width: W, height: H, emptyLabel: el, isTerminalEmptyState: ite } =
         propsRef.current;
 
       // --- Advance animation state ---
@@ -249,7 +251,21 @@ export default function PokerTable({
         const col = SEAT_COLORS[i % SEAT_COLORS.length]!;
         const isActive = currentActorIndex !== null &&
           players[currentActorIndex]?.agentId === player.agentId;
+        const isFocused = Boolean(fai && player.agentId === fai);
         const isDealer = dealerIndex === i;
+
+        if (isFocused) {
+          ctx.beginPath();
+          ctx.arc(px, py, 33, 0, Math.PI * 2);
+          ctx.strokeStyle = '#E8A020';
+          ctx.lineWidth = 3;
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(px, py, 38, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(232, 160, 32, 0.35)';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
 
         // Active glow — two-layer pulse (mirrors landing page)
         if (isActive) {

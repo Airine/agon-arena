@@ -137,6 +137,7 @@ async function runCreate(argv) {
     arena_id: result.id,
     arena_name: result.name,
     arena_allow_sparring_replacement: Boolean(result.allowSparringReplacement),
+    spectate_url: result.spectate_url,
   });
 
   process.stdout.write(`${JSON.stringify(jsonResult({
@@ -148,6 +149,8 @@ async function runCreate(argv) {
       arenaName: result.name,
       allowSparringReplacement: Boolean(result.allowSparringReplacement),
       status: result.status,
+      spectate_url: result.spectate_url || null,
+      share_text: result.share_text || null,
     },
   }), null, 2)}\n`);
 }
@@ -180,6 +183,8 @@ async function runJoin(argv) {
   updateRunState(values['state-dir'], {
     arena_id: arenaId,
     primary_joined_arena: values.role === 'primary' ? true : undefined,
+    spectate_url: result.spectate_url,
+    player_spectate_url: result.player_spectate_url,
   });
 
   process.stdout.write(`${JSON.stringify(jsonResult({
@@ -192,6 +197,9 @@ async function runJoin(argv) {
       replacement: result.replacement || null,
       replacedAgentId: result.replacedAgentId || null,
       status: result.status || null,
+      spectate_url: result.spectate_url || null,
+      player_spectate_url: result.player_spectate_url || null,
+      share_text: result.share_text || null,
     },
   }), null, 2)}\n`);
 }

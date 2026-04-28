@@ -87,11 +87,13 @@ const EQUITY_COLORS = [
 
 function MatchupHeader({
   agents,
+  focusedAgentId,
   currentHandNumber,
   currentStage,
   isLive,
 }: {
   agents: AgentSummary[];
+  focusedAgentId?: string | null;
   currentHandNumber: number | null;
   currentStage: string | null;
   isLive: boolean;
@@ -136,7 +138,7 @@ function MatchupHeader({
     // Flanked layout: [Name / Stack]  [bar + info]  [Stack / Name]
     return (
       <div className="arena-matchup-header">
-        <div className="arena-matchup-agent arena-matchup-agent--left">
+        <div className={`arena-matchup-agent arena-matchup-agent--left${focusedAgentId === sorted[0].agentId ? ' arena-matchup-agent--focused' : ''}`}>
           <span className="arena-matchup-agent__name">
             {AGENT_ID_RE.test(sorted[0].agentId) ? (
               <Link href={`/agents/${sorted[0].agentId}`}>{sorted[0].agentName}</Link>
@@ -152,7 +154,7 @@ function MatchupHeader({
           {infoLine}
         </div>
 
-        <div className="arena-matchup-agent arena-matchup-agent--right">
+        <div className={`arena-matchup-agent arena-matchup-agent--right${focusedAgentId === sorted[1].agentId ? ' arena-matchup-agent--focused' : ''}`}>
           <span className="arena-matchup-agent__stack" style={{ color: EQUITY_COLORS[1] }}>
             {formatStack(sorted[1].currentStack)}
           </span>
@@ -173,7 +175,10 @@ function MatchupHeader({
         {equityBar}
         <div className="arena-matchup-agents-row">
           {sorted.map((agent, i) => (
-            <div key={agent.agentId} className="arena-matchup-multi-agent">
+            <div
+              key={agent.agentId}
+              className={`arena-matchup-multi-agent${focusedAgentId === agent.agentId ? ' arena-matchup-multi-agent--focused' : ''}`}
+            >
               <span
                 className="arena-matchup-multi-agent__dot"
                 style={{ background: EQUITY_COLORS[i % EQUITY_COLORS.length] }}
@@ -302,7 +307,13 @@ function GameStatusStrip({
   );
 }
 
-function ActionFeed({ actions }: { actions: ReturnType<typeof useArenaSocket>['actions'] }) {
+function ActionFeed({
+  actions,
+  focusedAgentId,
+}: {
+  actions: ReturnType<typeof useArenaSocket>['actions'];
+  focusedAgentId?: string | null;
+}) {
   if (actions.length === 0) {
     return (
       <div style={{ padding: '16px 14px', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-faint)' }}>
@@ -338,7 +349,10 @@ function ActionFeed({ actions }: { actions: ReturnType<typeof useArenaSocket>['a
               {round.entries.map((entry) => {
                 const actionType = entry.action?.type ?? 'unknown';
                 return (
-                  <div key={entry.id} className={`arena-action-entry arena-action-entry--${actionType}`}>
+                  <div
+                    key={entry.id}
+                    className={`arena-action-entry arena-action-entry--${actionType}${focusedAgentId === entry.agentId ? ' arena-action-entry--focused' : ''}`}
+                  >
                     <span className="arena-action-entry__main">
                       <strong>{entry.agentName}</strong> {formatAction(actionType, entry.action?.amount)}
                     </span>
@@ -369,6 +383,7 @@ export default function ArenaDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const [focusedAgentId, setFocusedAgentId] = useState<string | null>(null);
 
   const [arena, setArena] = useState<ArenaData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -402,6 +417,17 @@ export default function ArenaDetailPage({
 
   // Tab state: 'live' | 'history'
   const [activeTab, setActiveTab] = useState<'live' | 'history'>('live');
+
+  useEffect(() => {
+    function syncFocusedAgent() {
+      const query = new URLSearchParams(window.location.search);
+      setFocusedAgentId(query.get('agent') || query.get('agentId'));
+    }
+
+    syncFocusedAgent();
+    window.addEventListener('popstate', syncFocusedAgent);
+    return () => window.removeEventListener('popstate', syncFocusedAgent);
+  }, []);
 
   useEffect(() => {
     setFetchError(false);
@@ -579,6 +605,7 @@ export default function ArenaDetailPage({
         {/* Matchup header — chip equity bar */}
         <MatchupHeader
           agents={agents}
+          focusedAgentId={focusedAgentId}
           currentHandNumber={currentHandNumber}
           currentStage={currentStage}
           isLive={isLive}
@@ -606,6 +633,7 @@ export default function ArenaDetailPage({
         {activeTab === 'history' ? (
           <AgentHistoryTab
             arenaId={id}
+            focusedAgentId={focusedAgentId}
             agents={agents.map((a) => ({ agentId: a.agentId, agentName: a.agentName }))}
           />
         ) : (
@@ -618,6 +646,7 @@ export default function ArenaDetailPage({
                   gameState={gameState}
                   lobState={lobState}
                   agents={agents}
+                  focusedAgentId={focusedAgentId}
                   isLive={isLive}
                   isFinished={!!isFinished}
                 />
@@ -652,7 +681,7 @@ export default function ArenaDetailPage({
                   title="Action Feed"
                   eyebrow={currentHandNumber != null ? `HAND #${currentHandNumber}` : undefined}
                 />
-                <ActionFeed actions={actions} />
+                <ActionFeed actions={actions} focusedAgentId={focusedAgentId} />
               </div>
             </aside>
           </div>

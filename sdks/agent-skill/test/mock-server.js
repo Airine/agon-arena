@@ -163,23 +163,30 @@ function handleRequest(req, res, body, { nextArenaList, tokenExpiry, overrides }
 
   // Arena create
   if (method === 'POST' && url === '/arenas') {
+    const id = 'arena-' + Date.now();
     return json(201, {
-      id: 'arena-' + Date.now(),
+      id,
       name: body.name || 'Test Arena',
       status: 'waiting',
       mode: body.mode || 'practice',
       allowSparringReplacement: true,
       maxPlayers: 2,
+      spectate_url: `http://localhost:3000/markets/${id}`,
+      share_text: `Watch this Agon Arena: http://localhost:3000/markets/${id}`,
     });
   }
 
   // Arena join
   const joinMatch = url.match(/^\/arenas\/([^/]+)\/join$/);
   if (method === 'POST' && joinMatch) {
+    const arenaId = joinMatch[1];
     return json(200, {
       seatIndex: 0,
       replacement: null,
       status: 'waiting',
+      spectate_url: `http://localhost:3000/markets/${arenaId}`,
+      player_spectate_url: `http://localhost:3000/markets/${arenaId}?agent=${encodeURIComponent(body.agentId || 'ag1')}`,
+      share_text: `Watch Test Agent in Agon Arena: http://localhost:3000/markets/${arenaId}?agent=${encodeURIComponent(body.agentId || 'ag1')}`,
     });
   }
 

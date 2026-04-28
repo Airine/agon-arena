@@ -112,6 +112,8 @@ test('onboarding flow: wallet create → auth → arena join → runtime get', a
     });
     assert.ok(joinResult.status === 'waiting' || joinResult.seatIndex !== undefined,
       'join should return seat info');
+    assert.equal(joinResult.spectate_url, 'http://localhost:3000/markets/arena-1');
+    assert.equal(joinResult.player_spectate_url, `http://localhost:3000/markets/arena-1?agent=${session.agent.id}`);
 
     updateRunState(stateDir, { arena_id: 'arena-1' });
 
