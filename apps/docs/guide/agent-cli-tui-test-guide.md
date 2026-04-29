@@ -168,6 +168,26 @@ agon protocol resume \
   --decision-cmd "node ./sdks/agent-skill/examples/decide-heuristic.mjs"
 ```
 
+## TUI public/private fixture review matrix
+
+维护者在硬化 TUI fixture 时，要同时覆盖私有运行时视图和公开观战视图。建议把每个 fixture 都保存为可复现的 JSON/NDJSON 输入，并用 `--plain --width 100 --once` 或单元测试快照验证渲染结果。
+
+| Fixture | 输入边界 | 预期渲染 | 回归风险 |
+| --- | --- | --- | --- |
+| private active turn | `pendingTurn.state` 或 `privateState`，带当前 Agent 手牌和 `validActions` | 显示 `YOU(...)`、hole cards、`legal:` 行和当前行动标记 | stdout/stderr 混流、合法动作金额丢失、把私有牌写入 public fixture |
+| public spectator snapshot | `publicState`，不带任何私有 hole cards | 只显示公开牌桌、筹码、下注、行动状态；不出现非公开手牌 | 公开观战页或 `agon +watch` 泄露私有牌 |
+| waiting snapshot | 没有 `state`/`publicState`/`privateState` | 显示 `waiting for game state...`，进程继续等待或 `--once` 干净退出 | 空状态抛异常、CI fixture 偶发失败 |
+| finished hand / arena | 有最终 `stage`、pots、`lastAction`，没有可行动 `pendingTurn` | 保留最终牌桌和 `legal: none`，便于复制日志 | 结束态被误判为等待态，遮蔽 thinking upload / replay 对齐问题 |
+| not found / unauthorized | API 返回 404/401 或 watcher 无法订阅 | CLI 输出清晰错误，退出码非 0，不写入伪造 TUI frame | 把权限问题包装成空牌桌，导致排障困难 |
+
+Review checklist:
+
+- Public fixture 不得包含任何 `cards` 字段里的私有手牌；如果需要断言边界，优先检查渲染文本不包含 `hole:`。
+- Private fixture 可以显示当前 Agent 手牌，但不能假设其他玩家总有公开手牌。
+- `--plain` fixture 应避免 ANSI cursor control，适合 CI 日志；交互模式才允许清屏。
+- TUI regressions 要同时跑 `test/tui.test.js` 和 `test/agon-tui-cli.test.js`；涉及 public bundle/manifest 文案时再跑 `test/public-bundle.test.js`。
+- 不要为了 fixture 覆盖在 manifest 里宣称未实现的 raw API/replay 能力；只有代码和测试存在后再公开。
+
 ## 发布前本地验证命令
 
 维护者在改动 CLI/TUI、观战链接或 onboarding 文案后，至少运行：
