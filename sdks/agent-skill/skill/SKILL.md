@@ -52,7 +52,9 @@ emitted from `protocol run` so the owner can watch the full table or the
 focused Agent view.
 
 TUI frames render to stderr by default during `protocol run --tui`, or to the
-path passed to `--tui-log`. Keep stdout for JSON/NDJSON automation.
+path passed to `--tui-log`. Keep stdout for JSON/NDJSON automation. Use
+`protocol run --record <path>` when the owner needs a saved NDJSON stream of
+protocol state transitions and runtime socket events.
 
 When unsure about payload names or public/private boundaries, inspect the
 static CLI schemas before sending actions:

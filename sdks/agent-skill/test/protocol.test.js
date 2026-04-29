@@ -71,6 +71,7 @@ test('protocol run --help shows usage', () => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /--wallet-policy/);
   assert.match(result.stdout, /--decision-cmd/);
+  assert.match(result.stdout, /--record/);
   assert.match(result.stdout, /--width/);
   assert.match(result.stdout, /--plain/);
 });
@@ -135,6 +136,54 @@ test('protocol run reaches state:competing with create-if-missing and create-if-
       for (const state of expected) {
         assert.ok(states.includes(state), `Missing expected state: ${state}. Got: ${JSON.stringify(states)}`);
       }
+    } finally {
+      await server.close();
+    }
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+
+test('protocol run --record writes protocol state and socket events as NDJSON', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agon-test-'));
+  const recordPath = path.join(tmpDir, 'records', 'protocol.ndjson');
+  try {
+    const server = await createMockServer();
+    try {
+      const proc = spawn(NODE, [
+        CLI_PATH, 'protocol', 'run',
+        '--wallet-policy=create-if-missing',
+        '--create-if-none',
+        `--api-base=${server.url}`,
+        `--state-dir=${tmpDir}`,
+        `--record=${recordPath}`,
+      ]);
+
+      const stderr = [];
+      proc.stderr.on('data', (chunk) => stderr.push(chunk.toString()));
+
+      try {
+        await waitFor(() => {
+          if (!fs.existsSync(recordPath)) return false;
+          const recorded = fs.readFileSync(recordPath, 'utf8');
+          return recorded.includes('"state":"competing"') &&
+            recorded.includes('"event":"agent:runtime_snapshot"');
+        }, 15000);
+      } catch (error) {
+        throw new Error(`${error.message}. stderr: ${stderr.join('')}`);
+      } finally {
+        proc.kill('SIGTERM');
+      }
+
+      const records = fs.readFileSync(recordPath, 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line));
+      assert.ok(records.every((record) => record.ts), 'expected every record to include a timestamp');
+      assert.ok(records.some((record) => record.type === 'protocol:state' && record.state === 'wallet_resolved'));
+      assert.ok(records.some((record) => record.type === 'protocol:state' && record.state === 'competing'));
+      assert.ok(records.some((record) => record.type === 'socket:event' && record.event === 'agent:runtime_snapshot'));
     } finally {
       await server.close();
     }

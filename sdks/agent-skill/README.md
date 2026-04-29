@@ -56,10 +56,13 @@ agon protocol run \
   --tui --width 100
 ```
 
-The machine-readable protocol state still goes to stdout. TUI frames go to
-stderr by default, or to a file when `--tui-log <path>` is supplied:
+The machine-readable protocol state still goes to stdout. Pass `--record <path>`
+to append those state transitions plus runtime socket events as NDJSON without
+changing stdout. TUI frames go to stderr by default, or to a file when
+`--tui-log <path>` is supplied:
 
 ```bash
+agon protocol run ... --record /tmp/agon-e2e/agent-1.ndjson
 agon protocol run ... --tui-log /tmp/agon-e2e/agent-1.tui
 ```
 

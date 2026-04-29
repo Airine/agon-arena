@@ -42,6 +42,7 @@ function help(subcommand) {
       '  --arena-tier <tier>            practice | serious (default: practice)',
       '  --create-if-none               create a new practice arena if none are joinable',
       '  --decision-cmd <cmd>           shell command for turn decisions (stdin: game state JSON, stdout: action JSON)',
+      '  --record <path>                append protocol state/socket events as NDJSON',
       '  --tui                          render a private ASCII table to stderr while competing',
       '  --tui-log <path>               append private ASCII table frames to a log file instead of stderr',
       '  --no-color                     disable ANSI colors in TUI output',
@@ -66,6 +67,7 @@ function help(subcommand) {
       '  --wallet-policy <policy>   require-existing | create-if-missing | import-private-key-env',
       '  --private-key-env <envvar> env var holding hex private key',
       '  --decision-cmd <cmd>       shell command for turn decisions',
+      '  --record <path>            append protocol state/socket events as NDJSON',
       '  --tui                      render a private ASCII table to stderr while competing',
       '  --tui-log <path>           append private ASCII table frames to a log file instead of stderr',
       '  --no-color                 disable ANSI colors in TUI output',
@@ -428,6 +430,21 @@ function createTuiWriter(values, agentId) {
   };
 }
 
+
+function createRecordWriter(recordPath) {
+  if (!recordPath) return () => {};
+  const resolvedPath = path.resolve(recordPath);
+  fs.mkdirSync(path.dirname(resolvedPath), { recursive: true });
+
+  return (entry) => {
+    const line = {
+      ts: new Date().toISOString(),
+      ...entry,
+    };
+    fs.appendFileSync(resolvedPath, `${JSON.stringify(line)}\n`, 'utf8');
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Socket loop — shared between run and resume
 // ---------------------------------------------------------------------------
@@ -443,6 +460,7 @@ async function runSocketLoop({
   walletResultGetter,
   emitFn,
   tuiWriter,
+  recordEvent = () => {},
 }) {
   const reconnectMaxMs = parseInt(values['reconnect-max-ms']) || 30000;
   const turnDeadlineBufferMs = parseInt(values['turn-deadline-buffer-ms']) || 10000;
@@ -468,6 +486,7 @@ async function runSocketLoop({
         once: 'none',
         onEvent: async (event) => {
           if (finished) return;
+          recordEvent({ type: 'socket:event', event: event.type, payload: event.payload });
 
           if (event.type === 'agent:turn_request') {
             const turn = turnFromEventPayload(event.payload);
@@ -664,6 +683,7 @@ async function runProtocol(argv) {
       'arena-tier': { type: 'string', default: 'practice' },
       'create-if-none': { type: 'boolean', default: false },
       'decision-cmd': { type: 'string' },
+      record: { type: 'string' },
       tui: { type: 'boolean', default: false },
       'tui-log': { type: 'string' },
       'no-color': { type: 'boolean', default: false },
@@ -680,9 +700,12 @@ async function runProtocol(argv) {
   const role = values.role;
 
   ensureStateLayout(stateDir);
+  const recordEvent = createRecordWriter(values.record);
 
   function emit(state, data = {}) {
-    process.stdout.write(JSON.stringify({ ok: true, state, data }) + '\n');
+    const event = { ok: true, state, data };
+    recordEvent({ type: 'protocol:state', state, data });
+    process.stdout.write(JSON.stringify(event) + '\n');
   }
 
   // Step 1: Resolve wallet
@@ -738,6 +761,7 @@ async function runProtocol(argv) {
     walletResultGetter,
     emitFn: emit,
     tuiWriter,
+    recordEvent,
   });
 }
 
@@ -761,6 +785,7 @@ async function resumeProtocol(argv) {
       'wallet-policy': { type: 'string', default: 'require-existing' },
       'private-key-env': { type: 'string' },
       'decision-cmd': { type: 'string' },
+      record: { type: 'string' },
       tui: { type: 'boolean', default: false },
       'tui-log': { type: 'string' },
       'no-color': { type: 'boolean', default: false },
@@ -841,6 +866,7 @@ async function resumeProtocol(argv) {
     ...(values['private-key-env'] ? [`--private-key-env=${values['private-key-env']}`] : []),
     `--arena-id=${arenaId}`,
     ...(values['decision-cmd'] ? [`--decision-cmd=${values['decision-cmd']}`] : []),
+    ...(values.record ? [`--record=${values.record}`] : []),
     ...(values.tui ? ['--tui'] : []),
     ...(values['tui-log'] ? [`--tui-log=${values['tui-log']}`] : []),
     ...(values['no-color'] ? ['--no-color'] : []),
