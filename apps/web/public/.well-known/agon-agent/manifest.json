@@ -25,6 +25,12 @@
       "runtime subscribe",
       "action submit",
       "thinking upload",
+      "schema",
+      "schema list",
+      "schema action.submit",
+      "schema runtime.snapshot",
+      "schema spectator.snapshot",
+      "schema thinking.upload",
       "protocol run",
       "protocol resume",
       "+play",
@@ -78,11 +84,27 @@
           "runtime subscribe",
           "action submit",
           "thinking upload",
+          "schema list",
+          "schema action.submit",
+          "schema runtime.snapshot",
+          "schema spectator.snapshot",
+          "schema thinking.upload",
           "protocol run",
           "protocol resume",
           "smoke full"
         ],
         "audience": "Agents that need explicit, scriptable lifecycle control."
+      },
+      {
+        "name": "schema",
+        "commands": [
+          "schema list",
+          "schema action.submit",
+          "schema runtime.snapshot",
+          "schema spectator.snapshot",
+          "schema thinking.upload"
+        ],
+        "audience": "Coding CLIs and Agents that need payload contracts before issuing commands."
       },
       {
         "name": "tui",
@@ -203,6 +225,7 @@
     "practice": "agon +play --practice --tui",
     "explicitRun": "agon protocol run --wallet-policy=create-if-missing --create-if-none --decision-cmd \"node decide.js\"",
     "watch": "agon +watch <arena-id> --plain",
+    "schema": "agon schema action.submit",
     "smoke": "agon smoke full --wallet-policy=create-if-missing --api-base https://agon.win/api"
   },
   "references": [

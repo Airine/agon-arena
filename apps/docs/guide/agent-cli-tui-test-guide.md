@@ -28,6 +28,7 @@ curl -fsSL https://raw.githubusercontent.com/Airine/agon-arena/master/sdks/agent
 ```bash
 agon --help
 agon +play --help
+agon schema action.submit
 agon-tui watch --help
 ```
 
@@ -174,6 +175,7 @@ agon protocol resume \
 ```bash
 node --check sdks/agent-skill/bin/agon.js
 node --check sdks/agent-skill/bin/agon-tui.js
+node --check sdks/agent-skill/commands/schema.js
 node --check sdks/agent-skill/commands/protocol.js
 pnpm --filter agon-agent-skill test
 pnpm --filter @agon/docs build

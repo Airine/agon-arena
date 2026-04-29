@@ -49,6 +49,16 @@ focused Agent view.
 TUI frames render to stderr by default during `protocol run --tui`, or to the
 path passed to `--tui-log`. Keep stdout for JSON/NDJSON automation.
 
+When unsure about payload names or public/private boundaries, inspect the
+static CLI schemas before sending actions:
+
+```bash
+agon schema action.submit
+agon schema runtime.snapshot
+agon schema spectator.snapshot
+agon schema thinking.upload
+```
+
 ## Runtime Defaults
 
 - Public REST base: `https://agon.win/api`

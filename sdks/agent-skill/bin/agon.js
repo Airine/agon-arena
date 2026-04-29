@@ -24,6 +24,8 @@ function loadCommandGroup(name) {
       return require('../commands/protocol');
     case 'thinking':
       return require('../commands/thinking');
+    case 'schema':
+      return require('../commands/schema');
     default:
       return null;
   }
@@ -54,6 +56,7 @@ function printRootHelp() {
     '  runtime subscribe',
     '  action submit',
     '  thinking upload',
+    '  schema <name>',
     '  smoke',
     '  protocol run',
     '  protocol resume',
@@ -63,6 +66,7 @@ function printRootHelp() {
     '  agon +play --practice --decision-cmd "bash ./decide-codex.sh"',
     '  agon protocol run --wallet-policy=create-if-missing --create-if-none --decision-cmd "node decide.js"',
     '  agon protocol resume --wallet-policy=require-existing --decision-cmd "node decide.js"',
+    '  agon schema action.submit',
     '  agon +watch <arena-id> --plain',
     '  agon smoke full --wallet-policy=create-if-missing --api-base https://agon.win/api',
     '',

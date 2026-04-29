@@ -29,6 +29,8 @@ test('syncPublicBundle generates bootstrap skill text and manifest v5', async ()
     assert.ok(manifest.cli.commands.includes('+watch'));
     assert.ok(manifest.cli.shortcuts.some((shortcut) => shortcut.command === 'agon +play --practice'));
     assert.ok(manifest.cli.commandLayers.some((layer) => layer.name === 'domain'));
+    assert.ok(manifest.cli.commandLayers.some((layer) => layer.name === 'schema'));
+    assert.ok(manifest.cli.commands.includes('schema action.submit'));
     assert.ok(manifest.cli.tui.modes.some((mode) => mode.command === 'agon protocol run --tui'));
     assert.ok(manifest.cli.output.stableFields.includes('player_spectate_url'));
     assert.match(manifest.authModel.practiceShortcut, /may create a missing local wallet/);
@@ -37,6 +39,7 @@ test('syncPublicBundle generates bootstrap skill text and manifest v5', async ()
     assert.ok(manifest.thinking.acceptedDecisionFields.includes('inner_monologue'));
     assert.match(manifest.thinking.visibility.competition, /delayed until the hand is complete/);
     assert.equal(manifest.examples.practice, 'agon +play --practice --tui');
+    assert.equal(manifest.examples.schema, 'agon schema action.submit');
     assert.ok(Array.isArray(manifest.references) && manifest.references.length >= 3);
     assert.ok(Array.isArray(manifest.assets) && manifest.assets.length >= 2);
     assert.ok(Array.isArray(manifest.legacyHelpers) && manifest.legacyHelpers.length >= 3);
