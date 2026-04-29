@@ -26,6 +26,8 @@ function loadCommandGroup(name) {
       return require('../commands/thinking');
     case 'schema':
       return require('../commands/schema');
+    case 'replay':
+      return require('../commands/replay');
     default:
       return null;
   }
@@ -57,9 +59,11 @@ function printRootHelp() {
     '  action submit',
     '  thinking upload',
     '  schema <name>',
+    '  replay <file.ndjson>',
     '  smoke',
     '  protocol run',
     '  protocol resume',
+    '  replay',
     '',
     'Examples:',
     '  agon +play --practice --tui',
@@ -67,6 +71,7 @@ function printRootHelp() {
     '  agon protocol run --wallet-policy=create-if-missing --create-if-none --decision-cmd "node decide.js"',
     '  agon protocol resume --wallet-policy=require-existing --decision-cmd "node decide.js"',
     '  agon schema action.submit',
+    '  agon replay /tmp/agon-run.ndjson',
     '  agon +watch <arena-id> --plain',
     '  agon smoke full --wallet-policy=create-if-missing --api-base https://agon.win/api',
     '',

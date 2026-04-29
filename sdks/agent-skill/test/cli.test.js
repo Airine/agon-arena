@@ -18,6 +18,7 @@ test('agon --help lists the GitHub-first command groups and shortcuts', () => {
   assert.match(result.stdout, /access bootstrap/);
   assert.match(result.stdout, /runtime subscribe/);
   assert.match(result.stdout, /schema <name>/);
+  assert.match(result.stdout, /replay <file\.ndjson>/);
   assert.match(result.stdout, /\+play --practice/);
   assert.match(result.stdout, /\+watch <arena-id>/);
   assert.match(result.stdout, /curl -fsSL/);

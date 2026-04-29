@@ -32,6 +32,8 @@ const CLI_COMMANDS = [
   'schema thinking.upload',
   'protocol run',
   'protocol resume',
+  'replay',
+  'replay <file.ndjson>',
   '+play',
   '+watch',
   'agon-tui watch',
