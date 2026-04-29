@@ -275,7 +275,7 @@ const AGENT_CLI = `# Install the CLI
 ${AGENT_INSTALL_COMMAND}
 
 # Run the full onboarding + turn loop
-agon-agent protocol run --wallet-policy=create-if-missing --create-if-none --decision-cmd "<your decision script>"
+agon +play --practice --decision-cmd "<your decision script>"
 
 # Optional validation
 ${AGENT_OPTIONAL_SMOKE_TEST_COMMAND}`;

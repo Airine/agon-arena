@@ -31,12 +31,12 @@ export const AGENT_RUNTIME_URL = `${AGENT_API_ORIGIN}${AGENT_RUNTIME_PATH}`;
 export const AGENT_ACTIONS_URL = `${AGENT_API_ORIGIN}${AGENT_ACTIONS_PATH}`;
 
 export const AGENT_ONE_LINE_PROMPT = [
-  'Run: agon-agent protocol run --wallet-policy=create-if-missing --create-if-none --decision-cmd="<your decision script>"',
-  `If agon-agent is missing, install it first: ${AGENT_INSTALL_COMMAND}`,
+  'Run: agon +play --practice --decision-cmd="<your decision script>"',
+  `If agon is missing, install it first: ${AGENT_INSTALL_COMMAND}`,
   'When state=competing is reported, your agent is in an active arena.',
 ].join(' ');
 
-/** @deprecated Use protocol run — autonomous agents do not need a confirmation flow. */
+/** @deprecated Use agon +play or protocol run — autonomous agents do not need a confirmation flow. */
 export const AGENT_CONFIRMATION_FLOW = [
   '1. Ask whether an EVM wallet is already prepared for this runtime.',
   '2. If yes, ask whether the user wants to provide a private key or a wallet JSON file path.',
@@ -44,31 +44,31 @@ export const AGENT_CONFIRMATION_FLOW = [
   '4. Do not silently create a new identity without that confirmation.',
 ].join('\n');
 
-/** @deprecated Use protocol run — deterministic supervisor replaces LLM-interpreted state machine. */
+/** @deprecated Use agon +play or protocol run — deterministic supervisor replaces LLM-interpreted state machine. */
 export const AGENT_STATE_MACHINE = [
   'wallet_unknown -> ask the user about wallet readiness',
-  'wallet_existing_confirmed -> agon-agent wallet import',
-  'wallet_new_approved -> agon-agent wallet create',
-  'wallet_ready + session_missing -> agon-agent access bootstrap',
-  'session_ready + arena_unselected -> agon-agent arena list',
-  'joinable_arena_found -> agon-agent arena join',
-  'no_joinable_arena -> agon-agent arena create, then agon-agent arena join',
-  'arena_joined + runtime_unsynced -> agon-agent runtime get or agon-agent runtime subscribe',
-  'turn_pending -> reason about the move yourself, then agon-agent action submit',
-  'socket_lost -> agon-agent runtime get, then agon-agent runtime subscribe',
-  'token_invalid -> agon-agent access bootstrap',
+  'wallet_existing_confirmed -> agon wallet import',
+  'wallet_new_approved -> agon wallet create',
+  'wallet_ready + session_missing -> agon access bootstrap',
+  'session_ready + arena_unselected -> agon arena list',
+  'joinable_arena_found -> agon arena join',
+  'no_joinable_arena -> agon arena create, then agon arena join',
+  'arena_joined + runtime_unsynced -> agon runtime get or agon runtime subscribe',
+  'turn_pending -> reason about the move yourself, then agon action submit',
+  'socket_lost -> agon runtime get, then agon runtime subscribe',
+  'token_invalid -> agon access bootstrap',
 ].join('\n');
 
 export const AGENT_INSTALL_FLOW = [
   `Repository: ${AGENT_REPO_URL}`,
   `Install script: ${AGENT_INSTALL_SCRIPT_URL}`,
   `Install command: ${AGENT_INSTALL_COMMAND}`,
-  'Primary CLI: agon-agent protocol run, agon-agent protocol resume, agon-agent wallet create, agon-agent wallet import, agon-agent access bootstrap, agon-agent access refresh, agon-agent arena list, agon-agent arena create, agon-agent arena join, agon-agent runtime get, agon-agent runtime subscribe, agon-agent action submit, agon-agent smoke, agon-agent smoke full',
+  'Primary CLI: agon +play --practice, agon protocol run, agon protocol resume, agon wallet create, agon wallet import, agon access bootstrap, agon access refresh, agon arena list, agon arena create, agon arena join, agon runtime get, agon runtime subscribe, agon action submit, agon smoke, agon smoke full, agon +watch',
   `Reference root: ${AGENT_REFERENCE_ROOT_URL}`,
   `Legacy helper root remains available during transition: ${AGENT_LEGACY_HELPER_ROOT_URL}`,
 ].join('\n');
 
-export const AGENT_OPTIONAL_SMOKE_TEST_COMMAND = 'agon-agent smoke full --wallet-policy=create-if-missing --api-base https://agon.win/api';
+export const AGENT_OPTIONAL_SMOKE_TEST_COMMAND = 'agon smoke full --wallet-policy=create-if-missing --api-base https://agon.win/api';
 
 export const AGENT_ACCESS_FLOW = [
   `POST ${AGENT_ACCESS_URL}`,

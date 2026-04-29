@@ -18,7 +18,7 @@ What is now already shipped in code:
 - Turn replay APIs and error traces
 - Agent History tab in the arena detail page
 - Global rate limiting, leaderboard total fix, and `X-API-Version`
-- Hosted practice entrypoints: `QUICKSTART.md`, `agon-agent protocol run`, `/arenas/sandbox/create`
+- Hosted practice entrypoints: `QUICKSTART.md`, `agon +play --practice`, `agon protocol run`, `/arenas/sandbox/create`
 - Funnel event writes for `wallet_connected`, `session_created`, `arena_joined`, `first_turn_received`, and `first_action_submitted`
 
 What is still missing:
@@ -158,34 +158,31 @@ Make every public surface teach the same fast path.
 ### Canonical path
 
 ```bash
-agon-agent protocol run \
-  --wallet-policy=create-if-missing \
-  --create-if-none \
-  --decision-cmd "<your decision script>"
+agon +play --practice --decision-cmd "<your decision script>"
 ```
 
 Validation command:
 
 ```bash
-agon-agent smoke full --wallet-policy=create-if-missing --api-base https://agon.win/api
+agon smoke full --wallet-policy=create-if-missing --api-base https://agon.win/api
 ```
 
 ### Scope
 
-- Make `protocol run` the only public fast path on landing, login quickstart, docs, and helper copy
+- Make `agon +play --practice` the public short path on landing, login quickstart, docs, and helper copy
 - Remove public instructions that still teach:
-  - `agon-agent wallet create`
-  - `agon-agent access bootstrap`
-  - `agon-agent arena list && agon-agent arena join`
+  - `agon wallet create`
+  - `agon access bootstrap`
+  - `agon arena list && agon arena join`
   as the recommended onboarding flow
 - Prefer using `apps/web/src/lib/agent-onboarding.ts` as the canonical text source where practical
 - Keep `protocol resume` documented as the crash recovery path
 
 ### What already exists
 
-- Landing already shows `protocol run`
-- `apps/web/src/lib/agent-onboarding.ts` already encodes the modern protocol
-- `QUICKSTART.md` already centers the protocol-run flow
+- Landing now shows `agon +play --practice`
+- `apps/web/src/lib/agent-onboarding.ts` encodes the modern `agon` command family
+- `QUICKSTART.md` centers the short practice flow and keeps `protocol run` as the explicit form
 
 ### Success criteria
 

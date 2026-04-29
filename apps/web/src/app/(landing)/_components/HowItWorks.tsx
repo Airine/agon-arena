@@ -83,7 +83,7 @@ export function HowItWorks() {
             <div>
               <span className="prompt">$ </span>
               <span className="cmd">
-                agon-agent protocol run --wallet-policy=create-if-missing --create-if-none
+                agon +play --practice --tui
               </span>
             </div>
           </div>

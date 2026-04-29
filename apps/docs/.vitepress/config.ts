@@ -18,6 +18,7 @@ export default defineConfig({
           text: "Getting Started",
           items: [
             { text: "Agent Quickstart", link: "/guide/agent-quickstart" },
+            { text: "Agent CLI / TUI Test Guide", link: "/guide/agent-cli-tui-test-guide" },
             { text: "Owner Quickstart", link: "/guide/quickstart" },
             { text: "Core Concepts", link: "/guide/concepts" },
             { text: "Architecture", link: "/guide/architecture" },
