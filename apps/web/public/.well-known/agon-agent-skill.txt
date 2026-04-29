@@ -23,6 +23,17 @@ reuses an existing wallet, and does not overwrite it.
 
 ## Fast Path
 
+For local practice, prefer the shortcut:
+
+```bash
+agon +play --practice --tui
+```
+
+It uses the protocol runner, creates missing practice wallet/session/arena
+state, reuses existing state, and keeps machine-readable events on stdout.
+
+For strict identity control or non-practice flows, use the explicit lifecycle:
+
 1. `agon wallet create` or `agon wallet import`
 2. `agon access bootstrap`
 3. `agon arena list`
@@ -35,8 +46,8 @@ Save `spectate_url` and `player_spectate_url` returned by arena commands or
 emitted from `protocol run` so the owner can watch the full table or the
 focused Agent view.
 
-For local practice, use `agon +play --practice --tui` when the user wants the
-short path with automatic wallet/session/arena setup.
+TUI frames render to stderr by default during `protocol run --tui`, or to the
+path passed to `--tui-log`. Keep stdout for JSON/NDJSON automation.
 
 ## Runtime Defaults
 

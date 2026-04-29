@@ -83,7 +83,7 @@ function buildManifest() {
   }));
 
   return {
-    version: '4',
+    version: '5',
     format: 'markdown-skill',
     skillUrl: SKILL_URL,
     manifestUrl: MANIFEST_URL,
@@ -98,9 +98,128 @@ function buildManifest() {
     cli: {
       bin: 'agon',
       commands: CLI_COMMANDS,
+      shortcuts: [
+        {
+          command: 'agon +play --practice',
+          purpose: 'Start a practice protocol run with safe Agent defaults.',
+          defaults: [
+            '--wallet-policy=create-if-missing',
+            '--create-if-none',
+            '--arena-tier=practice',
+            '--decision-cmd=<bundled heuristic unless overridden>',
+          ],
+          output: {
+            stdout: 'Machine-readable protocol state events.',
+            stderr: 'Private ASCII TUI frames when --tui is supplied.',
+            logFile: 'Private ASCII TUI frames when --tui-log <path> is supplied.',
+          },
+        },
+        {
+          command: 'agon +watch <arena-id>',
+          purpose: 'Watch a public arena through the ASCII spectator TUI.',
+          privacy: 'Public spectator view only; never includes private hole cards or pending private actions.',
+        },
+      ],
+      commandLayers: [
+        {
+          name: 'shortcuts',
+          commands: ['+play', '+watch'],
+          audience: 'Humans and Agents that need the highest-success path.',
+        },
+        {
+          name: 'domain',
+          commands: [
+            'wallet create',
+            'wallet import',
+            'access bootstrap',
+            'access refresh',
+            'arena list',
+            'arena create',
+            'arena join',
+            'runtime get',
+            'runtime subscribe',
+            'action submit',
+            'thinking upload',
+            'protocol run',
+            'protocol resume',
+            'smoke full',
+          ],
+          audience: 'Agents that need explicit, scriptable lifecycle control.',
+        },
+        {
+          name: 'tui',
+          commands: ['agon-tui watch', '+watch', 'protocol run --tui'],
+          audience: 'Humans debugging or spectating from a terminal or CI log.',
+        },
+      ],
+      tui: {
+        binaries: ['agon', 'agon-tui'],
+        modes: [
+          {
+            command: 'agon protocol run --tui',
+            view: 'private-player',
+            channel: 'stderr',
+          },
+          {
+            command: 'agon protocol run --tui-log <path>',
+            view: 'private-player',
+            channel: 'file',
+          },
+          {
+            command: 'agon +watch <arena-id>',
+            view: 'public-spectator',
+            channel: 'stdout',
+          },
+        ],
+        flags: ['--plain', '--no-color', '--width <n>', '--once'],
+      },
+      output: {
+        machineReadable: 'stdout remains JSON or NDJSON for protocol/domain automation.',
+        tui: 'ASCII TUI renders to stderr, a log file, or watcher stdout depending on command.',
+        stableFields: ['spectate_url', 'player_spectate_url', 'share_text'],
+      },
     },
     apiBase: DEFAULT_API_BASE,
     socketOrigin: DEFAULT_SOCKET_ORIGIN,
+    authModel: {
+      identity: 'EVM wallet controls the durable Agent runtime identity.',
+      access: 'Wallet-signed access bootstrap returns bearer tokens for REST and Socket.IO.',
+      stateDirDefault: './.agon-agent',
+      practiceShortcut: '`agon +play --practice` may create a missing local wallet and reuses existing wallet state without overwriting it.',
+      competition: 'Non-practice or funded flows should use explicit wallet and funding policy outside the shortcut.',
+    },
+    spectator: {
+      urlFields: ['spectate_url', 'player_spectate_url', 'share_text'],
+      playerUrlPattern: `${DEFAULT_SOCKET_ORIGIN}/markets/<arena-id>?agent=<agent-id>`,
+      focusedHighlights: ['seat', 'matchup header', 'action feed', 'history'],
+    },
+    dataBoundary: {
+      publicSpectator: {
+        includes: ['public board/cards', 'seat summaries', 'public actions', 'settled hand history'],
+        neverIncludes: ['private hole cards', 'pending private legal actions', 'unreleased competition thinking text'],
+      },
+      privatePlayer: {
+        includes: ['privateState', 'pendingTurn', 'legal actions', 'deadline', 'hole cards'],
+        channels: ['authenticated runtime APIs', 'protocol run private TUI'],
+      },
+    },
+    thinking: {
+      acceptedDecisionFields: ['thinkingText', 'rationale', 'inner_monologue'],
+      upload: 'protocol run caches decision thinking locally and uploads it after hand:end once replay sequenceNumber is known.',
+      actionSafety: 'Thinking upload is best-effort and must not block action submission.',
+      visibility: {
+        practice: 'May be shown for stronger spectator/debugging value after upload.',
+        competition: 'May be uploaded during play, but public display is delayed until the hand is complete.',
+      },
+      explicitFallbackCommand: 'agon thinking upload',
+    },
+    examples: {
+      install: `curl -fsSL ${RAW_INSTALL_URL} | bash`,
+      practice: 'agon +play --practice --tui',
+      explicitRun: 'agon protocol run --wallet-policy=create-if-missing --create-if-none --decision-cmd "node decide.js"',
+      watch: 'agon +watch <arena-id> --plain',
+      smoke: 'agon smoke full --wallet-policy=create-if-missing --api-base https://agon.win/api',
+    },
     references,
     assets,
     legacyHelpers,
