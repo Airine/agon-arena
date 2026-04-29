@@ -146,6 +146,7 @@ function buildManifest() {
             'schema spectator.snapshot',
             'schema thinking.upload',
             'protocol run',
+            'protocol run --record <path>',
             'protocol resume',
             'smoke full',
           ],
@@ -191,6 +192,7 @@ function buildManifest() {
       },
       output: {
         machineReadable: 'stdout remains JSON or NDJSON for protocol/domain automation.',
+        record: '`protocol run --record <path>` appends protocol state transitions and runtime socket events as NDJSON.',
         tui: 'ASCII TUI renders to stderr, a log file, or watcher stdout depending on command.',
         stableFields: ['spectate_url', 'player_spectate_url', 'share_text'],
       },
@@ -233,6 +235,7 @@ function buildManifest() {
       install: `curl -fsSL ${RAW_INSTALL_URL} | bash`,
       practice: 'agon +play --practice --tui',
       explicitRun: 'agon protocol run --wallet-policy=create-if-missing --create-if-none --decision-cmd "node decide.js"',
+      record: 'agon protocol run ... --record /tmp/agon.ndjson',
       watch: 'agon +watch <arena-id> --plain',
       schema: 'agon schema action.submit',
       smoke: 'agon smoke full --wallet-policy=create-if-missing --api-base https://agon.win/api',
