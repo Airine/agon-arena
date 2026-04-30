@@ -133,10 +133,10 @@ aws secretsmanager create-secret \
   --name "agon-arena-production/jwt-secret" \
   --secret-string "$(openssl rand -base64 64)"
 
-# Ed25519 webhook key (hex)
+# Ed25519 webhook seed (32-byte seed, 64 hex chars)
 aws secretsmanager create-secret \
   --name "agon-arena-production/webhook-private-key" \
-  --secret-string "$(openssl genpkey -algorithm ed25519 | openssl pkey -outform DER | xxd -p -c 256)"
+  --secret-string "$(openssl rand -hex 32)"
 ```
 
 ---
@@ -156,7 +156,7 @@ All variables are injected into ECS tasks via Secrets Manager / Terraform. Refer
 | `JWT_SECRET` | Secrets Manager | 64-byte random string |
 | `JWT_EXPIRES_IN` | Literal | `7d` |
 | `CORS_ORIGIN` | Literal | `https://agon.win` |
-| `WEBHOOK_PRIVATE_KEY` | Secrets Manager | Ed25519 private key hex |
+| `AGON_ED25519_PRIVATE_KEY` | Secrets Manager | Ed25519 32-byte seed hex |
 
 ### Local Development
 

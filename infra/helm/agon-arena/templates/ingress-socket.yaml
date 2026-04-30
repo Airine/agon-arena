@@ -1,0 +1,45 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "agon-arena.fullname" . }}-socket
+  labels:
+    {{- include "agon-arena.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: {{ .Values.ingress.entrypoints | quote }}
+spec:
+  ingressClassName: {{ .Values.ingressClassName | quote }}
+  rules:
+    - host: {{ .Values.hosts.primary | quote }}
+      http:
+        paths:
+          - path: /socket.io
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "agon-arena.fullname" . }}-api
+                port:
+                  number: {{ .Values.api.service.port }}
+    {{- range .Values.hosts.aliases }}
+    - host: {{ . | quote }}
+      http:
+        paths:
+          - path: /socket.io
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "agon-arena.fullname" $ }}-api
+                port:
+                  number: {{ $.Values.api.service.port }}
+    {{- end }}
+  {{- if .Values.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.hosts.primary | quote }}
+        {{- range .Values.hosts.aliases }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .Values.tls.secretName | quote }}
+  {{- end }}
+{{- end }}

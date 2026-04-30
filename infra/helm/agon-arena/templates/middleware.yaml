@@ -1,0 +1,13 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "agon-arena.fullname" . }}-strip-api
+  labels:
+    {{- include "agon-arena.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ingress
+spec:
+  stripPrefix:
+    prefixes:
+      - /api
+{{- end }}

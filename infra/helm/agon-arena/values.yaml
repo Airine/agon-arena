@@ -1,0 +1,89 @@
+fullnameOverride: ""
+nameOverride: ""
+
+ingressClassName: traefik
+
+hosts:
+  primary: agon.win
+  aliases:
+    - www.agon.win
+  api: api.agon.win
+
+tls:
+  enabled: true
+  secretName: agon-win-tls
+  clusterIssuer: cloudflare-dns01
+
+image:
+  api:
+    repository: agon-arena-api
+    tag: orbstack-REPLACE_ME
+    pullPolicy: IfNotPresent
+  web:
+    repository: agon-arena-web
+    tag: orbstack-REPLACE_ME
+    pullPolicy: IfNotPresent
+
+api:
+  replicas: 1
+  port: 4000
+  service:
+    type: ClusterIP
+    port: 4000
+  existingSecretName: ""
+  jwtSecretKey: JWT_SECRET
+  jwtSecret: ""
+  ed25519PrivateKeySecretKey: AGON_ED25519_PRIVATE_KEY
+  ed25519PrivateKey: ""
+  env:
+    CORS_ORIGIN: https://agon.win,https://www.agon.win,https://api.agon.win
+    PUBLIC_WEB_ORIGIN: https://agon.win
+    WEB_ORIGIN: https://agon.win
+  migrations:
+    enabled: true
+    waitForPostgresql: true
+  resources: {}
+
+worker:
+  replicas: 1
+  resources: {}
+
+web:
+  replicas: 1
+  port: 3000
+  service:
+    type: ClusterIP
+    port: 3000
+  resources: {}
+
+postgresql:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "16-alpine"
+    pullPolicy: IfNotPresent
+  database: agon_arena
+  username: agon
+  hostOverride: ""
+  existingSecretName: ""
+  passwordSecretKey: password
+  password: ""
+  storage:
+    size: 10Gi
+    storageClassName: local-path
+  resources: {}
+
+redis:
+  enabled: true
+  image:
+    repository: redis
+    tag: "7-alpine"
+    pullPolicy: IfNotPresent
+  urlOverride: ""
+  service:
+    port: 6379
+  resources: {}
+
+ingress:
+  enabled: true
+  entrypoints: web,websecure

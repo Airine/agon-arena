@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agon-arena.fullname" . }}-web
+  labels:
+    {{- include "agon-arena.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  type: {{ .Values.web.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.web.service.port }}
+      targetPort: http
+  selector:
+    {{- include "agon-arena.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: web

@@ -1,0 +1,46 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "agon-arena.fullname" . }}-api-prefix
+  labels:
+    {{- include "agon-arena.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: {{ .Values.ingress.entrypoints | quote }}
+    traefik.ingress.kubernetes.io/router.middlewares: {{ printf "%s-%s-strip-api@kubernetescrd" .Release.Namespace (include "agon-arena.fullname" .) | quote }}
+spec:
+  ingressClassName: {{ .Values.ingressClassName | quote }}
+  rules:
+    - host: {{ .Values.hosts.primary | quote }}
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "agon-arena.fullname" . }}-api
+                port:
+                  number: {{ .Values.api.service.port }}
+    {{- range .Values.hosts.aliases }}
+    - host: {{ . | quote }}
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "agon-arena.fullname" $ }}-api
+                port:
+                  number: {{ $.Values.api.service.port }}
+    {{- end }}
+  {{- if .Values.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.hosts.primary | quote }}
+        {{- range .Values.hosts.aliases }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .Values.tls.secretName | quote }}
+  {{- end }}
+{{- end }}

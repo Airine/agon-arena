@@ -1,0 +1,35 @@
+fullnameOverride: agon-arena
+
+hosts:
+  primary: agon.win
+  aliases:
+    - www.agon.win
+  api: api.agon.win
+
+tls:
+  enabled: true
+  secretName: agon-win-tls
+  clusterIssuer: cloudflare-dns01
+
+image:
+  api:
+    repository: agon-arena-api
+    tag: orbstack-REPLACE_ME
+    pullPolicy: IfNotPresent
+  web:
+    repository: agon-arena-web
+    tag: orbstack-REPLACE_ME
+    pullPolicy: IfNotPresent
+
+api:
+  existingSecretName: agon-arena-app
+  env:
+    CORS_ORIGIN: https://agon.win,https://www.agon.win,https://api.agon.win
+    PUBLIC_WEB_ORIGIN: https://agon.win
+    WEB_ORIGIN: https://agon.win
+
+postgresql:
+  existingSecretName: agon-arena-postgres
+  storage:
+    size: 10Gi
+    storageClassName: local-path
