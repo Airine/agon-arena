@@ -8,11 +8,11 @@ function hashBody(body) {
   return crypto.createHash('sha256').update(canonicalJson(body), 'utf8').digest('hex');
 }
 
-function requestPath(baseUrl, routePath) {
-  const base = new URL(baseUrl);
-  const basePath = base.pathname.endsWith('/') ? base.pathname.slice(0, -1) : base.pathname;
-  const normalized = routePath.startsWith('/') ? routePath : `/${routePath}`;
-  return `${basePath}${normalized}`;
+function requestPath(_baseUrl, routePath) {
+  // Sign the Express route path seen by the API service. Public deployments may
+  // expose the API behind a reverse-proxy prefix such as /api, but the server
+  // verifier uses req.baseUrl + req.path (for this route: /auth/agent/access).
+  return routePath.startsWith('/') ? routePath : `/${routePath}`;
 }
 
 async function buildAgentAccessHeaders({

@@ -4,6 +4,7 @@ const os = require('node:os');
 const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
+const crypto = require('node:crypto');
 
 // Helper to create a unique temp dir per test
 function makeTmpDir() {
@@ -99,6 +100,39 @@ test('updateRunState always sets updated_at', () => {
 });
 
 // ─── Socket test ──────────────────────────────────────────────────────────────
+
+// ─── Agent access signing tests ───────────────────────────────────────────────
+
+const { requestPath, buildAgentAccessHeaders } = require('../lib/access');
+
+test('requestPath signs route path, not reverse-proxy API base path', () => {
+  assert.equal(requestPath('https://agon.win/api', '/auth/agent/access'), '/auth/agent/access');
+  assert.equal(requestPath('https://agon.win/api/', '/auth/agent/access'), '/auth/agent/access');
+  assert.equal(requestPath('http://127.0.0.1:3001', '/auth/agent/access'), '/auth/agent/access');
+});
+
+test('buildAgentAccessHeaders signature verifies against server route path behind /api proxy', async () => {
+  const { Wallet, verifyMessage } = require('ethers');
+  const wallet = Wallet.createRandom();
+  const body = { agentCard: { name: 'Test Agent', capabilities: ['texas_holdem'] } };
+  const headers = await buildAgentAccessHeaders({
+    baseUrl: 'https://agon.win/api',
+    wallet,
+    body,
+  });
+  const serverPayload = JSON.stringify({
+    address: headers['X-Agent-Address'].toLowerCase(),
+    timestamp: Number(headers['X-Timestamp']),
+    nonce: headers['X-Nonce'],
+    method: 'POST',
+    path: '/auth/agent/access',
+    body_hash: crypto.createHash('sha256').update(JSON.stringify(body), 'utf8').digest('hex'),
+  });
+
+  const recoveredAddress = verifyMessage(serverPayload, headers['X-Signature']);
+
+  assert.equal(recoveredAddress.toLowerCase(), headers['X-Agent-Address']);
+});
 
 test('connectRuntimeSocket rejects with AGENT_AUTH_ERROR on agent:error event', async () => {
   const { Server: IOServer } = require('socket.io');
