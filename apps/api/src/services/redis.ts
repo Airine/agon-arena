@@ -1,4 +1,5 @@
 import { createClient, type RedisClientType } from 'redis';
+import { createHash } from 'crypto';
 import type {
   AgentActionSubmission,
   AgentRuntimeSnapshot,
@@ -111,6 +112,158 @@ export async function consumeBindNonce(nonce: string): Promise<boolean> {
 }
 
 // ---------------------------------------------------------------------------
+// Email OTP challenges
+// ---------------------------------------------------------------------------
+
+export type EmailOtpPurpose = 'login' | 'bind_email';
+
+export interface EmailOtpChallengePayload {
+  email: string;
+  purpose: EmailOtpPurpose;
+  codeHash: string;
+  attempts: number;
+  inviteCode?: string;
+  username?: string;
+  createdAt: number;
+}
+
+export type EmailOtpConsumeResult =
+  | { ok: true; payload: Omit<EmailOtpChallengePayload, 'codeHash' | 'attempts'>; ttlSeconds: number }
+  | { ok: false; reason: 'expired' | 'invalid_code' | 'too_many_attempts' };
+
+const EMAIL_OTP_PREFIX = 'email:otp:';
+const EMAIL_OTP_COOLDOWN_PREFIX = 'email:otp:cooldown:';
+
+function normalizeEmailForRedis(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+function emailOtpKey(email: string, purpose: EmailOtpPurpose): string {
+  return `${EMAIL_OTP_PREFIX}${purpose}:${normalizeEmailForRedis(email)}`;
+}
+
+function emailOtpCooldownKey(email: string, purpose: EmailOtpPurpose): string {
+  return `${EMAIL_OTP_COOLDOWN_PREFIX}${purpose}:${normalizeEmailForRedis(email)}`;
+}
+
+function hashEmailOtpCode(email: string, purpose: EmailOtpPurpose, code: string): string {
+  return createHash('sha256')
+    .update(`${normalizeEmailForRedis(email)}:${purpose}:${code}`)
+    .digest('hex');
+}
+
+export async function storeEmailOtpChallenge(input: {
+  email: string;
+  purpose: EmailOtpPurpose;
+  code: string;
+  ttlSeconds: number;
+  cooldownSeconds: number;
+  inviteCode?: string;
+  username?: string;
+}): Promise<{ stored: true } | { stored: false; cooldownSeconds: number }> {
+  const redis = await getRedisClient();
+  const cooldownKey = emailOtpCooldownKey(input.email, input.purpose);
+  const cooldown = await redis.set(cooldownKey, '1', {
+    EX: input.cooldownSeconds,
+    NX: true,
+  });
+
+  if (cooldown !== 'OK') {
+    const ttl = await redis.ttl(cooldownKey);
+    return { stored: false, cooldownSeconds: ttl > 0 ? ttl : input.cooldownSeconds };
+  }
+
+  const payload: EmailOtpChallengePayload = {
+    email: normalizeEmailForRedis(input.email),
+    purpose: input.purpose,
+    codeHash: hashEmailOtpCode(input.email, input.purpose, input.code),
+    attempts: 0,
+    ...(input.inviteCode && { inviteCode: input.inviteCode }),
+    ...(input.username && { username: input.username }),
+    createdAt: Date.now(),
+  };
+
+  await redis.set(emailOtpKey(input.email, input.purpose), JSON.stringify(payload), {
+    EX: input.ttlSeconds,
+  });
+
+  return { stored: true };
+}
+
+export async function restoreEmailOtpChallenge(input: {
+  email: string;
+  purpose: EmailOtpPurpose;
+  code: string;
+  ttlSeconds: number;
+  inviteCode?: string;
+  username?: string;
+}): Promise<void> {
+  if (input.ttlSeconds <= 0) return;
+
+  const redis = await getRedisClient();
+  const payload: EmailOtpChallengePayload = {
+    email: normalizeEmailForRedis(input.email),
+    purpose: input.purpose,
+    codeHash: hashEmailOtpCode(input.email, input.purpose, input.code),
+    attempts: 0,
+    ...(input.inviteCode && { inviteCode: input.inviteCode }),
+    ...(input.username && { username: input.username }),
+    createdAt: Date.now(),
+  };
+
+  await redis.set(emailOtpKey(input.email, input.purpose), JSON.stringify(payload), {
+    EX: input.ttlSeconds,
+  });
+}
+
+export async function consumeEmailOtpChallenge(input: {
+  email: string;
+  purpose: EmailOtpPurpose;
+  code: string;
+  maxAttempts: number;
+}): Promise<EmailOtpConsumeResult> {
+  const redis = await getRedisClient();
+  const key = emailOtpKey(input.email, input.purpose);
+  const value = await redis.get(key);
+  if (!value) return { ok: false, reason: 'expired' };
+
+  let payload: EmailOtpChallengePayload;
+  try {
+    payload = JSON.parse(value) as EmailOtpChallengePayload;
+  } catch {
+    await redis.del(key);
+    return { ok: false, reason: 'expired' };
+  }
+
+  if (payload.attempts >= input.maxAttempts) {
+    await redis.del(key);
+    return { ok: false, reason: 'too_many_attempts' };
+  }
+
+  const expectedHash = hashEmailOtpCode(input.email, input.purpose, input.code);
+  if (payload.codeHash !== expectedHash) {
+    const attempts = payload.attempts + 1;
+    if (attempts >= input.maxAttempts) {
+      await redis.del(key);
+      return { ok: false, reason: 'too_many_attempts' };
+    }
+
+    const ttl = await redis.ttl(key);
+    if (ttl > 0) {
+      await redis.set(key, JSON.stringify({ ...payload, attempts }), { EX: ttl });
+    } else {
+      await redis.del(key);
+    }
+    return { ok: false, reason: 'invalid_code' };
+  }
+
+  const ttlSeconds = await redis.ttl(key);
+  await redis.del(key);
+  const { codeHash: _codeHash, attempts: _attempts, ...safePayload } = payload;
+  return { ok: true, payload: safePayload, ttlSeconds: ttlSeconds > 0 ? ttlSeconds : 0 };
+}
+
+// ---------------------------------------------------------------------------
 // OAuth CSRF state
 // ---------------------------------------------------------------------------
 
@@ -121,6 +274,8 @@ export interface OAuthStatePayload {
   provider: string;
   /** userId if the user is already logged in and linking (vs. fresh login) */
   userId?: string;
+  /** Invite/referral code supplied before redirecting to the OAuth provider. */
+  inviteCode?: string;
   /** PKCE code verifier for OAuth 2.0 flows that require it (e.g. Twitter) */
   codeVerifier?: string;
 }

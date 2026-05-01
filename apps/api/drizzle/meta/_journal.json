@@ -120,6 +120,13 @@
       "when": 1775211883153,
       "tag": "0016_sour_rockslide",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1777602037000,
+      "tag": "0017_invite_gate",
+      "breakpoints": true
     }
   ]
 }

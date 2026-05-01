@@ -104,118 +104,96 @@ function SiweTab({ onSuccess }: { onSuccess: () => void }) {
   );
 }
 
-function EmailTab({ onSuccess }: { onSuccess: () => void }) {
+function EmailCodeForm({
+  mode,
+  initialInviteCode = '',
+  onSuccess,
+}: {
+  mode: 'signin' | 'register';
+  initialInviteCode?: string;
+  onSuccess: () => void;
+}) {
+  const isRegister = mode === 'register';
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState('');
+  const [inviteCode, setInviteCode] = useState(initialInviteCode);
+  const [showInviteField, setShowInviteField] = useState(isRegister || initialInviteCode.length > 0);
+  const [code, setCode] = useState('');
+  const [step, setStep] = useState<'request' | 'verify'>('request');
+  const [devCode, setDevCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleRequestCode(e: React.FormEvent) {
     e.preventDefault();
     setError('');
     setLoading(true);
 
     try {
-      const result = await api.post<TokenPair & { user: UserInfo }>('/auth/login', {
-        email,
-        password,
-      });
-      saveSession(result);
-      onSuccess();
+      const result = await api.post<{ sent: boolean; expiresIn: number; devCode?: string }>(
+        '/auth/email/request-code',
+        {
+          email,
+          purpose: 'login',
+          ...(inviteCode.trim() ? { inviteCode: inviteCode.trim().toUpperCase() } : {}),
+        },
+      );
+      setDevCode(result.devCode ?? '');
+      setStep('verify');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      setError(err instanceof Error ? err.message : 'Failed to send code');
     } finally {
       setLoading(false);
     }
   }
 
-  return (
-    <form onSubmit={handleSubmit} className="field-grid">
-      <div className="form-field">
-        <label className="form-label">Email</label>
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          className="text-input"
-          placeholder="you@example.com"
-        />
-      </div>
-
-      <div className="form-field">
-        <label className="form-label">Password</label>
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          className="text-input"
-          placeholder="••••••••"
-        />
-      </div>
-
-      {error ? <div className="error-banner">{error}</div> : null}
-
-      <button type="submit" disabled={loading} className="button-primary" style={{ width: '100%' }}>
-        {loading ? 'Signing in...' : 'Sign In'}
-      </button>
-    </form>
-  );
-}
-
-function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
-  const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [inviteCode, setInviteCode] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
-
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleVerifyCode(e: React.FormEvent) {
     e.preventDefault();
     setError('');
     setLoading(true);
 
     try {
-      const result = await api.post<TokenPair & { user: UserInfo }>('/auth/register', {
-        username,
+      const result = await api.post<TokenPair & { user: UserInfo }>('/auth/email/verify', {
         email,
-        password,
+        code,
+        ...(isRegister && username.trim() ? { username: username.trim() } : {}),
         ...(inviteCode.trim() ? { inviteCode: inviteCode.trim().toUpperCase() } : {}),
       });
       saveSession(result);
       setSuccess(true);
-      setTimeout(() => {
-        onSuccess();
-      }, 1500);
+      setTimeout(onSuccess, 800);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Registration failed');
+      const message = err instanceof Error ? err.message : 'Verification failed';
+      if (message.toLowerCase().includes('invite')) {
+        setShowInviteField(true);
+      }
+      setError(message);
     } finally {
       setLoading(false);
     }
   }
 
   if (success) {
-    return <div className="success-banner">Account created. Signing you in...</div>;
+    return <div className="success-banner">Signed in. Redirecting...</div>;
   }
 
   return (
-    <form onSubmit={handleSubmit} className="field-grid">
-      <div className="form-field">
-        <label className="form-label">Username</label>
-        <input
-          type="text"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          required
-          minLength={3}
-          maxLength={50}
-          className="text-input"
-          placeholder="coolagent"
-        />
-      </div>
+    <form onSubmit={step === 'request' ? handleRequestCode : handleVerifyCode} className="field-grid">
+      {isRegister ? (
+        <div className="form-field">
+          <label className="form-label">Username <span className="muted-copy">(optional)</span></label>
+          <input
+            type="text"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            minLength={3}
+            maxLength={50}
+            className="text-input"
+            placeholder="coolagent"
+          />
+        </div>
+      ) : null}
 
       <div className="form-field">
         <label className="form-label">Email</label>
@@ -224,41 +202,70 @@ function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
+          disabled={step === 'verify'}
           className="text-input"
           placeholder="you@example.com"
         />
       </div>
 
-      <div className="form-field">
-        <label className="form-label">Password</label>
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          minLength={6}
-          className="text-input"
-          placeholder="••••••••"
-        />
-      </div>
+      {showInviteField ? (
+        <div className="form-field">
+          <label className="form-label">Invite / Referral Code <span className="muted-copy">(optional)</span></label>
+          <input
+            type="text"
+            value={inviteCode}
+            onChange={(e) => setInviteCode(e.target.value)}
+            className="text-input"
+            placeholder="AGON-XXXX-XXXX"
+            maxLength={20}
+          />
+        </div>
+      ) : null}
 
-      <div className="form-field">
-        <label className="form-label">Invite Code <span className="muted-copy">(optional)</span></label>
-        <input
-          type="text"
-          value={inviteCode}
-          onChange={(e) => setInviteCode(e.target.value)}
-          className="text-input"
-          placeholder="AGON-XXXX-XXXX"
-          maxLength={20}
-        />
-      </div>
+      {step === 'verify' ? (
+        <div className="form-field">
+          <label className="form-label">Verification Code</label>
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]{6}"
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            required
+            className="text-input"
+            placeholder="123456"
+          />
+          {devCode ? (
+            <p className="muted-copy" style={{ marginTop: '8px', fontSize: '0.85rem' }}>
+              Dev code: <span className="mono-copy">{devCode}</span>
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {error ? <div className="error-banner">{error}</div> : null}
 
       <button type="submit" disabled={loading} className="button-primary" style={{ width: '100%' }}>
-        {loading ? 'Creating account...' : 'Create Account'}
+        {loading
+          ? step === 'request' ? 'Sending code...' : 'Verifying...'
+          : step === 'request' ? 'Send Code' : isRegister ? 'Create Account' : 'Sign In'}
       </button>
+
+      {step === 'verify' ? (
+        <button
+          type="button"
+          className="button-ghost"
+          onClick={() => {
+            setStep('request');
+            setCode('');
+            setDevCode('');
+            setError('');
+          }}
+          style={{ width: '100%' }}
+        >
+          Use a different email
+        </button>
+      ) : null}
     </form>
   );
 }
@@ -346,6 +353,7 @@ function LoginPageInner() {
   const searchParams = useSearchParams();
   const mode = searchParams.get('mode');
   const isRegister = mode === 'register';
+  const initialInviteCode = (searchParams.get('inviteCode') ?? searchParams.get('ref') ?? '').toUpperCase();
 
   const [signInTab, setSignInTab] = useState<SignInTab>('siwe');
 
@@ -411,7 +419,11 @@ function LoginPageInner() {
               </button>
             </div>
 
-            <RegisterForm onSuccess={handleRegisterSuccess} />
+            <EmailCodeForm
+              mode="register"
+              initialInviteCode={initialInviteCode}
+              onSuccess={handleRegisterSuccess}
+            />
           </FormCard>
         </section>
         <AgentQuickStart />
@@ -480,7 +492,7 @@ function LoginPageInner() {
                 className={`pill-button ${signInTab === item ? 'pill-button--active' : ''}`}
                 type="button"
               >
-                {item === 'siwe' ? 'Wallet (SIWE)' : 'Email / Password'}
+                {item === 'siwe' ? 'Wallet (SIWE)' : 'Email Code'}
               </button>
             ))}
           </div>
@@ -488,7 +500,11 @@ function LoginPageInner() {
           {signInTab === 'siwe' ? (
             <SiweTab onSuccess={handleSignInSuccess} />
           ) : (
-            <EmailTab onSuccess={handleSignInSuccess} />
+            <EmailCodeForm
+              mode="signin"
+              initialInviteCode={initialInviteCode}
+              onSuccess={handleSignInSuccess}
+            />
           )}
         </FormCard>
       </section>

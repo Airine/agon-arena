@@ -9,7 +9,17 @@ import {
   StatusBadge,
   SurfaceCard,
 } from '@/components/chrome';
-import { api, clearSession, isLoggedIn, type UserInfo } from '@/lib/api';
+import { api, clearSession, isLoggedIn, saveSession, type TokenPair, type UserInfo } from '@/lib/api';
+
+interface EthereumProvider {
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+}
+
+declare global {
+  interface Window {
+    ethereum?: EthereumProvider;
+  }
+}
 
 interface AgentInfo {
   id: string;
@@ -120,6 +130,198 @@ function AgentRegistrationPanel() {
   );
 }
 
+function EmailBindingPanel({
+  inviteGateSatisfied,
+  onUserUpdate,
+}: {
+  inviteGateSatisfied: boolean;
+  onUserUpdate: (user: UserInfo) => void;
+}) {
+  const [email, setEmail] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
+  const [code, setCode] = useState('');
+  const [step, setStep] = useState<'request' | 'verify'>('request');
+  const [devCode, setDevCode] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  async function requestCode(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    setLoading(true);
+    try {
+      const result = await api.post<{ sent: boolean; devCode?: string }>('/auth/email/bind/request-code', {
+        email,
+        ...(inviteCode.trim() ? { inviteCode: inviteCode.trim().toUpperCase() } : {}),
+      });
+      setDevCode(result.devCode ?? '');
+      setStep('verify');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send code');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function verifyCode(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    setLoading(true);
+    try {
+      const result = await api.post<{ user: UserInfo }>('/auth/email/bind/verify', {
+        email,
+        code,
+        ...(inviteCode.trim() ? { inviteCode: inviteCode.trim().toUpperCase() } : {}),
+      });
+      onUserUpdate(result.user);
+      setSuccess('Email bound successfully.');
+      setStep('request');
+      setCode('');
+      setDevCode('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Email binding failed');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form onSubmit={step === 'request' ? requestCode : verifyCode} className="field-grid">
+      <div className="form-field">
+        <label className="form-label">Email</label>
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          disabled={step === 'verify'}
+          className="text-input"
+          placeholder="you@example.com"
+        />
+      </div>
+      {!inviteGateSatisfied ? (
+        <div className="form-field">
+          <label className="form-label">Invite / Referral Code <span className="muted-copy">(optional)</span></label>
+          <input
+            type="text"
+            value={inviteCode}
+            onChange={(e) => setInviteCode(e.target.value)}
+            className="text-input"
+            placeholder="AGON-XXXX-XXXX"
+            maxLength={20}
+          />
+        </div>
+      ) : null}
+      {step === 'verify' ? (
+        <div className="form-field">
+          <label className="form-label">Verification Code</label>
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]{6}"
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            required
+            className="text-input"
+            placeholder="123456"
+          />
+          {devCode ? (
+            <p className="muted-copy" style={{ marginTop: '8px', fontSize: '0.85rem' }}>
+              Dev code: <span className="mono-copy">{devCode}</span>
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {error ? <div className="error-banner">{error}</div> : null}
+      {success ? <div className="success-banner">{success}</div> : null}
+      <button type="submit" disabled={loading} className="button-primary" style={{ width: '100%' }}>
+        {loading ? 'Working...' : step === 'request' ? 'Send Email Code' : 'Bind Email'}
+      </button>
+    </form>
+  );
+}
+
+function buildWalletBindMessage(address: string, nonce: string): string {
+  return `Bind Agon Wallet\nAddress: ${address.toLowerCase()}\nNonce: ${nonce}`;
+}
+
+function WalletBindingPanel({
+  inviteGateSatisfied,
+  onUserUpdate,
+}: {
+  inviteGateSatisfied: boolean;
+  onUserUpdate: (user: UserInfo) => void;
+}) {
+  const [inviteCode, setInviteCode] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  async function bindWallet() {
+    setError('');
+    setSuccess('');
+
+    if (!window.ethereum) {
+      setError('No Ethereum wallet detected. Please install MetaMask.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const accounts = (await window.ethereum.request({ method: 'eth_requestAccounts' })) as string[];
+      const address = accounts[0]?.toLowerCase();
+      if (!address) throw new Error('No account selected');
+
+      const { nonce } = await api.get<{ nonce: string }>('/auth/wallet/bind-nonce');
+      const signature = (await window.ethereum.request({
+        method: 'personal_sign',
+        params: [buildWalletBindMessage(address, nonce), address],
+      })) as string;
+
+      const result = await api.post<TokenPair & { user: UserInfo }>('/auth/wallet/bind-verify', {
+        walletAddress: address,
+        nonce,
+        signature,
+        ...(inviteCode.trim() ? { inviteCode: inviteCode.trim().toUpperCase() } : {}),
+      });
+
+      saveSession(result);
+      onUserUpdate(result.user);
+      setSuccess('Wallet bound successfully.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Wallet binding failed');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="field-grid">
+      {!inviteGateSatisfied ? (
+        <div className="form-field">
+          <label className="form-label">Invite / Referral Code <span className="muted-copy">(optional)</span></label>
+          <input
+            type="text"
+            value={inviteCode}
+            onChange={(e) => setInviteCode(e.target.value)}
+            className="text-input"
+            placeholder="AGON-XXXX-XXXX"
+            maxLength={20}
+          />
+        </div>
+      ) : null}
+      {error ? <div className="error-banner">{error}</div> : null}
+      {success ? <div className="success-banner">{success}</div> : null}
+      <button type="button" disabled={loading} onClick={bindWallet} className="button-primary" style={{ width: '100%' }}>
+        {loading ? 'Signing...' : 'Bind Wallet'}
+      </button>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const router = useRouter();
   const [user, setUser] = useState<UserInfo | null>(null);
@@ -147,6 +349,7 @@ export default function SettingsPage() {
   const walletDisplay = user?.walletAddress
     ? `${user.walletAddress.slice(0, 6)}...${user.walletAddress.slice(-4)}`
     : '--';
+  const inviteGateSatisfied = Boolean(user?.inviteGateSatisfiedAt);
 
   return (
     <ConsoleShell
@@ -191,6 +394,42 @@ export default function SettingsPage() {
               </div>
             )}
           </SurfaceCard>
+
+          {user && (!user.email || !user.walletAddress) ? (
+            <SurfaceCard>
+              <SectionTitle eyebrow="Identity" title="Bind email and wallet" />
+              <div className="console-list">
+                {!user.email ? (
+                  <div className="console-row-card">
+                    <div className="console-row-card__body">
+                      <div className="console-row-card__title">
+                        <h3>Email</h3>
+                        <StatusBadge label="Not bound" tone="warning" />
+                      </div>
+                      <EmailBindingPanel
+                        inviteGateSatisfied={inviteGateSatisfied}
+                        onUserUpdate={(nextUser) => setUser((prev) => (prev ? { ...prev, ...nextUser } : nextUser))}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+                {!user.walletAddress ? (
+                  <div className="console-row-card">
+                    <div className="console-row-card__body">
+                      <div className="console-row-card__title">
+                        <h3>Wallet</h3>
+                        <StatusBadge label="Not bound" tone="warning" />
+                      </div>
+                      <WalletBindingPanel
+                        inviteGateSatisfied={inviteGateSatisfied}
+                        onUserUpdate={(nextUser) => setUser((prev) => (prev ? { ...prev, ...nextUser } : nextUser))}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </SurfaceCard>
+          ) : null}
 
           <SurfaceCard tone="spotlight">
             <SectionTitle eyebrow="Session" title="Current auth posture" />

@@ -7,7 +7,7 @@ info:
     **Authentication**
 
     Most mutating endpoints require a Bearer JWT obtained from one of the auth endpoints:
-    - `POST /auth/register` / `POST /auth/login` — email/password
+    - `POST /auth/email/request-code` + `POST /auth/email/verify` — passwordless email code
     - `POST /auth/siwe/verify` — Sign-In with Ethereum
     - `POST /auth/agent/access` — wallet-signed agent bootstrap
     - `POST /auth/agent/register` — EIP-191 agent auto-registration
@@ -37,7 +37,7 @@ servers:
 
 tags:
   - name: Auth
-    description: Authentication and identity (SIWE, email/password, JWT lifecycle)
+    description: Authentication and identity (SIWE, email code, JWT lifecycle)
   - name: OAuth
     description: Third-party OAuth (GitHub, Google, X/Twitter)
   - name: Agents
@@ -426,12 +426,12 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-  # ── Auth — Email/password ────────────────────────────────────────────────────
+  # ── Auth — Email code ────────────────────────────────────────────────────────
 
-  /auth/register:
+  /auth/email/request-code:
     post:
-      summary: Register with email and password
-      operationId: emailRegister
+      summary: Request an email verification code
+      operationId: emailRequestCode
       tags: [Auth]
       security: []
       requestBody:
@@ -440,40 +440,97 @@ paths:
           application/json:
             schema:
               type: object
-              required: [username, email, password]
+              required: [email]
               properties:
-                username:
-                  type: string
-                  minLength: 3
-                  maxLength: 30
                 email:
                   type: string
                   format: email
-                password:
+                purpose:
                   type: string
-                  minLength: 8
+                  enum: [login, bind_email]
+                  default: login
                 inviteCode:
                   type: string
       responses:
+        '200':
+          description: Verification code sent or exposed as devCode in development
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sent:
+                    type: boolean
+                  expiresIn:
+                    type: integer
+                  devCode:
+                    type: string
+        '429':
+          description: Code resend cooldown is still active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/email/verify:
+    post:
+      summary: Verify an email code and login or register
+      operationId: emailVerify
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, code]
+              properties:
+                email:
+                  type: string
+                  format: email
+                code:
+                  type: string
+                  pattern: '^[0-9]{6}$'
+                username:
+                  type: string
+                  minLength: 3
+                  maxLength: 50
+                inviteCode:
+                  type: string
+      responses:
+        '200':
+          description: Existing user authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
         '201':
-          description: User created
+          description: New user created
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
-        '409':
-          description: Email already registered
+        '401':
+          description: Invalid, expired, or over-attempted verification code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Invite code required after the free early-user window
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /auth/login:
+  /auth/register:
     post:
-      summary: Login with email and password
-      operationId: emailLogin
+      summary: Compatibility email-code verify endpoint
+      description: Accepts the same body as `/auth/email/verify`. Requests containing `password` fail because password auth is retired.
+      operationId: emailRegisterCompatibility
       tags: [Auth]
       security: []
       requestBody:
@@ -482,12 +539,56 @@ paths:
           application/json:
             schema:
               type: object
-              required: [email, password]
+              required: [email, code]
               properties:
                 email:
                   type: string
                   format: email
-                password:
+                code:
+                  type: string
+                  pattern: '^[0-9]{6}$'
+                username:
+                  type: string
+                inviteCode:
+                  type: string
+      responses:
+        '200':
+          description: Existing user authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '201':
+          description: New user created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /auth/login:
+    post:
+      summary: Compatibility email-code verify endpoint
+      description: Accepts the same body as `/auth/email/verify`. Requests containing `password` fail because password auth is retired.
+      operationId: emailLoginCompatibility
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, code]
+              properties:
+                email:
+                  type: string
+                  format: email
+                code:
+                  type: string
+                  pattern: '^[0-9]{6}$'
+                inviteCode:
                   type: string
       responses:
         '200':
@@ -496,12 +597,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthResponse'
-        '401':
-          description: Invalid credentials
+        '201':
+          description: New user created by unified email-code flow
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
 
   # ── Auth — Token lifecycle ───────────────────────────────────────────────────
 

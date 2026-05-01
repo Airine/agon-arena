@@ -24,6 +24,7 @@ import axios from 'axios';
 import { db, schema } from '../db/index.js';
 import { issueTokenPair } from '../services/jwt.js';
 import { chipService } from '../services/chip.js';
+import { createHumanUserWithInviteGate, InviteGateError } from '../services/invite-gate.js';
 import {
   storeOAuthState,
   consumeOAuthState,
@@ -64,8 +65,9 @@ githubOAuthRouter.get('/', async (req, res) => {
     const state = randomBytes(16).toString('hex');
     // Optionally pass along a userId if user is already authenticated (linking flow)
     const userId = (req.query['userId'] as string | undefined);
+    const inviteCode = (req.query['inviteCode'] as string | undefined)?.trim().toUpperCase();
 
-    await storeOAuthState(state, { provider: 'github', userId });
+    await storeOAuthState(state, { provider: 'github', userId, inviteCode });
 
     const githubAuthUrl = new URL('https://github.com/login/oauth/authorize');
     githubAuthUrl.searchParams.set('client_id', clientId);
@@ -234,20 +236,14 @@ githubOAuthRouter.get('/callback', async (req, res) => {
       // Append random suffix to avoid collisions
       const candidateUsername = `${baseUsername}_${randomBytes(2).toString('hex')}`;
 
-      const [newUser] = await db
-        .insert(schema.users)
-        .values({
-          username: candidateUsername,
-          email: githubUser.email ?? undefined,
-        })
-        .returning({ id: schema.users.id, username: schema.users.username });
+      const created = await createHumanUserWithInviteGate({
+        username: candidateUsername,
+        email: githubUser.email ?? undefined,
+        inviteCode: statePayload.inviteCode,
+      });
 
-      if (!newUser) {
-        return errorRedirect('Failed to create user account');
-      }
-
-      userId = newUser.id;
-      username = newUser.username;
+      userId = created.user.id;
+      username = created.user.username;
 
       await db.insert(schema.socialBindings).values({
         userId,
@@ -260,6 +256,9 @@ githubOAuthRouter.get('/callback', async (req, res) => {
 
       // Award registration bonus for brand-new users
       await chipService.allocateRegistrationBonus(userId);
+      if (created.inviteCodeId) {
+        await chipService.allocateInviteRefereeReward(userId, created.inviteCodeId);
+      }
     }
 
     // Award CHIP for first GitHub binding (idempotent — guarded by chipRewarded flag)
@@ -279,6 +278,9 @@ githubOAuthRouter.get('/callback', async (req, res) => {
     // Redirect to frontend with exchange code
     res.redirect(`${frontendUrl}/auth/callback?code=${exchangeCode}`);
   } catch (err) {
+    if (err instanceof InviteGateError) {
+      return errorRedirect(err.message);
+    }
     console.error('[GitHub OAuth] Callback error:', err);
     return errorRedirect('GitHub OAuth failed');
   }

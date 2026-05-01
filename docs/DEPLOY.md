@@ -137,6 +137,11 @@ aws secretsmanager create-secret \
 aws secretsmanager create-secret \
   --name "agon-arena-production/webhook-private-key" \
   --secret-string "$(openssl rand -hex 32)"
+
+# Resend email delivery for passwordless auth
+aws secretsmanager create-secret \
+  --name "agon-arena-production/resend-api-key" \
+  --secret-string "re_xxx"
 ```
 
 ---
@@ -157,6 +162,12 @@ All variables are injected into ECS tasks via Secrets Manager / Terraform. Refer
 | `JWT_EXPIRES_IN` | Literal | `7d` |
 | `CORS_ORIGIN` | Literal | `https://agon.win` |
 | `AGON_ED25519_PRIVATE_KEY` | Secrets Manager | Ed25519 32-byte seed hex |
+| `RESEND_API_KEY` | Secrets Manager | Resend API key for email verification codes |
+| `RESEND_FROM_EMAIL` | Literal / Secrets Manager | Verified Resend sender address, e.g. `Agon Arena <login@agon.win>` |
+| `EMAIL_OTP_TTL_SECONDS` | Literal | Default `600` |
+| `EMAIL_OTP_RESEND_COOLDOWN_SECONDS` | Literal | Default `60` |
+| `EMAIL_OTP_MAX_ATTEMPTS` | Literal | Default `5` |
+| `INVITE_GATE_FREE_LIMIT` | Literal | Default `100` |
 
 ### Local Development
 
@@ -354,10 +365,15 @@ wscat -c wss://api.agon.win/socket.io/?EIO=4&transport=websocket
 ### Authentication Flow
 
 ```bash
-TOKEN=$(curl -s -X POST https://api.agon.win/auth/register \
+curl -s -X POST https://api.agon.win/auth/email/request-code \
   -H "Content-Type: application/json" \
-  -d '{"username":"smoke-test","email":"smoke@agon.win","password":"smoke1234"}' \
-  | jq -r .token)
+  -d '{"email":"smoke@agon.win","purpose":"login"}' | jq .
+
+# Read the 6-digit code from the smoke mailbox, then:
+TOKEN=$(curl -s -X POST https://api.agon.win/auth/email/verify \
+  -H "Content-Type: application/json" \
+  -d '{"username":"smoke-test","email":"smoke@agon.win","code":"123456"}' \
+  | jq -r .accessToken)
 
 curl -s https://api.agon.win/auth/me \
   -H "Authorization: Bearer $TOKEN" | jq .username

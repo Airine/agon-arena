@@ -1,11 +1,10 @@
 import { Router, type Router as RouterType } from 'express';
 import { z } from 'zod';
-import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 import { SiweMessage } from 'siwe';
 import { eq } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
-import { signToken, requireAuth } from '../middleware/auth.js';
+import { requireAuth } from '../middleware/auth.js';
 import { issueTokenPair, rotateRefreshToken, revokeAccessToken } from '../services/jwt.js';
 import {
   agentAccessHeaderSchema,
@@ -26,56 +25,8 @@ import {
 import { incrementFingerprintAccountCount } from '../middleware/rate-limit.js';
 import { verifyMessage } from 'viem';
 import { chipService } from '../services/chip.js';
-
-// ---------------------------------------------------------------------------
-// Invite code redemption helper (AGO-68)
-// ---------------------------------------------------------------------------
-
-/**
- * Redeem an invite code for a newly registered user.
- * Marks the code as used and credits the referee's +500 CHIP reward.
- * Fire-and-forget safe — errors are logged but do not fail registration.
- *
- * @param newUserId - The just-created user's ID
- * @param inviteCode - The raw code string (e.g. "AGON-A1B2-C3D4")
- */
-async function redeemInviteCode(newUserId: string, inviteCode: string): Promise<void> {
-  try {
-    // Load and validate the invite code
-    const [codeRow] = await db
-      .select({
-        id: schema.inviteCodes.id,
-        createdByUserId: schema.inviteCodes.createdByUserId,
-        usedAt: schema.inviteCodes.usedAt,
-      })
-      .from(schema.inviteCodes)
-      .where(eq(schema.inviteCodes.code, inviteCode.toUpperCase()))
-      .limit(1);
-
-    if (!codeRow) return; // code doesn't exist — ignore silently
-    if (codeRow.usedAt !== null) return; // already used
-    if (codeRow.createdByUserId === newUserId) return; // cannot invite yourself
-
-    // Mark code as used and link to user (atomic)
-    await db.transaction(async (tx) => {
-      await tx
-        .update(schema.inviteCodes)
-        .set({ usedByUserId: newUserId, usedAt: new Date() })
-        .where(eq(schema.inviteCodes.id, codeRow.id));
-
-      await tx
-        .update(schema.users)
-        .set({ invitedByCodeId: codeRow.id, updatedAt: new Date() })
-        .where(eq(schema.users.id, newUserId));
-    });
-
-    // Award referee +500 CHIP
-    await chipService.allocateInviteRefereeReward(newUserId, codeRow.id);
-  } catch (err) {
-    // Invite redemption is best-effort — log but do not break registration
-    console.error('[InviteRedeem] Error:', err);
-  }
-}
+import { InviteGateError, satisfyInviteGateForUser } from '../services/invite-gate.js';
+import { verifyEmailCodeHandler } from './email-auth.js';
 
 export const authRouter: RouterType = Router();
 
@@ -100,8 +51,6 @@ authRouter.get('/siwe/nonce', async (_req, res) => {
 const siweVerifySchema = z.object({
   message: z.string(),   // Serialized EIP-4361 SIWE message
   signature: z.string(), // 0x-prefixed hex signature
-  // AGO-68: optional invite code for new wallet registrations
-  inviteCode: z.string().max(20).optional(),
 });
 
 /**
@@ -116,7 +65,7 @@ const siweVerifySchema = z.object({
  */
 authRouter.post('/siwe/verify', async (req, res) => {
   try {
-    const { message, signature, inviteCode } = siweVerifySchema.parse(req.body);
+    const { message, signature } = siweVerifySchema.parse(req.body);
 
     const siweMessage = new SiweMessage(message);
 
@@ -171,10 +120,6 @@ authRouter.post('/siwe/verify', async (req, res) => {
 
     if (isNewUser) {
       await chipService.allocateRegistrationBonus(user!.id);
-      // AGO-68: redeem invite code for new SIWE users (best-effort)
-      if (inviteCode) {
-        await redeemInviteCode(user!.id, inviteCode);
-      }
       // AGO-69: increment device fingerprint account counter (best-effort)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if ((req as any).deviceFingerprint) {
@@ -196,79 +141,143 @@ authRouter.post('/siwe/verify', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Email / Password auth (fallback)
+// Retired email/password compatibility endpoints
 // ---------------------------------------------------------------------------
 
-const registerSchema = z.object({
-  username: z.string().min(3).max(50),
-  email: z.string().email(),
-  password: z.string().min(6),
-  // AGO-68: optional invite code (format: "AGON-XXXX-XXXX")
-  inviteCode: z.string().max(20).optional(),
-});
-
 authRouter.post('/register', async (req, res) => {
-  try {
-    const body = registerSchema.parse(req.body);
-    const passwordHash = await bcrypt.hash(body.password, 10);
-
-    const [user] = await db
-      .insert(schema.users)
-      .values({
-        username: body.username,
-        email: body.email,
-        passwordHash,
-      })
-      .returning({ id: schema.users.id, username: schema.users.username });
-
-    await chipService.allocateRegistrationBonus(user!.id);
-
-    // AGO-68: redeem invite code if provided (best-effort, does not fail registration)
-    if (body.inviteCode) {
-      await redeemInviteCode(user!.id, body.inviteCode);
-    }
-
-    const tokens = await issueTokenPair({ userId: user!.id, username: user!.username });
-    res.status(201).json({ ...tokens, user: { id: user!.id, username: user!.username } });
-  } catch (err) {
-    if (err instanceof z.ZodError) {
-      res.status(400).json({ error: 'Validation failed', details: err.errors });
-      return;
-    }
-    const message = err instanceof Error ? err.message : 'Registration failed';
-    const status = message.includes('unique') ? 409 : 500;
-    res.status(status).json({ error: message });
+  if (req.body && typeof req.body === 'object' && 'password' in req.body) {
+    res.status(400).json({ error: 'Password registration has been retired. Use /auth/email/request-code and /auth/email/verify.' });
+    return;
   }
-});
-
-const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string(),
+  await verifyEmailCodeHandler(req, res);
 });
 
 authRouter.post('/login', async (req, res) => {
+  if (req.body && typeof req.body === 'object' && 'password' in req.body) {
+    res.status(400).json({ error: 'Password login has been retired. Use /auth/email/request-code and /auth/email/verify.' });
+    return;
+  }
+  await verifyEmailCodeHandler(req, res);
+});
+
+// ---------------------------------------------------------------------------
+// Wallet binding for existing human accounts
+// ---------------------------------------------------------------------------
+
+authRouter.get('/wallet/bind-nonce', requireAuth, async (_req, res) => {
   try {
-    const body = loginSchema.parse(req.body);
+    const nonce = randomBytes(16).toString('hex');
+    await storeBindNonce(nonce);
+    res.json({ nonce });
+  } catch {
+    res.status(500).json({ error: 'Failed to generate nonce' });
+  }
+});
 
-    const [user] = await db
-      .select()
-      .from(schema.users)
-      .where(eq(schema.users.email, body.email))
-      .limit(1);
+const walletBindVerifySchema = z.object({
+  walletAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'Invalid EVM address'),
+  nonce: z.string().min(1),
+  signature: z.string().startsWith('0x'),
+  inviteCode: z.string().max(20).optional(),
+});
 
-    if (!user || !user.passwordHash || !(await bcrypt.compare(body.password, user.passwordHash))) {
-      res.status(401).json({ error: 'Invalid credentials' });
+authRouter.post('/wallet/bind-verify', requireAuth, async (req, res) => {
+  try {
+    const { walletAddress: rawAddress, nonce, signature, inviteCode } = walletBindVerifySchema.parse(req.body);
+    const walletAddress = rawAddress.toLowerCase();
+    const message = `Bind Agon Wallet\nAddress: ${walletAddress}\nNonce: ${nonce}`;
+
+    let valid = false;
+    try {
+      valid = await verifyMessage({
+        address: walletAddress as `0x${string}`,
+        message,
+        signature: signature as `0x${string}`,
+      });
+    } catch {
+      valid = false;
+    }
+
+    if (!valid) {
+      res.status(401).json({ error: 'Invalid wallet signature' });
       return;
     }
 
-    const tokens = await issueTokenPair({ userId: user.id, username: user.username });
-    res.json({ ...tokens, user: { id: user.id, username: user.username } });
+    const nonceValid = await consumeBindNonce(nonce);
+    if (!nonceValid) {
+      res.status(401).json({ error: 'Nonce already used or expired' });
+      return;
+    }
+
+    const [currentUser] = await db
+      .select({
+        id: schema.users.id,
+        username: schema.users.username,
+        email: schema.users.email,
+        walletAddress: schema.users.walletAddress,
+      })
+      .from(schema.users)
+      .where(eq(schema.users.id, req.user!.userId))
+      .limit(1);
+
+    if (!currentUser) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    if (currentUser.walletAddress) {
+      if (currentUser.walletAddress === walletAddress) {
+        const tokens = await issueTokenPair({
+          userId: currentUser.id,
+          username: currentUser.username,
+          walletAddress,
+        });
+        res.json({ ...tokens, user: currentUser });
+        return;
+      }
+      res.status(409).json({ error: 'This account already has a wallet bound' });
+      return;
+    }
+
+    const [existingWalletUser] = await db
+      .select({ id: schema.users.id })
+      .from(schema.users)
+      .where(eq(schema.users.walletAddress, walletAddress))
+      .limit(1);
+    if (existingWalletUser && existingWalletUser.id !== currentUser.id) {
+      res.status(409).json({ error: 'Wallet is already bound to another account' });
+      return;
+    }
+
+    const gate = await satisfyInviteGateForUser({ userId: currentUser.id, inviteCode });
+    if (gate.inviteCodeId) {
+      await chipService.allocateInviteRefereeReward(currentUser.id, gate.inviteCodeId);
+    }
+
+    await db
+      .update(schema.users)
+      .set({ walletAddress, updatedAt: new Date() })
+      .where(eq(schema.users.id, currentUser.id));
+
+    const user = { ...currentUser, walletAddress };
+    const tokens = await issueTokenPair({
+      userId: user.id,
+      username: user.username,
+      walletAddress,
+    });
+
+    res.json({ ...tokens, user, inviteGate: { reason: gate.reason } });
   } catch (err) {
+    if (err instanceof InviteGateError) {
+      res.status(err.status).json({ error: err.message, code: err.code });
+      return;
+    }
     if (err instanceof z.ZodError) {
       res.status(400).json({ error: 'Validation failed', details: err.errors });
       return;
     }
-    res.status(500).json({ error: 'Login failed' });
+    console.error('[WalletBind] Error:', err);
+    res.status(500).json({ error: 'Failed to bind wallet' });
   }
 });
 
@@ -958,6 +967,8 @@ authRouter.get('/me', requireAuth, async (req, res) => {
         email: schema.users.email,
         walletAddress: schema.users.walletAddress,
         chipBalance: schema.users.chipBalance,
+        inviteGateSatisfiedAt: schema.users.inviteGateSatisfiedAt,
+        inviteGateReason: schema.users.inviteGateReason,
         createdAt: schema.users.createdAt,
       })
       .from(schema.users)

@@ -23,10 +23,16 @@ image:
 
 api:
   existingSecretName: agon-arena-app
+  resendApiKeySecretKey: RESEND_API_KEY
+  resendFromEmailSecretKey: RESEND_FROM_EMAIL
   env:
     CORS_ORIGIN: https://agon.win,https://www.agon.win,https://api.agon.win
     PUBLIC_WEB_ORIGIN: https://agon.win
     WEB_ORIGIN: https://agon.win
+    EMAIL_OTP_TTL_SECONDS: "600"
+    EMAIL_OTP_RESEND_COOLDOWN_SECONDS: "60"
+    EMAIL_OTP_MAX_ATTEMPTS: "5"
+    INVITE_GATE_FREE_LIMIT: "100"
 
 postgresql:
   existingSecretName: agon-arena-postgres

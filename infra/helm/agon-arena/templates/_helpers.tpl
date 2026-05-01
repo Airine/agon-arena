@@ -88,6 +88,20 @@ app.kubernetes.io/instance: {{ .Release.Name }}
       key: {{ .Values.api.ed25519PrivateKeySecretKey }}
       optional: true
 {{- end }}
+{{- if .Values.api.resendApiKeySecretKey }}
+- name: RESEND_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "agon-arena.apiSecretName" . }}
+      key: {{ .Values.api.resendApiKeySecretKey }}
+{{- end }}
+{{- if .Values.api.resendFromEmailSecretKey }}
+- name: RESEND_FROM_EMAIL
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "agon-arena.apiSecretName" . }}
+      key: {{ .Values.api.resendFromEmailSecretKey }}
+{{- end }}
 {{- range $name, $value := .Values.api.env }}
 - name: {{ $name }}
   value: {{ $value | quote }}

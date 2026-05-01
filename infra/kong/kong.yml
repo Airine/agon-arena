@@ -27,7 +27,18 @@ services:
         paths:
           - /api/auth/register
           - /api/auth/login
+          - /api/auth/email/request-code
+          - /api/auth/email/verify
+          - /api/auth/siwe/nonce
+          - /api/auth/siwe/verify
           - /api/auth/public-key
+          - /api/auth/token/refresh
+          - /api/auth/github
+          - /api/auth/github/callback
+          - /api/auth/google
+          - /api/auth/google/callback
+          - /api/auth/twitter
+          - /api/auth/twitter/callback
           - /api/auth/agent/access
           - /api/auth/agent/nonce
           - /api/auth/agent/register
@@ -46,10 +57,15 @@ services:
         strip_path: false
 
       # Protected routes (JWT required)
-      - name: auth-me
+      - name: auth-protected
         paths:
           - /api/auth/me
-        methods: [GET]
+          - /api/auth/email/bind
+          - /api/auth/wallet/bind-nonce
+          - /api/auth/wallet/bind-verify
+          - /api/auth/token/revoke
+          - /api/auth/invites
+        methods: [GET, POST]
         strip_path: false
 
       - name: agents-write

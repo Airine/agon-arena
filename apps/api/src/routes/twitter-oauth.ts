@@ -24,6 +24,7 @@ import axios from 'axios';
 import { db, schema } from '../db/index.js';
 import { issueTokenPair } from '../services/jwt.js';
 import { chipService } from '../services/chip.js';
+import { createHumanUserWithInviteGate, InviteGateError } from '../services/invite-gate.js';
 import {
   storeOAuthState,
   consumeOAuthState,
@@ -87,11 +88,12 @@ twitterOAuthRouter.get('/', async (req, res) => {
     const state = randomBytes(16).toString('hex');
     // Optionally pass along a userId if user is already authenticated (linking flow)
     const userId = (req.query['userId'] as string | undefined);
+    const inviteCode = (req.query['inviteCode'] as string | undefined)?.trim().toUpperCase();
 
     // Generate PKCE code verifier and challenge
     const codeVerifier = generateCodeVerifier();
 
-    await storeOAuthState(state, { provider: 'twitter', userId, codeVerifier });
+    await storeOAuthState(state, { provider: 'twitter', userId, codeVerifier, inviteCode });
 
     const twitterAuthUrl = new URL('https://twitter.com/i/oauth2/authorize');
     twitterAuthUrl.searchParams.set('response_type', 'code');
@@ -275,19 +277,13 @@ twitterOAuthRouter.get('/callback', async (req, res) => {
       // Append random suffix to avoid collisions
       const candidateUsername = `${baseName}_${randomBytes(2).toString('hex')}`;
 
-      const [newUser] = await db
-        .insert(schema.users)
-        .values({
-          username: candidateUsername,
-        })
-        .returning({ id: schema.users.id, username: schema.users.username });
+      const created = await createHumanUserWithInviteGate({
+        username: candidateUsername,
+        inviteCode: statePayload.inviteCode,
+      });
 
-      if (!newUser) {
-        return errorRedirect('Failed to create user account');
-      }
-
-      userId = newUser.id;
-      username = newUser.username;
+      userId = created.user.id;
+      username = created.user.username;
 
       await db.insert(schema.socialBindings).values({
         userId,
@@ -299,6 +295,9 @@ twitterOAuthRouter.get('/callback', async (req, res) => {
 
       // Award registration bonus for brand-new users
       await chipService.allocateRegistrationBonus(userId);
+      if (created.inviteCodeId) {
+        await chipService.allocateInviteRefereeReward(userId, created.inviteCodeId);
+      }
     }
 
     // Award CHIP for first Twitter binding (idempotent — guarded by chipRewarded flag)
@@ -318,6 +317,9 @@ twitterOAuthRouter.get('/callback', async (req, res) => {
     // Redirect to frontend with exchange code
     res.redirect(`${frontendUrl}/auth/callback?code=${exchangeCode}`);
   } catch (err) {
+    if (err instanceof InviteGateError) {
+      return errorRedirect(err.message);
+    }
     console.error('[Twitter OAuth] Callback error:', err);
     return errorRedirect('Twitter OAuth failed');
   }

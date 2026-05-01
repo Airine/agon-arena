@@ -1,524 +1,223 @@
-/**
- * AGO-57: Email + password fallback authentication tests
- *
- * Tests validate:
- *  1. hashPassword / verifyPassword round-trip (scrypt)
- *  2. POST /auth/email/register — success, validation errors, duplicate email
- *  3. POST /auth/email/register — awards registration bonus
- *  4. POST /auth/email/login — success, wrong password, unknown email (same error)
- *  5. POST /auth/email/login — OAuth-only user (no passwordHash) → 401
- *  6. Timing-safe: dummy hash prevents user enumeration on login
- *
- * Runs in-process without DB, Redis, or network I/O.
- */
-
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { randomUUID } from 'crypto';
-import { hashPassword, verifyPassword } from '../email-auth.js';
 
-// ---------------------------------------------------------------------------
-// Pure crypto utility tests (no mocking needed)
-// ---------------------------------------------------------------------------
+const FREE_LIMIT = 100;
+const MAX_ATTEMPTS = 5;
 
-describe('hashPassword / verifyPassword — scrypt round-trip', () => {
-  it('produces a hash in scrypt:<salt>:<key> format', async () => {
-    const hash = await hashPassword('mySecretPass1!');
-    const parts = hash.split(':');
-    expect(parts).toHaveLength(3);
-    expect(parts[0]).toBe('scrypt');
-    expect(parts[1]).toHaveLength(32); // 16 bytes hex
-    expect(parts[2]).toHaveLength(128); // 64 bytes hex
-  });
+interface OtpRecord {
+  email: string;
+  code: string;
+  attempts: number;
+  consumed: boolean;
+  expiresAt: number;
+}
 
-  it('round-trip: correct password verifies true', async () => {
-    const password = 'correct-horse-battery-staple';
-    const hash = await hashPassword(password);
-    const valid = await verifyPassword(password, hash);
-    expect(valid).toBe(true);
-  });
+function createOtpStore(now = () => Date.now()) {
+  const records = new Map<string, OtpRecord>();
+  const cooldowns = new Map<string, number>();
 
-  it('wrong password verifies false', async () => {
-    const hash = await hashPassword('rightPassword!');
-    const valid = await verifyPassword('wrongPassword!', hash);
-    expect(valid).toBe(false);
-  });
-
-  it('tampered hash (wrong key) verifies false', async () => {
-    const hash = await hashPassword('somePass');
-    const parts = hash.split(':');
-    // Flip last character of the derived key
-    const tamperedKey = parts[2]!.slice(0, -1) + (parts[2]!.endsWith('f') ? '0' : 'f');
-    const tamperedHash = `scrypt:${parts[1]}:${tamperedKey}`;
-    const valid = await verifyPassword('somePass', tamperedHash);
-    expect(valid).toBe(false);
-  });
-
-  it('tampered hash (wrong salt) verifies false', async () => {
-    const hash = await hashPassword('somePass');
-    const parts = hash.split(':');
-    const tamperedSalt = '0'.repeat(32);
-    const tamperedHash = `scrypt:${tamperedSalt}:${parts[2]}`;
-    const valid = await verifyPassword('somePass', tamperedHash);
-    expect(valid).toBe(false);
-  });
-
-  it('returns false for malformed hash (missing colon segments)', async () => {
-    const valid = await verifyPassword('anyPassword', 'notahash');
-    expect(valid).toBe(false);
-  });
-
-  it('returns false for wrong algorithm prefix', async () => {
-    const valid = await verifyPassword('anyPassword', 'bcrypt:salt:key');
-    expect(valid).toBe(false);
-  });
-
-  it('two calls with the same password produce different salts (random)', async () => {
-    const hash1 = await hashPassword('samePassword');
-    const hash2 = await hashPassword('samePassword');
-    expect(hash1).not.toBe(hash2);
-    // But both should verify correctly
-    expect(await verifyPassword('samePassword', hash1)).toBe(true);
-    expect(await verifyPassword('samePassword', hash2)).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// In-memory simulations of the route logic (mirrors email-auth.ts without Express)
-// ---------------------------------------------------------------------------
+  return {
+    request(email: string, code: string, ttlMs = 600_000, cooldownMs = 60_000) {
+      const normalized = email.toLowerCase();
+      const cooldownUntil = cooldowns.get(normalized) ?? 0;
+      if (cooldownUntil > now()) {
+        return { ok: false as const, cooldownMs: cooldownUntil - now() };
+      }
+      records.set(normalized, {
+        email: normalized,
+        code,
+        attempts: 0,
+        consumed: false,
+        expiresAt: now() + ttlMs,
+      });
+      cooldowns.set(normalized, now() + cooldownMs);
+      return { ok: true as const };
+    },
+    verify(email: string, code: string) {
+      const record = records.get(email.toLowerCase());
+      if (!record || record.consumed || record.expiresAt <= now()) return 'expired';
+      if (record.attempts >= MAX_ATTEMPTS) return 'too_many_attempts';
+      if (record.code !== code) {
+        record.attempts += 1;
+        return record.attempts >= MAX_ATTEMPTS ? 'too_many_attempts' : 'invalid_code';
+      }
+      record.consumed = true;
+      return 'ok';
+    },
+    restore(email: string, code: string, ttlMs = 600_000) {
+      const normalized = email.toLowerCase();
+      records.set(normalized, {
+        email: normalized,
+        code,
+        attempts: 0,
+        consumed: false,
+        expiresAt: now() + ttlMs,
+      });
+    },
+  };
+}
 
 interface User {
   id: string;
-  username: string;
-  email: string;
-  passwordHash: string | null;
+  email: string | null;
   walletAddress: string | null;
+  inviteGateSatisfiedAt: Date | null;
+  invitedByCodeId: string | null;
 }
 
-interface ChipLedger {
-  userId: string;
-  amount: number;
-  reason: string;
+interface InviteCode {
+  id: string;
+  code: string;
+  createdByUserId: string;
+  usedByUserId: string | null;
 }
 
-function createUserStore() {
-  const users: User[] = [];
+function createGateStore() {
+  const users = new Map<string, User>();
+  const codes = new Map<string, InviteCode>();
+
+  function gatedCount() {
+    return [...users.values()].filter((user) => user.inviteGateSatisfiedAt !== null).length;
+  }
+
+  function satisfyGate(userId: string, inviteCode?: string) {
+    const user = users.get(userId)!;
+    if (user.inviteGateSatisfiedAt) return { ok: true, reason: 'already_satisfied' };
+    if (gatedCount() < FREE_LIMIT) {
+      user.inviteGateSatisfiedAt = new Date();
+      return { ok: true, reason: 'free_early' };
+    }
+    if (!inviteCode) return { ok: false, error: 'invite_required' };
+    const code = codes.get(inviteCode);
+    if (!code) return { ok: false, error: 'invalid_invite_code' };
+    if (code.usedByUserId) return { ok: false, error: 'invite_code_used' };
+    if (code.createdByUserId === userId) return { ok: false, error: 'self_invite' };
+    code.usedByUserId = userId;
+    user.invitedByCodeId = code.id;
+    user.inviteGateSatisfiedAt = new Date();
+    return { ok: true, reason: 'invite_code' };
+  }
 
   return {
-    findByEmail(email: string): User | undefined {
-      return users.find((u) => u.email === email);
+    addUser(input: Partial<User> = {}) {
+      const id = input.id ?? randomUUID();
+      const user: User = {
+        id,
+        email: input.email ?? null,
+        walletAddress: input.walletAddress ?? null,
+        inviteGateSatisfiedAt: input.inviteGateSatisfiedAt ?? null,
+        invitedByCodeId: input.invitedByCodeId ?? null,
+      };
+      users.set(id, user);
+      return user;
     },
-    insert(user: Omit<User, 'id'>): User {
-      const id = randomUUID();
-      const record: User = { id, ...user };
-      users.push(record);
+    addInvite(createdByUserId: string, code = `AGON-${randomUUID().slice(0, 4).toUpperCase()}-TEST`) {
+      const record: InviteCode = { id: randomUUID(), code, createdByUserId, usedByUserId: null };
+      codes.set(code, record);
       return record;
     },
-    all(): User[] {
-      return [...users];
-    },
+    satisfyGate,
+    gatedCount,
   };
 }
 
-type RegisterResult =
-  | { status: 201; body: { user: { id: string; username: string; email: string }; accessToken: string; refreshToken: string } }
-  | { status: 400; body: { error: string } }
-  | { status: 409; body: { error: string } }
-  | { status: 500; body: { error: string } };
+describe('email OTP flow', () => {
+  it('enforces cooldown between code requests', () => {
+    let now = 1_000;
+    const store = createOtpStore(() => now);
 
-async function simulateRegister(
-  input: unknown,
-  store: ReturnType<typeof createUserStore>,
-  chipLedger: ChipLedger[],
-): Promise<RegisterResult> {
-  // Validate input
-  if (typeof input !== 'object' || input === null) {
-    return { status: 400, body: { error: 'Invalid request' } };
-  }
-
-  const { email, password, username } = input as Record<string, unknown>;
-
-  if (typeof email !== 'string' || !email.includes('@')) {
-    return { status: 400, body: { error: 'Invalid request' } };
-  }
-  if (typeof password !== 'string' || password.length < 8) {
-    return { status: 400, body: { error: 'Invalid request' } };
-  }
-  if (username !== undefined && (typeof username !== 'string' || username.length < 3)) {
-    return { status: 400, body: { error: 'Invalid request' } };
-  }
-
-  const existing = store.findByEmail(email);
-  if (existing) {
-    return { status: 409, body: { error: 'Email already registered' } };
-  }
-
-  const passwordHash = await hashPassword(password);
-  const finalUsername = typeof username === 'string' ? username : `u_${(email.split('@')[0] ?? 'user').slice(0, 20)}_xx`;
-
-  const newUser = store.insert({ email, passwordHash, username: finalUsername, walletAddress: null });
-
-  // Simulate registration bonus
-  chipLedger.push({ userId: newUser.id, amount: 1000, reason: 'registration' });
-
-  return {
-    status: 201,
-    body: {
-      accessToken: `mock-access-${newUser.id}`,
-      refreshToken: `mock-refresh-${newUser.id}`,
-      user: { id: newUser.id, username: newUser.username, email: newUser.email },
-    },
-  };
-}
-
-type LoginResult =
-  | { status: 200; body: { user: { id: string; username: string; email: string; walletAddress: string | null }; accessToken: string; refreshToken: string } }
-  | { status: 400; body: { error: string } }
-  | { status: 401; body: { error: string } }
-  | { status: 500; body: { error: string } };
-
-const DUMMY_HASH_FOR_TIMING = `scrypt:${'0'.repeat(32)}:${'0'.repeat(128)}`;
-
-async function simulateLogin(
-  input: unknown,
-  store: ReturnType<typeof createUserStore>,
-): Promise<LoginResult> {
-  if (typeof input !== 'object' || input === null) {
-    return { status: 400, body: { error: 'Invalid request' } };
-  }
-
-  const { email, password } = input as Record<string, unknown>;
-
-  if (typeof email !== 'string' || !email.includes('@')) {
-    return { status: 400, body: { error: 'Invalid request' } };
-  }
-  if (typeof password !== 'string' || password.length < 1) {
-    return { status: 400, body: { error: 'Invalid request' } };
-  }
-
-  const user = store.findByEmail(email);
-
-  // Constant-time: always verify even when user not found
-  const hashToCheck = user?.passwordHash ?? DUMMY_HASH_FOR_TIMING;
-  const valid = await verifyPassword(password, hashToCheck);
-
-  if (!user || !user.passwordHash || !valid) {
-    return { status: 401, body: { error: 'Invalid email or password' } };
-  }
-
-  return {
-    status: 200,
-    body: {
-      accessToken: `mock-access-${user.id}`,
-      refreshToken: `mock-refresh-${user.id}`,
-      user: { id: user.id, username: user.username, email: user.email, walletAddress: user.walletAddress },
-    },
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Registration tests
-// ---------------------------------------------------------------------------
-
-describe('POST /auth/email/register — success', () => {
-  it('returns 201 with tokens and user object', async () => {
-    const store = createUserStore();
-    const chipLedger: ChipLedger[] = [];
-
-    const result = await simulateRegister(
-      { email: 'alice@example.com', password: 'password123', username: 'alice_user' },
-      store,
-      chipLedger,
-    );
-
-    expect(result.status).toBe(201);
-    const body = (result as { status: 201; body: { user: { id: string; username: string; email: string }; accessToken: string; refreshToken: string } }).body;
-    expect(body.user.email).toBe('alice@example.com');
-    expect(body.user.username).toBe('alice_user');
-    expect(body.user.id).toBeTruthy();
-    expect(body.accessToken).toBeTruthy();
-    expect(body.refreshToken).toBeTruthy();
+    expect(store.request('alice@example.com', '123456').ok).toBe(true);
+    const second = store.request('alice@example.com', '654321');
+    expect(second.ok).toBe(false);
+    now += 61_000;
+    expect(store.request('alice@example.com', '654321').ok).toBe(true);
   });
 
-  it('auto-generates username from email when username not provided', async () => {
-    const store = createUserStore();
-    const chipLedger: ChipLedger[] = [];
+  it('consumes a valid code exactly once', () => {
+    const store = createOtpStore();
+    store.request('alice@example.com', '123456');
 
-    const result = await simulateRegister(
-      { email: 'bob.smith@example.com', password: 'securepass99' },
-      store,
-      chipLedger,
-    );
-
-    expect(result.status).toBe(201);
-    const body = (result as { status: 201; body: { user: { id: string; username: string; email: string }; accessToken: string; refreshToken: string } }).body;
-    expect(body.user.username).toMatch(/^u_bob\.smith/);
+    expect(store.verify('alice@example.com', '123456')).toBe('ok');
+    expect(store.verify('alice@example.com', '123456')).toBe('expired');
   });
 
-  it('awards +1000 CHIP registration bonus on successful registration', async () => {
-    const store = createUserStore();
-    const chipLedger: ChipLedger[] = [];
+  it('locks out after the maximum number of invalid attempts', () => {
+    const store = createOtpStore();
+    store.request('alice@example.com', '123456');
 
-    const result = await simulateRegister(
-      { email: 'charlie@example.com', password: 'password123', username: 'charlie_c' },
-      store,
-      chipLedger,
-    );
-
-    expect(result.status).toBe(201);
-    const body = (result as { status: 201; body: { user: { id: string; username: string; email: string }; accessToken: string; refreshToken: string } }).body;
-    const bonus = chipLedger.find((e) => e.userId === body.user.id && e.reason === 'registration');
-    expect(bonus).toBeDefined();
-    expect(bonus!.amount).toBe(1000);
+    for (let i = 0; i < MAX_ATTEMPTS - 1; i++) {
+      expect(store.verify('alice@example.com', '000000')).toBe('invalid_code');
+    }
+    expect(store.verify('alice@example.com', '000000')).toBe('too_many_attempts');
   });
 });
 
-describe('POST /auth/email/register — validation errors', () => {
-  it('returns 400 for invalid email', async () => {
-    const store = createUserStore();
-    const chipLedger: ChipLedger[] = [];
+describe('invite gate for human-controlled entries', () => {
+  it('lets the first 100 gated users register without an invite', () => {
+    const store = createGateStore();
+    for (let i = 0; i < FREE_LIMIT - 1; i++) {
+      const user = store.addUser();
+      expect(store.satisfyGate(user.id)).toEqual({ ok: true, reason: 'free_early' });
+    }
 
-    const result = await simulateRegister(
-      { email: 'not-an-email', password: 'password123' },
-      store,
-      chipLedger,
-    );
-
-    expect(result.status).toBe(400);
+    const hundredth = store.addUser();
+    expect(store.satisfyGate(hundredth.id)).toEqual({ ok: true, reason: 'free_early' });
   });
 
-  it('returns 400 for password shorter than 8 characters', async () => {
-    const store = createUserStore();
-    const chipLedger: ChipLedger[] = [];
+  it('requires a valid unused invite after the free window', () => {
+    const store = createGateStore();
+    for (let i = 0; i < FREE_LIMIT; i++) {
+      const user = store.addUser();
+      store.satisfyGate(user.id);
+    }
 
-    const result = await simulateRegister(
-      { email: 'user@example.com', password: 'short' },
-      store,
-      chipLedger,
-    );
+    const referrer = store.addUser({ inviteGateSatisfiedAt: new Date() });
+    const invite = store.addInvite(referrer.id, 'AGON-ABCD-EFGH');
+    const user = store.addUser();
 
-    expect(result.status).toBe(400);
+    expect(store.satisfyGate(user.id)).toEqual({ ok: false, error: 'invite_required' });
+    expect(store.satisfyGate(user.id, invite.code)).toEqual({ ok: true, reason: 'invite_code' });
+    expect(invite.usedByUserId).toBe(user.id);
   });
 
-  it('returns 400 for missing email', async () => {
-    const store = createUserStore();
-    const chipLedger: ChipLedger[] = [];
+  it('does not count pure wallet users against the first 100 invite gate quota', () => {
+    const store = createGateStore();
+    for (let i = 0; i < 200; i++) {
+      store.addUser({ walletAddress: `0x${String(i).padStart(40, '0')}` });
+    }
 
-    const result = await simulateRegister({ password: 'password123' }, store, chipLedger);
-    expect(result.status).toBe(400);
+    expect(store.gatedCount()).toBe(0);
+    const firstHuman = store.addUser({ email: 'first@example.com' });
+    expect(store.satisfyGate(firstHuman.id)).toEqual({ ok: true, reason: 'free_early' });
   });
 
-  it('returns 400 for missing password', async () => {
-    const store = createUserStore();
-    const chipLedger: ChipLedger[] = [];
+  it('requires a gate only once when binding email and wallet later', () => {
+    const store = createGateStore();
+    const user = store.addUser({ email: 'alice@example.com' });
 
-    const result = await simulateRegister({ email: 'user@example.com' }, store, chipLedger);
-    expect(result.status).toBe(400);
-  });
-});
-
-describe('POST /auth/email/register — duplicate email', () => {
-  it('returns 409 when email is already registered', async () => {
-    const store = createUserStore();
-    const chipLedger: ChipLedger[] = [];
-
-    await simulateRegister(
-      { email: 'dupe@example.com', password: 'password123', username: 'first_user' },
-      store,
-      chipLedger,
-    );
-
-    const result = await simulateRegister(
-      { email: 'dupe@example.com', password: 'anotherpass456', username: 'second_user' },
-      store,
-      chipLedger,
-    );
-
-    expect(result.status).toBe(409);
-    expect((result as { status: 409; body: { error: string } }).body.error).toBe('Email already registered');
+    expect(store.satisfyGate(user.id)).toEqual({ ok: true, reason: 'free_early' });
+    expect(store.satisfyGate(user.id)).toEqual({ ok: true, reason: 'already_satisfied' });
   });
 
-  it('does NOT award registration bonus on duplicate attempt', async () => {
-    const store = createUserStore();
-    const chipLedger: ChipLedger[] = [];
+  it('keeps a verified code usable after an invite-gate failure so the user can add a code', () => {
+    const otp = createOtpStore();
+    const gate = createGateStore();
+    for (let i = 0; i < FREE_LIMIT; i++) {
+      const user = gate.addUser();
+      gate.satisfyGate(user.id);
+    }
 
-    const first = await simulateRegister(
-      { email: 'dupe2@example.com', password: 'password123', username: 'original' },
-      store,
-      chipLedger,
-    );
-    const originalId = (first as { status: 201; body: { user: { id: string } } }).body.user.id;
-    const bonusBefore = chipLedger.filter((e) => e.userId === originalId).length;
+    const newUser = gate.addUser({ email: 'late@example.com' });
+    otp.request('late@example.com', '123456');
 
-    await simulateRegister(
-      { email: 'dupe2@example.com', password: 'anotherpass456', username: 'duplicate' },
-      store,
-      chipLedger,
-    );
+    expect(otp.verify('late@example.com', '123456')).toBe('ok');
+    expect(gate.satisfyGate(newUser.id)).toEqual({ ok: false, error: 'invite_required' });
 
-    const bonusAfter = chipLedger.filter((e) => e.userId === originalId).length;
-    expect(bonusAfter).toBe(bonusBefore); // unchanged
-  });
-});
+    otp.restore('late@example.com', '123456');
+    const referrer = gate.addUser({ inviteGateSatisfiedAt: new Date() });
+    const invite = gate.addInvite(referrer.id, 'AGON-LATE-USER');
 
-// ---------------------------------------------------------------------------
-// Login tests
-// ---------------------------------------------------------------------------
-
-describe('POST /auth/email/login — success', () => {
-  it('returns 200 with tokens and user object (including walletAddress)', async () => {
-    const store = createUserStore();
-    const chipLedger: ChipLedger[] = [];
-
-    const reg = await simulateRegister(
-      { email: 'logintest@example.com', password: 'supersecure1!', username: 'login_tester' },
-      store,
-      chipLedger,
-    );
-    expect(reg.status).toBe(201);
-
-    const result = await simulateLogin(
-      { email: 'logintest@example.com', password: 'supersecure1!' },
-      store,
-    );
-
-    expect(result.status).toBe(200);
-    const body = (result as { status: 200; body: { user: { id: string; username: string; email: string; walletAddress: string | null }; accessToken: string; refreshToken: string } }).body;
-    expect(body.user.email).toBe('logintest@example.com');
-    expect(body.user.username).toBe('login_tester');
-    expect(body.accessToken).toBeTruthy();
-    expect(body.refreshToken).toBeTruthy();
-  });
-
-  it('returns walletAddress as null for email-only users', async () => {
-    const store = createUserStore();
-    const chipLedger: ChipLedger[] = [];
-
-    await simulateRegister(
-      { email: 'nowall@example.com', password: 'password123', username: 'nowall_user' },
-      store,
-      chipLedger,
-    );
-
-    const result = await simulateLogin({ email: 'nowall@example.com', password: 'password123' }, store);
-    expect(result.status).toBe(200);
-    const body = (result as { status: 200; body: { user: { walletAddress: string | null } } }).body;
-    expect(body.user.walletAddress).toBeNull();
-  });
-});
-
-describe('POST /auth/email/login — wrong credentials', () => {
-  it('returns 401 with generic message for wrong password', async () => {
-    const store = createUserStore();
-    const chipLedger: ChipLedger[] = [];
-
-    await simulateRegister(
-      { email: 'wrongpw@example.com', password: 'correctpassword1', username: 'the_user' },
-      store,
-      chipLedger,
-    );
-
-    const result = await simulateLogin(
-      { email: 'wrongpw@example.com', password: 'wrongpassword!' },
-      store,
-    );
-
-    expect(result.status).toBe(401);
-    expect((result as { status: 401; body: { error: string } }).body.error).toBe('Invalid email or password');
-  });
-
-  it('returns 401 with SAME generic message for unknown email (no info leak)', async () => {
-    const store = createUserStore();
-
-    const result = await simulateLogin(
-      { email: 'notregistered@example.com', password: 'anypassword1' },
-      store,
-    );
-
-    expect(result.status).toBe(401);
-    expect((result as { status: 401; body: { error: string } }).body.error).toBe('Invalid email or password');
-  });
-
-  it('wrong password and unknown email return identical error messages', async () => {
-    const store = createUserStore();
-    const chipLedger: ChipLedger[] = [];
-
-    await simulateRegister(
-      { email: 'sameErr@example.com', password: 'password12345', username: 'same_err_user' },
-      store,
-      chipLedger,
-    );
-
-    const wrongPw = await simulateLogin({ email: 'sameErr@example.com', password: 'wrongpass' }, store);
-    const unknownEmail = await simulateLogin({ email: 'ghost@example.com', password: 'anypw1234' }, store);
-
-    expect((wrongPw as { status: 401; body: { error: string } }).body.error).toBe(
-      (unknownEmail as { status: 401; body: { error: string } }).body.error,
-    );
-  });
-});
-
-describe('POST /auth/email/login — OAuth-only user (no passwordHash)', () => {
-  it('returns 401 when user has no passwordHash (SIWE/OAuth-only account)', async () => {
-    // Simulate an OAuth-only user who has no password set
-    const store = createUserStore();
-    store.insert({
-      email: 'siwe_user@example.com',
-      passwordHash: null, // OAuth-only — no password
-      username: 'siwe_user',
-      walletAddress: '0xdeadbeef',
-    });
-
-    const result = await simulateLogin(
-      { email: 'siwe_user@example.com', password: 'anypassword1' },
-      store,
-    );
-
-    expect(result.status).toBe(401);
-    expect((result as { status: 401; body: { error: string } }).body.error).toBe('Invalid email or password');
-  });
-});
-
-describe('POST /auth/email/login — validation', () => {
-  it('returns 400 for invalid email format', async () => {
-    const store = createUserStore();
-    const result = await simulateLogin({ email: 'bad-email', password: 'pass12345' }, store);
-    expect(result.status).toBe(400);
-  });
-
-  it('returns 400 for empty password', async () => {
-    const store = createUserStore();
-    const result = await simulateLogin({ email: 'user@example.com', password: '' }, store);
-    expect(result.status).toBe(400);
-  });
-});
-
-describe('Timing-safe constant-time login (user enumeration prevention)', () => {
-  it('DUMMY_HASH is a well-formed scrypt hash that verifyPassword can process without error', async () => {
-    const dummyHash = `scrypt:${'0'.repeat(32)}:${'0'.repeat(128)}`;
-    // Should return false (wrong password) without throwing
-    const result = await verifyPassword('anypassword', dummyHash);
-    expect(result).toBe(false);
-  });
-
-  it('real user and fake user both go through verifyPassword call', async () => {
-    const store = createUserStore();
-    const chipLedger: ChipLedger[] = [];
-
-    await simulateRegister(
-      { email: 'timing@example.com', password: 'timing_password1', username: 'timing_user' },
-      store,
-      chipLedger,
-    );
-
-    // Both paths call verifyPassword — no short-circuit before the hash check
-    const realUser = await simulateLogin({ email: 'timing@example.com', password: 'wrong' }, store);
-    const fakeUser = await simulateLogin({ email: 'nonexistent@example.com', password: 'wrong' }, store);
-
-    // Both return the same error
-    expect(realUser.status).toBe(401);
-    expect(fakeUser.status).toBe(401);
-    expect((realUser as { status: 401; body: { error: string } }).body.error).toBe(
-      (fakeUser as { status: 401; body: { error: string } }).body.error,
-    );
+    expect(otp.verify('late@example.com', '123456')).toBe('ok');
+    expect(gate.satisfyGate(newUser.id, invite.code)).toEqual({ ok: true, reason: 'invite_code' });
   });
 });

@@ -99,7 +99,7 @@ pnpm --filter @agon/docs dev
 With this topology, direct backend routes are shaped like:
 
 - `http://localhost:4000/health`
-- `http://localhost:4000/auth/login`
+- `http://localhost:4000/auth/email/request-code`
 - `http://localhost:4000/arenas`
 
 ### Option B: Kong-prefixed access (`http://localhost:8000/api`)
@@ -131,7 +131,7 @@ pnpm --filter @agon/web dev
 With this topology, Kong-exposed routes are shaped like:
 
 - `http://localhost:8000/api/health`
-- `http://localhost:8000/api/auth/login`
+- `http://localhost:8000/api/auth/email/request-code`
 - `http://localhost:8000/api/arenas`
 
 ### Notes for local setup
@@ -184,7 +184,7 @@ These are the current repo realities worth knowing before you trust any happy-pa
    - Kong exposes `/api/*` in [`infra/kong/kong.yml`](./infra/kong/kong.yml).
    - Frontend callers now normalize around a shared helper, but any route change still needs to consider both shapes.
 
-2. Frontend auth is now centralized around shared session helpers, with legacy dashboard compatibility preserved.
+2. Frontend auth is now centralized around passwordless email-code, wallet, and shared session helpers, with legacy dashboard compatibility preserved.
    - [`apps/web/src/lib/api.ts`](./apps/web/src/lib/api.ts) owns API URL building and session token storage.
    - The helper still mirrors the access token into `agon_token` so older dashboard expectations keep working.
    - If you touch auth, verify login/register/settings and dashboard behavior together.

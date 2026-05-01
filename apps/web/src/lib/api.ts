@@ -67,6 +67,8 @@ export interface UserInfo {
   email?: string | null;
   walletAddress?: string | null;
   chipBalance?: number;
+  inviteGateSatisfiedAt?: string | null;
+  inviteGateReason?: string | null;
   createdAt?: string;
 }
 

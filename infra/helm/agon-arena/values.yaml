@@ -35,10 +35,18 @@ api:
   jwtSecret: ""
   ed25519PrivateKeySecretKey: AGON_ED25519_PRIVATE_KEY
   ed25519PrivateKey: ""
+  resendApiKeySecretKey: ""
+  resendApiKey: ""
+  resendFromEmailSecretKey: ""
+  resendFromEmail: ""
   env:
     CORS_ORIGIN: https://agon.win,https://www.agon.win,https://api.agon.win
     PUBLIC_WEB_ORIGIN: https://agon.win
     WEB_ORIGIN: https://agon.win
+    EMAIL_OTP_TTL_SECONDS: "600"
+    EMAIL_OTP_RESEND_COOLDOWN_SECONDS: "60"
+    EMAIL_OTP_MAX_ATTEMPTS: "5"
+    INVITE_GATE_FREE_LIMIT: "100"
   migrations:
     enabled: true
     waitForPostgresql: true

@@ -38,14 +38,17 @@ docker build -t "agon-arena-web:${IMAGE_TAG}" \
 ## Create Secrets
 
 `AGON_ED25519_PRIVATE_KEY` is a 32-byte Ed25519 seed encoded as 64 hex
-characters. It is not a PKCS8 DER key.
+characters. It is not a PKCS8 DER key. Production email-code auth also
+requires a Resend API key and a verified sender address.
 
 ```bash
 kubectl create namespace agon-arena --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n agon-arena create secret generic agon-arena-app \
   --from-literal=JWT_SECRET="$(openssl rand -hex 32)" \
-  --from-literal=AGON_ED25519_PRIVATE_KEY="$(openssl rand -hex 32)"
+  --from-literal=AGON_ED25519_PRIVATE_KEY="$(openssl rand -hex 32)" \
+  --from-literal=RESEND_API_KEY="re_xxx" \
+  --from-literal=RESEND_FROM_EMAIL="Agon Arena <login@agon.win>"
 
 kubectl -n agon-arena create secret generic agon-arena-postgres \
   --from-literal=password="$(openssl rand -hex 24)"
