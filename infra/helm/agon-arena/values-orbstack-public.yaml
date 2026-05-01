@@ -26,6 +26,7 @@ api:
   resendApiKeySecretKey: RESEND_API_KEY
   resendFromEmailSecretKey: RESEND_FROM_EMAIL
   env:
+    NODE_ENV: production
     CORS_ORIGIN: https://agon.win,https://www.agon.win,https://api.agon.win
     PUBLIC_WEB_ORIGIN: https://agon.win
     WEB_ORIGIN: https://agon.win

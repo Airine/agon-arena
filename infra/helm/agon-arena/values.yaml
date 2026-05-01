@@ -40,6 +40,7 @@ api:
   resendFromEmailSecretKey: ""
   resendFromEmail: ""
   env:
+    NODE_ENV: production
     CORS_ORIGIN: https://agon.win,https://www.agon.win,https://api.agon.win
     PUBLIC_WEB_ORIGIN: https://agon.win
     WEB_ORIGIN: https://agon.win
