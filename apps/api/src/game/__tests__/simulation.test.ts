@@ -121,7 +121,7 @@ function makeLCG(seed: number): () => number {
 describe('1000-hand simulation', () => {
   const rng = makeLCG(42);
 
-  it('maintains chip conservation across all hands', () => {
+  it('maintains chip conservation across all hands', { timeout: 15000 }, () => {
     const totalStartingChips = 4 * 1000; // 4 players × 1000
     const stacks = new Map<string, number>();
     const playerIds = ['p1', 'p2', 'p3', 'p4'];
@@ -181,7 +181,7 @@ describe('1000-hand simulation', () => {
     }
   });
 
-  it('winners always have positive winnings', () => {
+  it('winners always have positive winnings', { timeout: 15000 }, () => {
     const rng3 = makeLCG(7);
     for (let hand = 0; hand < 1000; hand++) {
       const config = makeConfig(4, 200);

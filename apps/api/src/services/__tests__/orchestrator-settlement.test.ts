@@ -21,6 +21,7 @@ const {
   mockDbUpdateSetWhere,
   mockDbUpdateSet,
   mockDbUpdate,
+  mockDbTransaction,
   mockDbInsertReturning,
   mockDbInsertValues,
   mockDbInsert,
@@ -52,6 +53,9 @@ const {
   const mockDbUpdateSetWhere = vi.fn().mockResolvedValue(undefined);
   const mockDbUpdateSet = vi.fn(() => ({ where: mockDbUpdateSetWhere }));
   const mockDbUpdate = vi.fn(() => ({ set: mockDbUpdateSet }));
+  const mockDbTransaction = vi.fn((callback: (tx: unknown) => unknown) =>
+    callback({ select: mockDbSelect, update: mockDbUpdate, insert: mockDbInsert }),
+  );
 
   // db.insert chain — returning() gives back a hand record with id
   const mockDbInsertReturning = vi.fn().mockResolvedValue([{ id: 'hand-record-001' }]);
@@ -104,6 +108,7 @@ const {
     mockDbUpdateSetWhere,
     mockDbUpdateSet,
     mockDbUpdate,
+    mockDbTransaction,
     mockDbInsertReturning,
     mockDbInsertValues,
     mockDbInsert,
@@ -140,6 +145,7 @@ vi.mock('../../db/index.js', () => ({
     select: mockDbSelect,
     update: mockDbUpdate,
     insert: mockDbInsert,
+    transaction: mockDbTransaction,
   },
   schema: {
     arenas: {
@@ -283,7 +289,7 @@ describe('resolveActionRoundMinMs()', () => {
 // ─── Settlement integration ───────────────────────────────────────────────────
 //
 // We run a 1-hand game with two bot:// seats so the loop completes quickly.
-// ACTION_ROUND_MIN_MS=0 removes the round-timer pause; the sleep(1000) between
+// ACTION_ROUND_MIN_MS=1 keeps the round-timer pause tiny; the sleep(1000) between
 // hands is unavoidable but fits within the 8 s per-test timeout below.
 
 const ARENA_ID = 'arena-settle-test';
@@ -303,8 +309,8 @@ const arenaConfig = {
 function setupIntegrationMocks() {
   vi.clearAllMocks();
 
-  // Silence the round-timer pause (ACTION_ROUND_MIN_MS=0 means no wait)
-  process.env['ACTION_ROUND_MIN_MS'] = '0';
+  // Keep round-pacing sleeps tiny while preserving the positive-integer config contract.
+  process.env['ACTION_ROUND_MIN_MS'] = '1';
 
   // db.update chain
   mockDbUpdateSetWhere.mockResolvedValue(undefined);

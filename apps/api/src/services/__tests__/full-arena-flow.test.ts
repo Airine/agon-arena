@@ -40,6 +40,7 @@ const {
   selectStub,
   insertStub,
   updateStub,
+  transactionStub,
 
   // Redis stubs
   mockClearAgentPendingTurn,
@@ -94,6 +95,9 @@ const {
       })),
     })),
   }));
+  const transactionStub = vi.fn((callback: (tx: unknown) => unknown) =>
+    callback({ insert: insertStub, update: updateStub, select: selectStub }),
+  );
 
   // ── Redis stubs ──────────────────────────────────────────────────────────
   const mockClearAgentPendingTurn = vi.fn().mockResolvedValue(undefined);
@@ -124,6 +128,7 @@ const {
     selectStub,
     insertStub,
     updateStub,
+    transactionStub,
     mockClearAgentPendingTurn,
     mockClearArenaLoopHeartbeat,
     mockSetGameSnapshot,
@@ -149,6 +154,7 @@ vi.mock('../../db/index.js', () => ({
     insert: insertStub,
     update: updateStub,
     select: selectStub,
+    transaction: transactionStub,
   },
   // Expose schema names so eq() / sql`` lookups don't explode when called with mocks.
   // The actual column references are passed through drizzle helpers; we just need
@@ -208,6 +214,10 @@ vi.mock('../chip.js', async (importOriginal) => {
     },
   };
 });
+
+vi.mock('../bet-settlement.js', () => ({
+  settleBets: vi.fn().mockResolvedValue(undefined),
+}));
 
 // ---------------------------------------------------------------------------
 // Import the system under test AFTER mocks are declared
@@ -271,8 +281,8 @@ describe('full arena flow — 2 bot agents, 3 hands, mocked infrastructure', () 
     updateCalls.length = 0;
     vi.clearAllMocks();
 
-    // ACTION_ROUND_MIN_MS=0 skips all round-pacing sleeps.
-    process.env['ACTION_ROUND_MIN_MS'] = '0';
+    // Keep round-pacing sleeps tiny while preserving the positive-integer config contract.
+    process.env['ACTION_ROUND_MIN_MS'] = '1';
 
     // Fake timers drain the 1 s inter-hand sleep(1000) instantly.
     vi.useFakeTimers();
