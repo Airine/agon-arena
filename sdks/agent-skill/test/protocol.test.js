@@ -11,7 +11,7 @@ const CLI_PATH = path.join(__dirname, '../bin/agon.js');
 const NODE = process.execPath;
 
 /** Collect stdout JSON lines from a spawned CLI process */
-function collectJsonLines(proc, { maxLines, stopOnState, timeoutMs = 10000 }) {
+function collectJsonLines(proc, { maxLines, stopOnState, timeoutMs = 10000, killOnStop = true }) {
   return new Promise((resolve, reject) => {
     const lines = [];
     let buffer = '';
@@ -31,13 +31,13 @@ function collectJsonLines(proc, { maxLines, stopOnState, timeoutMs = 10000 }) {
           lines.push(parsed);
           if (stopOnState && parsed.state === stopOnState) {
             clearTimeout(timer);
-            proc.kill('SIGTERM');
+            if (killOnStop) proc.kill('SIGTERM');
             resolve(lines);
             return;
           }
           if (maxLines && lines.length >= maxLines) {
             clearTimeout(timer);
-            proc.kill('SIGTERM');
+            if (killOnStop) proc.kill('SIGTERM');
             resolve(lines);
             return;
           }
@@ -344,6 +344,7 @@ test('protocol run exits 0 when arena_finished event received', async () => {
       const linesPromise = collectJsonLines(proc, {
         stopOnState: 'arena_finished',
         timeoutMs: 20000,
+        killOnStop: false,
       });
 
       await new Promise((r) => setTimeout(r, 3000));
