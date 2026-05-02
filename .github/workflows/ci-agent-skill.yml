@@ -10,26 +10,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: pnpm
       - name: Install dependencies
-        run: npm install
-        working-directory: sdks/agent-skill
+        run: pnpm install --frozen-lockfile
       - name: Dry run
-        run: npm pack --dry-run
-        working-directory: sdks/agent-skill
+        run: pnpm --dir sdks/agent-skill exec npm pack --dry-run
 
   smoke:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: pnpm
       - name: Install dependencies
-        run: npm install
-        working-directory: sdks/agent-skill
+        run: pnpm install --frozen-lockfile
       - name: Run integration + smoke tests
-        run: node --test test/integration.test.js test/protocol.test.js test/commands.test.js
-        working-directory: sdks/agent-skill
+        run: pnpm --dir sdks/agent-skill exec node --test test/integration.test.js test/protocol.test.js test/commands.test.js

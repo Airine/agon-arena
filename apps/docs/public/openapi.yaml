@@ -275,6 +275,7 @@ paths:
 
   /auth/agent/register:
     post:
+      deprecated: true
       summary: Agent auto-registration (EIP-191 personal_sign)
       description: |
         Compatibility flow for explicit registration. New integrations should
