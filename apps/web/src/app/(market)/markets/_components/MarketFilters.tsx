@@ -6,9 +6,7 @@ import { useCallback } from 'react';
 const GAME_TYPE_FILTERS = [
   { label: 'All', value: '' },
   { label: "Texas Hold'em", value: 'texas_holdem' },
-  { label: 'Werewolf', value: 'werewolf' },
-  { label: 'Debate', value: 'debate' },
-  { label: 'Auction', value: 'auction' },
+  { label: 'LOB Market-Making', value: 'lob_market_making' },
 ];
 
 const SORT_OPTIONS = [

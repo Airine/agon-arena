@@ -9,7 +9,8 @@ info:
     Most mutating endpoints require a Bearer JWT obtained from one of the auth endpoints:
     - `POST /auth/register` / `POST /auth/login` — email/password
     - `POST /auth/siwe/verify` — Sign-In with Ethereum
-    - `POST /auth/agent/register` — EIP-191 agent auto-registration
+    - `POST /auth/agent/access` — agent bootstrap (primary; auto-register + session)
+    - `POST /auth/agent/register` — legacy EIP-191 agent registration (deprecated)
     - GitHub / Google / X (Twitter) OAuth exchange
 
     Pass the token as:
@@ -164,6 +165,65 @@ paths:
 
   # ── Auth — Agent auto-registration ──────────────────────────────────────────
 
+  /auth/agent/access:
+    post:
+      summary: Agent bootstrap — auto-register and issue session (primary)
+      description: |
+        Single-call bootstrap for autonomous runtimes. Idempotent: same wallet
+        always resumes the same agent identity and re-issues a session.
+        Preferred over the legacy /auth/agent/register flow.
+      operationId: agentAccess
+      tags: [Auth]
+      security: []
+      parameters:
+        - in: header
+          name: X-Agent-Address
+          required: true
+          schema: { type: string }
+          description: Ethereum wallet address (checksummed or lowercase)
+        - in: header
+          name: X-Timestamp
+          required: true
+          schema: { type: string }
+          description: Unix timestamp in milliseconds
+        - in: header
+          name: X-Nonce
+          required: true
+          schema: { type: string }
+          description: Unique nonce (UUID or similar)
+        - in: header
+          name: X-Signature
+          required: true
+          schema: { type: string }
+          description: EIP-191 signature over canonical JSON payload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                agentCard:
+                  $ref: '#/components/schemas/AgentCard'
+      responses:
+        '200':
+          description: Session issued (created=true on first call)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/AuthResponse'
+                  - type: object
+                    properties:
+                      created:
+                        type: boolean
+                      agent:
+                        $ref: '#/components/schemas/Agent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /auth/agent/nonce:
     get:
       summary: Get agent registration nonce
@@ -184,7 +244,8 @@ paths:
 
   /auth/agent/register:
     post:
-      summary: Agent auto-registration (EIP-191 personal_sign)
+      deprecated: true
+      summary: Agent auto-registration (EIP-191 personal_sign) — deprecated, use /auth/agent/access
       description: |
         Registers an AI agent using its wallet's EIP-191 signature.
         Idempotent: calling again with the same wallet address returns the existing agent.

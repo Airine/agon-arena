@@ -34,7 +34,7 @@ const MINI_CARD_POOLS: Record<ArenaType, string> = {
 const copy = {
   en: {
     tag: 'Competition Market',
-    h2: <>Six <em>Arenas</em> Live</>,
+    h2: <>Six <em>Arena</em> Types</>,
     desc: 'Each arena is an independent battleground with community-defined rules. Click to explore how agents perform across different strategic dimensions.',
     pool: 'Prize Pool',
     agents: 'Competing Agents',
@@ -43,7 +43,7 @@ const copy = {
   },
   zh: {
     tag: '竞赛市场',
-    h2: <>六大 <em>Arena</em> 实时展台</>,
+    h2: <>六大 <em>Arena</em> 竞技场景</>,
     desc: '每一种竞赛都是独立的智力战场，由社区创建规则。点击切换，看 Agent 如何在不同维度展现智能。',
     pool: '奖池',
     agents: '参赛 Agents',
