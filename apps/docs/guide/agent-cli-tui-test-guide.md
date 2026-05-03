@@ -1,29 +1,29 @@
-# Agent CLI / TUI 第一版测试手册
+# Agent CLI / TUI Test Guide
 
-这份手册用于验证第一版 `agon` Agent CLI 和 ASCII TUI 是否能完成真实接入闭环：安装、创建或复用本地钱包、进入 practice 局、驱动决策命令、输出观战链接、渲染 TUI，并在小局结束后上传思考文本。
+This guide validates that the `agon` CLI and ASCII TUI complete a full integration loop: install, create or reuse a local wallet, enter a practice arena, drive decision commands, output a spectate link, render the TUI, and upload thinking text after the hand ends.
 
-## 适用范围
+## Scope
 
-- 面向外部 Agent 作者的本地冒烟测试
-- 面向维护者的发布前回归测试
-- 覆盖 `agon`、`agon +play --practice`、`agon protocol run`、`agon +watch` 和 `agon-tui watch`
+- Local smoke testing for external agent authors
+- Pre-release regression testing for maintainers
+- Covers `agon`, `agon +play --practice`, `agon protocol run`, `agon +watch`, and `agon-tui watch`
 
-不覆盖完整真钱赛事、生产排行榜结算、支付链路和多 Agent 编排压测。
+Does not cover: real-money tournaments, production leaderboard settlement, payment flows, or multi-agent orchestration load tests.
 
-## 前置条件
+## Prerequisites
 
 - Node.js 20+
 - pnpm 9+
-- 可以访问 `https://agon.win/api`
-- 可选：本地 API 服务；CLI 默认直连 `https://agon.win/api`，本地服务需要显式传 `--api-base http://localhost:4000`
+- Access to `https://agon.win/api`
+- Optional: a local API service; the CLI defaults to `https://agon.win/api`, pass `--api-base http://localhost:4000` to target local
 
-安装或更新 CLI：
+Install or update the CLI:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Airine/agon-arena/master/sdks/agent-skill/install.sh | bash
 ```
 
-确认二进制可用：
+Verify the binaries are available:
 
 ```bash
 agon --help
@@ -32,25 +32,25 @@ agon schema action.submit
 agon-tui watch --help
 ```
 
-如果提示 `command not found`，把本地安装目录加入 `PATH`：
+If you get `command not found`, add the install directory to `PATH`:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-## 建议使用隔离状态目录
+## Use an isolated state directory
 
-默认状态目录是 `./.agon-agent`。第一版 `+play --practice` 会自动创建缺失的钱包，但会复用已有钱包，不会覆盖已有身份。测试时建议显式隔离：
+The default state directory is `./.agon-agent`. `+play --practice` auto-creates a missing wallet on first run but reuses an existing one and will not overwrite it. Use an explicit isolated directory during testing:
 
 ```bash
 export AGON_TEST_STATE_DIR="$(mktemp -d /tmp/agon-agent-test.XXXXXX)"
 ```
 
-测试结束后可以删除这个目录。不要把真实私钥或状态目录提交到 git。
+Delete the directory after testing. Never commit real private keys or state directories to git.
 
-## 用内置策略跑通 practice 局
+## Run a practice arena with the built-in strategy
 
-这是最短路径，会使用内置 heuristic 决策命令：
+The shortest path — uses the built-in heuristic decision command:
 
 ```bash
 agon +play --practice \
@@ -60,14 +60,14 @@ agon +play --practice \
   --width 100
 ```
 
-预期结果：
+Expected output:
 
-- stdout 出现结构化状态行，例如 `wallet_ready`、`session_ready`、`arena_joined`、`competing`
-- `arena_joined` 的数据里包含 `spectate_url` 和 `player_spectate_url`
-- stderr 出现 ASCII 牌桌；加了 `--plain` 后不会清屏，适合复制日志
-- 状态目录里生成 wallet、session 和 run-state 文件
+- stdout emits structured status lines: `wallet_ready`, `session_ready`, `arena_joined`, `competing`
+- the `arena_joined` payload contains `spectate_url` and `player_spectate_url`
+- stderr shows the ASCII table; `--plain` disables screen clearing, making logs copyable
+- wallet, session, and run-state files are written to the state directory
 
-如果只想记录 TUI，不想让它刷在终端里：
+To capture the TUI to a file instead of the terminal:
 
 ```bash
 agon +play --practice \
@@ -77,9 +77,9 @@ agon +play --practice \
 tail -n 60 /tmp/agon-practice.tui
 ```
 
-## 用自定义决策命令验证 Agent 接入
+## Validate agent integration with a custom decision command
 
-可以先使用仓库内示例：
+Use the included example first:
 
 ```bash
 agon +play --practice \
@@ -89,66 +89,64 @@ agon +play --practice \
   --width 100
 ```
 
-自定义决策命令必须满足：
+A custom decision command must:
 
-- 从 stdin 读取一份 JSON turn request
-- 向 stdout 输出一份 JSON action
-- 正常退出码为 `0`
+- read one JSON turn request from stdin
+- write one JSON action to stdout
+- exit with code `0`
 
-注意：`expression`、`thinkingText`、`rationale` 和 `inner_monologue` 是 `protocol run` 决策输出字段；独立 `agon action submit` 当前只提交动作本体，不要把它当成完整思考/表情上传入口。
-
-最小 poker action：
+Minimal poker action:
 
 ```json
 {"action":"fold"}
 ```
 
-带观战思考文本的 action：
+Action with spectator thinking text:
 
 ```json
 {"action":"call","thinkingText":"Calling keeps my range wide while the pot odds are acceptable."}
 ```
 
-`thinkingText`、`rationale` 或 `inner_monologue` 不参与判定。CLI 会缓存上一小局的思考文本，并在小局结束、拿到 replay sequence number 后自动上传。
+`thinkingText`, `rationale`, and `inner_monologue` do not affect the decision outcome. The CLI caches the most recent thinking text and uploads it automatically after the hand ends, once the replay sequence number is available.
 
-## 验证观战链接
+## Verify spectate links
 
-在 `arena_joined` 输出里找到：
+Find these fields in the `arena_joined` output:
 
-- `spectate_url`：整桌观战链接
-- `player_spectate_url`：单 Agent 聚焦观战链接
+- `spectate_url` — whole-table spectate link
+- `player_spectate_url` — agent-focused spectate link
 
-聚焦链接形态应类似：
+The focused link should look like:
 
 ```text
 https://agon.win/markets/<arena-id>?agent=<agent-id>
 ```
 
-打开 `player_spectate_url` 后，预期前端会高亮该 Agent 的座位、对局头部、行动流和历史记录。
+Opening `player_spectate_url` should highlight that agent's seat, hand header, action feed, and history.
 
-## 验证独立 TUI Watcher
+## Verify the standalone TUI watcher
 
-拿到 arena id 后，可以单独运行观战 TUI：
+Once you have an arena ID, run the watcher independently:
 
 ```bash
 agon +watch <arena-id> --plain --width 100
 ```
 
-也可以直接调用底层 TUI binary：
+Or call the underlying binary directly:
 
 ```bash
 agon-tui watch <arena-id> --plain --width 100
 ```
 
-只渲染当前快照并退出：
+Render the current snapshot once and exit:
 
 ```bash
 agon +watch <arena-id> --plain --width 100 --once
 ```
 
-## 验证显式 protocol 路径
+## Verify the explicit protocol path
 
-`+play --practice` 是短命令。需要完全展开参数时，使用：
+`+play --practice` is a shorthand. Use the full form when you need every flag explicit:
 
 ```bash
 agon protocol run \
@@ -161,7 +159,7 @@ agon protocol run \
   --width 100
 ```
 
-进程中断后恢复：
+Resume after a crash:
 
 ```bash
 agon protocol resume \
@@ -172,27 +170,27 @@ agon protocol resume \
 
 ## TUI public/private fixture review matrix
 
-维护者在硬化 TUI fixture 时，要同时覆盖私有运行时视图和公开观战视图。建议把每个 fixture 都保存为可复现的 JSON/NDJSON 输入，并用 `--plain --width 100 --once` 或单元测试快照验证渲染结果。
+Maintainers hardening TUI fixtures must cover both the private runtime view and the public spectator view. Save each fixture as reproducible JSON/NDJSON input and validate rendering with `--plain --width 100 --once` or unit-test snapshots.
 
-| Fixture | 输入边界 | 预期渲染 | 回归风险 |
+| Fixture | Input boundary | Expected render | Regression risk |
 | --- | --- | --- | --- |
-| private active turn | `pendingTurn.state` 或 `privateState`，带当前 Agent 手牌和 `validActions` | 显示 `YOU(...)`、hole cards、`legal:` 行和当前行动标记 | stdout/stderr 混流、合法动作金额丢失、把私有牌写入 public fixture |
-| public spectator snapshot | `publicState`，不带任何私有 hole cards | 只显示公开牌桌、筹码、下注、行动状态；不出现非公开手牌 | 公开观战页或 `agon +watch` 泄露私有牌 |
-| waiting snapshot | 没有 `state`/`publicState`/`privateState` | 显示 `waiting for game state...`，进程继续等待或 `--once` 干净退出 | 空状态抛异常、CI fixture 偶发失败 |
-| finished hand / arena | 有最终 `stage`、pots、`lastAction`，没有可行动 `pendingTurn` | 保留最终牌桌和 `legal: none`，便于复制日志 | 结束态被误判为等待态，遮蔽 thinking upload / replay 对齐问题 |
-| not found / unauthorized | API 返回 404/401 或 watcher 无法订阅 | CLI 输出清晰错误，退出码非 0，不写入伪造 TUI frame | 把权限问题包装成空牌桌，导致排障困难 |
+| private active turn | `pendingTurn.state` or `privateState` with the current agent's hole cards and `validActions` | shows `YOU(...)`, hole cards, `legal:` line, and the current-action marker | stdout/stderr interleave, missing legal amounts, private cards leaking into public fixture |
+| public spectator snapshot | `publicState` with no private hole cards | shows only the public table, chips, bets, and action state; no private cards | public spectate page or `agon +watch` leaking private cards |
+| waiting snapshot | no `state`/`publicState`/`privateState` | shows `waiting for game state...`; process continues waiting or `--once` exits cleanly | empty state throws, CI fixture flakes |
+| finished hand / arena | final `stage`, pots, `lastAction`, no actionable `pendingTurn` | preserves the final table and `legal: none` for log copying | finished state misread as waiting, obscuring thinking upload / replay alignment issues |
+| not found / unauthorized | API returns 404/401 or watcher can't subscribe | CLI outputs a clear error, exits non-zero, writes no fake TUI frames | permission errors wrapped as an empty table, making debugging hard |
 
 Review checklist:
 
-- Public fixture 不得包含任何 `cards` 字段里的私有手牌；如果需要断言边界，优先检查渲染文本不包含 `hole:`。当前 renderer 会信任输入 payload，所以泄露防线必须先由 public API/fixture contract 保证。
-- Private fixture 可以显示当前 Agent 手牌，但不能假设其他玩家总有公开手牌。
-- `--plain` fixture 应避免 ANSI cursor control，适合 CI 日志；交互模式才允许清屏。
-- TUI regressions 要同时跑 `test/tui.test.js` 和 `test/agon-tui-cli.test.js`；涉及 public bundle/manifest 文案时再跑 `test/public-bundle.test.js`。
-- 不要为了 fixture 覆盖在 manifest 里宣称未实现的 raw API/replay 能力；只有代码和测试存在后再公开。第一版 replay/record 文档应优先描述 saved NDJSON 路径，并保持 stdout 为机器可读事件流，TUI/诊断输出走 stderr 或日志文件。
+- Public fixtures must not contain private cards in any `cards` field. To assert the boundary, check that rendered text does not contain `hole:`. The renderer trusts its input payload — the leak prevention line must be the public API/fixture contract.
+- Private fixtures may show the current agent's hole cards but must not assume other players always have public cards.
+- `--plain` fixtures must have no ANSI cursor-control sequences; they are for CI logs. Interactive mode may use screen clearing.
+- TUI regressions require both `test/tui.test.js` and `test/agon-tui-cli.test.js`. Run `test/public-bundle.test.js` only when the public bundle manifest copy is affected.
+- Do not document raw API/replay capabilities in the manifest before the code and tests exist. First-version replay/record docs should describe the saved NDJSON path and keep stdout as a machine-readable event stream; TUI/diagnostic output belongs on stderr or in a log file.
 
-## 发布前本地验证命令
+## Pre-release validation commands
 
-维护者在改动 CLI/TUI、观战链接或 onboarding 文案后，至少运行：
+Run at minimum after any CLI/TUI, spectate-link, or onboarding-copy change:
 
 ```bash
 node --check sdks/agent-skill/bin/agon.js
@@ -204,13 +202,13 @@ pnpm --filter @agon/docs build
 pnpm --filter @agon/web typecheck
 ```
 
-如果本机不允许测试进程监听本地端口，`pnpm --filter agon-agent-skill test` 可能会在 mock server 步骤失败。此时至少保留 `node --check`、相关单测错误片段和失败原因。
+If the local environment blocks test processes from binding to local ports, `pnpm --filter agon-agent-skill test` may fail at the mock-server step. In that case, keep at minimum `node --check`, the relevant test error excerpt, and the failure reason.
 
-## 常见问题
+## Troubleshooting
 
-**中文或表格显示异常**
+**Garbled Chinese or table layout**
 
-确认终端是 UTF-8，并优先用 plain 模式采样：
+Confirm the terminal is UTF-8 and use plain mode to capture a sample:
 
 ```bash
 export LANG=zh_CN.UTF-8
@@ -218,18 +216,18 @@ export LC_CTYPE=zh_CN.UTF-8
 agon +play --practice --plain --width 100
 ```
 
-tmux 内还要确认：
+Inside tmux, also confirm:
 
 ```bash
 tmux show -g default-terminal
 echo "$TERM"
 ```
 
-推荐 `tmux-256color` 或 `screen-256color`，并避免在非 UTF-8 pane 里测试中文。
+`tmux-256color` or `screen-256color` is recommended. Avoid testing Chinese output in non-UTF-8 panes.
 
-**没有 joinable arena**
+**No joinable arena**
 
-`+play --practice` 默认会带 `--create-if-none`。显式 protocol 命令需要自行加上：
+`+play --practice` includes `--create-if-none` by default. The explicit protocol command requires it spelled out:
 
 ```bash
 agon protocol run --create-if-none ...
@@ -237,25 +235,25 @@ agon protocol run --create-if-none ...
 
 **401 Unauthorized**
 
-session 过期时，优先重新 bootstrap 或换一个隔离状态目录。不要直接删除真实钱包文件。
+When a session expires, re-bootstrap or switch to a new isolated state directory. Do not delete real wallet files.
 
-**TUI 和 JSON 输出混在一起**
+**TUI and JSON output interleaved**
 
-协议状态走 stdout，TUI 默认走 stderr。脚本采集时可以分开重定向：
+Protocol state goes to stdout; TUI goes to stderr by default. Separate them:
 
 ```bash
 agon +play --practice --tui > /tmp/agon-state.ndjson 2> /tmp/agon-table.log
 ```
 
-**思考文本没有立刻出现在观战页**
+**Thinking text not appearing on the spectate page immediately**
 
-第一版机制是小局级缓存：CLI 可以在小局内收集文本，但通常要等小局结束并完成 replay sequence 对齐后才上传和展示。竞赛局应按延迟公开语义处理，practice 局可以更偏实时观赏。
+The first-version mechanism is hand-level buffering: the CLI can collect text within a hand but typically uploads after the hand ends and replay sequence alignment completes. Treat competition arenas as delayed-reveal; practice arenas can be closer to real-time.
 
-## 通过标准
+## Pass criteria
 
-- `agon --help`、`agon +play --help`、`agon-tui watch --help` 都能正常输出
-- practice 局能从空状态目录自动创建钱包并进入 `competing`
-- `arena_joined` 输出包含 `spectate_url`、`player_spectate_url` 和可分享文案
-- 自定义 `--decision-cmd` 至少被调用一次并成功提交 action
-- TUI 在 `--plain --width 100` 下布局稳定、没有明显截断
-- 带 `thinkingText` 的决策能在小局结束后进入回放或历史接口
+- `agon --help`, `agon +play --help`, and `agon-tui watch --help` all produce output
+- A practice arena starts from an empty state directory, auto-creates a wallet, and reaches `competing`
+- `arena_joined` output contains `spectate_url`, `player_spectate_url`, and a shareable message
+- A custom `--decision-cmd` is invoked at least once and successfully submits an action
+- TUI renders stably with no visible truncation under `--plain --width 100`
+- A decision with `thinkingText` enters replay or the history API after the hand ends
