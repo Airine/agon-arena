@@ -31,7 +31,7 @@ function help(subcommand) {
       '  2: wallet       — resolve wallet per --wallet-policy',
       '  3: access       — POST /auth/agent/access (bootstrap)',
       '  4: arena-list   — GET /arenas?status=waiting&mode=practice',
-      '  5: arena-create — POST /arenas { mode: "practice", isSmoke: true }',
+      '  5: arena-create — POST /arenas { name, mode: "practice", maxPlayers: 2, allowSparringReplacement: true, isSmoke: true }',
       '  6: arena-join   — POST /arenas/:id/join',
       '  7: runtime-get  — GET /arenas/:id/runtime?agentId=:agentId',
       '  8: socket       — connect socket, wait for agent:runtime_snapshot (15s timeout)',
@@ -113,6 +113,14 @@ async function resolveWalletForSmoke(stateDir, role, values) {
 
 function emitStep(step, name, status, data = {}) {
   process.stdout.write(`${JSON.stringify({ step, name, status, data })}\n`);
+}
+
+function extractPendingTurn(source) {
+  if (!source || typeof source !== 'object') return null;
+  const snapshot = source.snapshot || source;
+  const pendingTurn = snapshot?.pendingTurn;
+  if (pendingTurn && typeof pendingTurn === 'object') return pendingTurn;
+  return null;
 }
 
 async function runFull(argv) {
@@ -203,14 +211,17 @@ async function runFull(argv) {
   let arenaListOk = false;
   if (sessionOk) {
     try {
-      const arenas = await requestJson({
+      const arenaListResult = await requestJson({
         baseUrl: apiBase,
         method: 'GET',
         routePath: '/arenas?status=waiting&mode=practice',
         token: accessToken,
       });
+      const arenas = Array.isArray(arenaListResult) ? arenaListResult : arenaListResult?.arenas;
       arenaListOk = Array.isArray(arenas);
-      step(4, 'arena-list', arenaListOk ? 'PASS' : 'FAIL', { count: Array.isArray(arenas) ? arenas.length : undefined });
+      step(4, 'arena-list', arenaListOk ? 'PASS' : 'FAIL', {
+        count: Array.isArray(arenas) ? arenas.length : undefined,
+      });
     } catch (err) {
       step(4, 'arena-list', 'FAIL', { error: err.message });
     }
@@ -227,7 +238,13 @@ async function runFull(argv) {
         method: 'POST',
         routePath: '/arenas',
         token: accessToken,
-        body: { mode: 'practice', isSmoke: true },
+        body: {
+          name: 'Smoke Practice Arena',
+          mode: 'practice',
+          maxPlayers: 2,
+          allowSparringReplacement: true,
+          isSmoke: true,
+        },
       });
       arenaId = arena?.id;
       arenaCreated = Boolean(arenaId);
@@ -268,6 +285,7 @@ async function runFull(argv) {
 
   // Step 7: runtime-get
   let runtimeOk = false;
+  let pendingTurn = null;
   if (arenaJoined && arenaId && agentId) {
     try {
       const runtime = await requestJson({
@@ -276,6 +294,7 @@ async function runFull(argv) {
         routePath: `/arenas/${arenaId}/runtime?agentId=${agentId}`,
         token: accessToken,
       });
+      pendingTurn = extractPendingTurn(runtime);
       runtimeOk = Boolean(runtime);
       step(7, 'runtime-get', runtimeOk ? 'PASS' : 'FAIL', { runtime });
     } catch (err) {
@@ -296,7 +315,10 @@ async function runFull(argv) {
         agentId,
         arenaId,
         onEvent: ({ type, payload }) => {
-          if (type === 'agent:runtime_snapshot') snapshotPayload = payload;
+          if (type === 'agent:runtime_snapshot') {
+            snapshotPayload = payload;
+            pendingTurn = extractPendingTurn(payload) || pendingTurn;
+          }
         },
         once: 'agent:runtime_snapshot',
         timeoutMs: 15000,
@@ -314,18 +336,34 @@ async function runFull(argv) {
   if (values['decision-cmd']) {
     if (socketOk && accessToken && agentId && arenaId) {
       try {
-        let turnRequest = null;
-        await connectRuntimeSocket({
-          apiBase,
-          token: accessToken,
-          agentId,
-          arenaId,
-          onEvent: ({ type, payload }) => {
-            if (type === 'agent:turn_request') turnRequest = payload;
-          },
-          once: 'agent:turn_request',
-          timeoutMs: 30000,
-        });
+        let turnRequest = pendingTurn;
+        if (!turnRequest) {
+          await connectRuntimeSocket({
+            apiBase,
+            token: accessToken,
+            agentId,
+            arenaId,
+            onEvent: ({ type, payload }) => {
+              if (type === 'agent:turn_request') turnRequest = payload;
+              if (type === 'agent:runtime_snapshot') turnRequest = extractPendingTurn(payload) || turnRequest;
+            },
+            once: 'agent:runtime_snapshot',
+            timeoutMs: 15000,
+          });
+        }
+        if (!turnRequest) {
+          await connectRuntimeSocket({
+            apiBase,
+            token: accessToken,
+            agentId,
+            arenaId,
+            onEvent: ({ type, payload }) => {
+              if (type === 'agent:turn_request') turnRequest = payload;
+            },
+            once: 'agent:turn_request',
+            timeoutMs: 30000,
+          });
+        }
         if (turnRequest) {
           const cmdResult = spawnSync(values['decision-cmd'], {
             shell: true,
@@ -334,12 +372,24 @@ async function runFull(argv) {
           });
           if (cmdResult.status !== 0) throw new Error(`decision-cmd exited ${cmdResult.status}: ${cmdResult.stderr}`);
           const action = JSON.parse(cmdResult.stdout.trim());
+          const turnId = turnRequest.turnId || turnRequest.id;
+          if (!turnId) throw new Error('turn_request did not include a turnId');
+          const submitBody = { agentId, ...action, turnId };
+          if (submitBody.expression !== undefined) submitBody.expression = String(submitBody.expression).slice(0, 10);
+          if (submitBody.amount !== undefined) {
+            const amount = Number.parseInt(submitBody.amount, 10);
+            if (['raise', 'all_in'].includes(submitBody.action) && amount > 0) {
+              submitBody.amount = amount;
+            } else {
+              delete submitBody.amount;
+            }
+          }
           await requestJson({
             baseUrl: apiBase,
             method: 'POST',
-            routePath: `/arenas/${arenaId}/action`,
+            routePath: `/arenas/${arenaId}/actions`,
             token: accessToken,
-            body: { agentId, ...action },
+            body: submitBody,
           });
           step(9, 'turn', 'PASS', { action });
         } else {

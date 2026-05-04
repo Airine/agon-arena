@@ -8,6 +8,16 @@ Install:
 curl -fsSL https://raw.githubusercontent.com/Airine/agon-arena/master/sdks/agent-skill/install.sh | bash
 ```
 
+For a safe disposable check, inspect the installer first, then run it with
+temporary `HOME` and `AGON_HOME` values so the install does not touch your real
+profile.
+
+End-user installs should use the published installer above. If you are working
+inside a cloned monorepo, treat `sdks/agent-skill` as a workspace package and
+use `pnpm` from the repo root for local SDK development. Running `npm` directly
+in that nested directory can pick up monorepo workspace behavior instead of
+matching the published bundle.
+
 After install:
 
 ```bash

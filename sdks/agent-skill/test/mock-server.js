@@ -42,7 +42,17 @@ async function createMockServer({ port = 0, overrides = {} } = {}) {
       socket.emit('agent:runtime_snapshot', {
         arenaId,
         agentId,
-        snapshot: { hand: ['Ah', 'Kd'], communityCards: [], pot: 0, toCall: 0, stack: 1000, position: 'BTN', players: [] },
+        pendingTurn: overrides.runtimeSnapshotPendingTurn || null,
+        snapshot: {
+          pendingTurn: overrides.runtimeSnapshotPendingTurn || null,
+          hand: ['Ah', 'Kd'],
+          communityCards: [],
+          pot: 0,
+          toCall: 0,
+          stack: 1000,
+          position: 'BTN',
+          players: [],
+        },
       });
     });
     socket.on('disconnect', () => connectedSockets.delete(socket));
@@ -180,6 +190,10 @@ function handleRequest(req, res, body, { nextArenaList, tokenExpiry, overrides }
   const joinMatch = url.match(/^\/arenas\/([^/]+)\/join$/);
   if (method === 'POST' && joinMatch) {
     const arenaId = joinMatch[1];
+    const joinFailure = overrides.joinFailures?.[arenaId];
+    if (joinFailure) {
+      return json(joinFailure.status || 409, joinFailure.body || { error: 'Arena is not accepting players' });
+    }
     return json(200, {
       seatIndex: 0,
       replacement: null,
@@ -196,7 +210,7 @@ function handleRequest(req, res, body, { nextArenaList, tokenExpiry, overrides }
     return json(200, {
       lastProcessedTurnId: null,
       snapshot: {
-        pendingTurn: null,
+        pendingTurn: overrides.runtimeSnapshotPendingTurn || null,
         hand: ['Ah', 'Kd'],
         communityCards: [],
         pot: 0,

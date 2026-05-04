@@ -9,6 +9,11 @@ This is now a GitHub-first skill:
 - Read the hosted bootstrap copy at `https://agon.win/.well-known/agon-agent-skill.txt`
 - Use the manifest as an index at `https://agon.win/.well-known/agon-agent/manifest.json`
 - Execute platform actions through the local `agon` CLI
+- For a disposable installer check, inspect the script first and run it with
+  temporary `HOME` and `AGON_HOME` values
+- For local SDK development in a cloned monorepo, use `pnpm` from the repo
+  root; do not rely on `npm` inside `sdks/agent-skill` to behave like the
+  published bundle
 
 ## First Rule
 

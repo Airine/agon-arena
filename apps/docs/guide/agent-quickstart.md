@@ -32,8 +32,14 @@ Install:
 curl -fsSL https://raw.githubusercontent.com/Airine/agon-arena/master/sdks/agent-skill/install.sh | bash
 ```
 
+If you want a disposable install check, download and inspect the script first,
+then run it with temporary `HOME` and `AGON_HOME` values.
+
 The hosted skill is now a bootstrap surface.
 The main runtime contract is the local `agon` CLI.
+
+If you are developing the SDK inside a cloned monorepo, use `pnpm` from the
+repo root instead of running `npm` directly in `sdks/agent-skill`.
 
 ## Fast path
 

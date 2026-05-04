@@ -798,17 +798,32 @@ async function resumeProtocol(argv) {
 
   const apiBase = normalizeApiBase(values['api-base']);
   const stateDir = values['state-dir'];
+  const socketOrigin = values['socket-origin'] || deriveSocketOrigin(apiBase);
   const runState = loadRunState(stateDir);
+  ensureStateLayout(stateDir);
+  const recordEvent = createRecordWriter(values.record);
+
+  function emit(state, data = {}) {
+    const event = { ok: true, state, data };
+    recordEvent({ type: 'protocol:state', state, data });
+    process.stdout.write(JSON.stringify(event) + '\n');
+  }
 
   // If run-state is missing or corrupt, fall back to full protocol run
   if (!runState.arena?.id || !runState.session) {
-    process.stdout.write(JSON.stringify({ ok: true, state: 'resume_fallback', data: { reason: 'no_run_state' } }) + '\n');
+    emit('resume_fallback', { reason: 'no_run_state' });
     return runProtocol([
       ...argv,
     ]);
   }
 
   const session = loadSession(stateDir, values.role);
+  if (!session.access_token || !session.agent?.id) {
+    emit('resume_fallback', { reason: 'no_session' });
+    return runProtocol([
+      ...argv,
+    ]);
+  }
   const arenaId = runState.arena.id;
 
   // Refresh token if needed
@@ -856,25 +871,28 @@ async function resumeProtocol(argv) {
     });
   }
 
-  process.stdout.write(JSON.stringify({ ok: true, state: 'resumed', data: { arenaId } }) + '\n');
+  updateRunState(stateDir, { session: 'active', runtime: 'synced', arena: { id: arenaId, status: 'active' } });
+  emit('resumed', { arenaId });
+  emit('runtime_synced', { arenaId });
+  emit('competing', { arenaId });
 
-  // Re-enter the socket loop via protocol run with --arena-id
-  return runProtocol([
-    `--api-base=${apiBase}`,
-    `--state-dir=${stateDir}`,
-    `--wallet-policy=${values['wallet-policy'] || 'require-existing'}`,
-    ...(values['private-key-env'] ? [`--private-key-env=${values['private-key-env']}`] : []),
-    `--arena-id=${arenaId}`,
-    ...(values['decision-cmd'] ? [`--decision-cmd=${values['decision-cmd']}`] : []),
-    ...(values.record ? [`--record=${values.record}`] : []),
-    ...(values.tui ? ['--tui'] : []),
-    ...(values['tui-log'] ? [`--tui-log=${values['tui-log']}`] : []),
-    ...(values['no-color'] ? ['--no-color'] : []),
-    ...(values.plain ? ['--plain'] : []),
-    ...(values.width ? [`--width=${values.width}`] : []),
-    `--reconnect-max-ms=${values['reconnect-max-ms']}`,
-    `--turn-deadline-buffer-ms=${values['turn-deadline-buffer-ms']}`,
-  ]);
+  const walletResultGetter = () => resolveWallet(stateDir, values.role, values);
+  const tuiWriter = createTuiWriter(values, activeSession.agent.id);
+  if (runtimeResult.snapshot) tuiWriter(runtimeResult.snapshot);
+
+  return runSocketLoop({
+    apiBase,
+    stateDir,
+    socketOrigin,
+    role: values.role,
+    session: activeSession,
+    arenaId,
+    values,
+    walletResultGetter,
+    emitFn: emit,
+    tuiWriter,
+    recordEvent,
+  });
 }
 
 // ---------------------------------------------------------------------------

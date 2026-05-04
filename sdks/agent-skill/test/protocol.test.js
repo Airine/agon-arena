@@ -85,6 +85,60 @@ test('protocol resume --help shows usage', () => {
   assert.match(result.stdout, /--plain/);
 });
 
+test('protocol resume continues an active practice run without rejoining the arena', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agon-test-'));
+  try {
+    fs.writeFileSync(path.join(tmpDir, 'primary-session.json'), JSON.stringify({
+      access_token: 'tok-active',
+      refresh_token: 'ref-active',
+      expires_at: Date.now() + 3600000,
+      user: { id: 'u1' },
+      agent: { id: 'ag1', agentAddress: '0xdeadbeef' },
+      role: 'primary',
+    }, null, 2));
+    fs.writeFileSync(path.join(tmpDir, 'run-state.json'), JSON.stringify({
+      session: 'active',
+      arena: { id: 'arena-resume', status: 'active' },
+      pending_turn: null,
+    }, null, 2));
+
+    const server = await createMockServer({
+      overrides: {
+        joinFailures: {
+          'arena-resume': {
+            status: 409,
+            body: { error: 'Arena is not accepting players' },
+          },
+        },
+      },
+    });
+    try {
+      const proc = spawn(NODE, [
+        CLI_PATH, 'protocol', 'resume',
+        '--wallet-policy=require-existing',
+        `--api-base=${server.url}`,
+        `--state-dir=${tmpDir}`,
+      ]);
+
+      const lines = await collectJsonLines(proc, {
+        stopOnState: 'competing',
+        timeoutMs: 15000,
+      });
+
+      const states = lines.map((line) => line.state);
+      assert.ok(states.includes('resumed'), `Expected resumed state. Got: ${JSON.stringify(states)}`);
+      assert.ok(states.includes('competing'), `Expected competing state. Got: ${JSON.stringify(states)}`);
+
+      const joinCalls = server.calls.filter((call) => call.method === 'POST' && call.url === '/arenas/arena-resume/join');
+      assert.equal(joinCalls.length, 0, 'resume should not rejoin an already active arena');
+    } finally {
+      await server.close();
+    }
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
 // Test 3: protocol run exits with error when no wallet and require-existing
 test('protocol run exits non-zero when --wallet-policy=require-existing and no wallet', async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agon-test-'));
